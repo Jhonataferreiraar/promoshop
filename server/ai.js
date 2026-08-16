@@ -175,7 +175,13 @@ Regras obrigatórias:
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     if (provider === 'groq' && response.status === 401) {
-      throw new Error(`A Groq recusou a chave do ${apiKeySource} (final ${apiKeyEnding}). Revogue essa chave, crie outra em console.groq.com/keys e copie o valor secreto completo que começa com gsk_.`);
+      let reason = '';
+      try {
+        const parsed = JSON.parse(detail);
+        reason = parsed.error?.message || parsed.error_description || parsed.message || parsed.error || '';
+      } catch { reason = detail; }
+      const safeReason = String(reason || '').replace(/gsk_[A-Za-z0-9_-]+/g, '[chave protegida]').slice(0, 180);
+      throw new Error(`A Groq recusou a autenticação do ${apiKeySource} (chave salva com final ${apiKeyEnding})${safeReason ? `: ${safeReason}` : ''}. O estilo selecionado não altera a chave.`);
     }
     throw new Error(`${provider === 'groq' ? 'Groq' : 'IA local'} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
