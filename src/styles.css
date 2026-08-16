@@ -2169,9 +2169,7 @@ footer {
 /* Evita estouro horizontal em toda a aplicação */
 html,
 body {
-  width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 img,
@@ -2185,6 +2183,76 @@ select,
 textarea,
 button {
   max-width: 100%;
+}
+
+/* =========================================================
+   DESKTOP — preserva o layout original do painel
+   ========================================================= */
+
+@media (min-width: 901px) {
+
+  .admin-shell {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    width: 100%;
+    min-height: 100vh;
+    background: #f5f7fa;
+  }
+
+  .admin-shell aside {
+    position: sticky;
+    top: 0;
+    width: 260px;
+    height: 100vh;
+    min-height: 100vh;
+    max-height: 100vh;
+    padding: 24px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    overflow-y: auto;
+    background: #111827;
+  }
+
+  .admin-shell aside nav {
+    display: grid;
+    width: 100%;
+    gap: 18px;
+    overflow: visible;
+  }
+
+  .nav-group {
+    display: grid;
+    gap: 5px;
+  }
+
+  .nav-group > span {
+    display: block;
+  }
+
+  .admin-shell aside nav button {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .sidebar-footer {
+    display: grid;
+    margin-top: auto;
+  }
+
+  .admin-main {
+    width: 100%;
+    max-width: 1600px;
+    min-width: 0;
+    padding: 34px 40px 60px;
+  }
+
+  .admin-main > header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 
 /* =========================================================
