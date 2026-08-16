@@ -12,11 +12,10 @@
     "test:mercadolivre": "node scripts/test-mercadolivre-oauth.mjs",
     "test:security": "node scripts/test-security.mjs",
     "preview": "vite preview",
-    "start": "concurrently -k -n API,WHATSAPP \"node server/index.js\" \"node worker/whatsapp.js\"",
+    "start": "node server/index.js",
     "whatsapp": "node worker/whatsapp.js"
   },
   "dependencies": {
-    "concurrently": "^9.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
@@ -29,6 +28,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
     "vite": "^7.1.2"
   },
   "overrides": {
