@@ -2160,3 +2160,876 @@ footer {
 }
 
 }
+
+/* =========================================================
+   RESPONSIVIDADE FINAL — MOBILE / TABLET
+   Deve permanecer no FINAL do style.css
+   ========================================================= */
+
+/* Evita estouro horizontal em toda a aplicação */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+/* =========================================================
+   TABLETS
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+  /* ---------- SITE PÚBLICO ---------- */
+
+  .container {
+    width: calc(100% - 32px);
+    max-width: 720px;
+  }
+
+  .site-shell .nav-wrap {
+    gap: 12px;
+  }
+
+  .site-shell .topbar nav {
+    display: none;
+  }
+
+  .nav-actions {
+    margin-left: auto;
+  }
+
+  .site-shell .hero {
+    min-height: auto;
+  }
+
+  .site-shell .hero-grid {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding-block: 70px 105px;
+  }
+
+  .site-shell .hero-copy {
+    max-width: 100%;
+  }
+
+  .site-shell .hero-copy h1 {
+    max-width: 700px;
+  }
+
+  .site-shell .hero-art {
+    display: none;
+  }
+
+  .site-shell .search-panel {
+    grid-template-columns: 1fr;
+    margin-top: -50px;
+  }
+
+  .store-filter {
+    min-width: 0;
+  }
+
+  .store-filter > div {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .site-shell .offer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .how-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .site-shell .whatsapp-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+
+  /* ---------- PAINEL ADMINISTRATIVO ---------- */
+
+  .admin-shell {
+    display: block;
+    min-height: 100vh;
+  }
+
+  .admin-shell aside {
+    position: relative;
+    top: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 14px 16px;
+    overflow: visible;
+  }
+
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+  }
+
+  .sidebar-brand small {
+    margin: 0;
+  }
+
+  .admin-shell aside nav {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 5px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .nav-group > span {
+    display: none;
+  }
+
+  .admin-shell aside nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .sidebar-footer {
+    display: none;
+  }
+
+  .admin-main {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: 26px 20px 48px;
+  }
+
+  .admin-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .create-offer-panel {
+    position: static;
+  }
+
+  .source-cards,
+  .whatsapp-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-toggle,
+  .ai-instructions,
+  .advanced-ai {
+    grid-column: 1 / -1;
+  }
+
+  .connection-head {
+    flex-wrap: wrap;
+  }
+
+  .connection-meta {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+
+/* =========================================================
+   CELULARES
+   ========================================================= */
+
+@media (max-width: 640px) {
+
+  /* ---------- GERAL ---------- */
+
+  .container {
+    width: calc(100% - 24px);
+    max-width: none;
+  }
+
+  .button {
+    min-height: 46px;
+  }
+
+
+  /* ---------- HEADER PÚBLICO ---------- */
+
+  .site-shell .nav-wrap {
+    height: 62px;
+  }
+
+  .site-shell .logo {
+    min-width: 0;
+    font-size: 18px;
+  }
+
+  .site-shell .logo-mark {
+    width: 31px;
+    height: 31px;
+    flex: 0 0 31px;
+  }
+
+  .nav-whatsapp {
+    display: none;
+  }
+
+  .site-shell .admin-link {
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+
+
+  /* ---------- HERO ---------- */
+
+  .site-shell .hero {
+    min-height: auto;
+  }
+
+  .site-shell .hero-grid {
+    padding-block: 48px 88px;
+  }
+
+  .site-shell .hero-copy h1 {
+    margin: 10px 0 18px;
+    font-size: clamp(38px, 12vw, 48px);
+    line-height: 1.02;
+    letter-spacing: -.045em;
+  }
+
+  .site-shell .hero-copy > p {
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .site-shell .hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 25px;
+  }
+
+  .site-shell .hero-actions .button {
+    width: 100%;
+  }
+
+  .hero-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px;
+    margin-top: 28px;
+    padding-top: 20px;
+  }
+
+  .hero-metrics span {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .hero-metrics span:last-child {
+    display: none;
+  }
+
+
+  /* ---------- BUSCA / FILTROS ---------- */
+
+  .site-shell .search-panel {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-top: -42px;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .search-box,
+  .sort-filter {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-field {
+    min-width: 0;
+  }
+
+  .search-box input {
+    min-width: 0;
+  }
+
+  .store-filter {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .store-filter > div {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .store-filter button {
+    flex: 0 0 auto;
+  }
+
+  .clear-filters {
+    width: 100%;
+    grid-column: auto;
+  }
+
+
+  /* ---------- OFERTAS ---------- */
+
+  .site-shell .offers-section {
+    padding-top: 62px;
+    padding-bottom: 70px;
+  }
+
+  .site-shell .section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .site-shell .section-heading h2 {
+    font-size: 30px;
+  }
+
+  .results-count {
+    align-self: flex-start;
+  }
+
+  .site-shell .offer-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .site-shell .offer-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .site-shell .offer-image {
+    height: 240px;
+  }
+
+  .site-shell .offer-content {
+    min-height: auto;
+  }
+
+  .site-shell .offer-content h3 {
+    min-height: auto;
+  }
+
+
+  /* ---------- COMO FUNCIONA ---------- */
+
+  .how-section {
+    padding: 65px 0;
+  }
+
+  .how-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .how-grid article {
+    padding: 23px;
+  }
+
+
+  /* ---------- WHATSAPP ---------- */
+
+  .site-shell .whatsapp-section {
+    padding: 55px 0;
+  }
+
+  .site-shell .whatsapp-card {
+    padding: 27px 21px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 22px;
+  }
+
+  .site-shell .whatsapp-card > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .site-shell .whatsapp-card h2 {
+    font-size: 25px;
+  }
+
+  .site-shell .whatsapp-card .button {
+    width: 100%;
+  }
+
+
+  /* ---------- FOOTER ---------- */
+
+  .footer-grid {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+
+  /* =======================================================
+     ADMIN MOBILE
+     ======================================================= */
+
+  .admin-shell {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .admin-shell aside {
+    width: 100%;
+    padding: 12px;
+  }
+
+  .sidebar-brand {
+    padding: 2px 3px 11px;
+  }
+
+  .sidebar-brand small {
+    display: none;
+  }
+
+  .admin-shell aside nav {
+    margin-inline: -2px;
+    padding-inline: 2px;
+  }
+
+  .admin-shell aside nav button {
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .admin-shell aside nav button i {
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+  }
+
+
+  /* ---------- CONTEÚDO ADMIN ---------- */
+
+  .admin-main {
+    width: 100%;
+    min-width: 0;
+    padding: 20px 12px 40px;
+  }
+
+  .admin-main > header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+  }
+
+  .admin-main > header h1 {
+    font-size: 27px;
+  }
+
+  .admin-main > header p {
+    font-size: 13px;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .header-status {
+    max-width: 100%;
+  }
+
+
+  /* ---------- PAINÉIS ---------- */
+
+  .admin-main .panel,
+  .compact-panel,
+  .setting-section,
+  .connection-panel {
+    width: 100%;
+    min-width: 0;
+    padding: 17px;
+    border-radius: 14px;
+  }
+
+  .panel-heading,
+  .section-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+
+  /* ---------- BOAS-VINDAS ---------- */
+
+  .welcome-panel {
+    min-height: auto;
+    padding: 22px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+  }
+
+  .welcome-panel h2 {
+    font-size: 23px;
+  }
+
+  .welcome-panel .button {
+    width: 100%;
+  }
+
+
+  /* ---------- ESTATÍSTICAS ---------- */
+
+  .admin-main .stats,
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-main .stats > div,
+  .stats > div {
+    min-width: 0;
+    min-height: 115px;
+    padding: 15px;
+  }
+
+  .admin-main .stats strong,
+  .stats strong {
+    font-size: 27px;
+  }
+
+
+  /* ---------- FORMULÁRIOS ---------- */
+
+  .admin-columns,
+  .settings-grid,
+  .three-columns,
+  .source-cards,
+  .whatsapp-settings-grid,
+  .ai-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-toggle,
+  .ai-instructions,
+  .advanced-ai {
+    grid-column: auto;
+  }
+
+  .settings-form input,
+  .settings-form select,
+  .settings-form textarea,
+  .form-grid input,
+  .form-grid select,
+  .admin-toolbar input,
+  .admin-toolbar select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-footer .button {
+    width: 100%;
+  }
+
+
+  /* ---------- LISTA DE OFERTAS ADMIN ---------- */
+
+  .offer-admin-list {
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .offer-admin-list > div {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .offer-admin-list img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .offer-admin-list > div > span {
+    min-width: 0;
+  }
+
+  .offer-admin-list > div > span strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .offer-row-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .offer-row-actions button {
+    width: 100%;
+  }
+
+
+  /* ---------- FILA DE PUBLICAÇÃO ---------- */
+
+  .queue-table {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .queue-table > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 14px 5px;
+  }
+
+  .queue-table > div > * {
+    min-width: 0;
+  }
+
+  .queue-table strong {
+    overflow-wrap: anywhere;
+  }
+
+  .queue-table time,
+  .queue-actions {
+    grid-column: auto;
+  }
+
+  .status {
+    justify-self: start;
+  }
+
+  .queue-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+
+  /* ---------- FONTES / MARKETPLACES ---------- */
+
+  .source-card-head {
+    min-height: auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    padding: 15px;
+  }
+
+  .source-card-body {
+    padding: 15px;
+  }
+
+  .source-note {
+    margin: 14px 15px 0;
+  }
+
+
+  /* ---------- WHATSAPP ADMIN ---------- */
+
+  .connection-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .connection-summary {
+    align-items: flex-start;
+  }
+
+  .connection-meta {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .connection-meta span {
+    min-width: 0;
+  }
+
+  .connection-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .connection-actions .button {
+    width: 100%;
+  }
+
+  .phone-pairing {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .qr-box,
+  .pairing-box {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 17px;
+    padding: 16px;
+  }
+
+  .qr-box img {
+    width: min(100%, 260px);
+    height: auto;
+    align-self: center;
+  }
+
+  .pairing-code {
+    width: 100%;
+    overflow-x: auto;
+    font-size: clamp(21px, 8vw, 30px);
+    letter-spacing: 2px;
+    text-align: center;
+  }
+
+  .group-options {
+    max-height: 260px;
+  }
+
+
+  /* ---------- LOGS ---------- */
+
+  .logs > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .logs time,
+  .logs span {
+    overflow-wrap: anywhere;
+  }
+
+
+  /* ---------- MODAIS ---------- */
+
+  .modal-backdrop {
+    padding: 10px;
+    align-items: end;
+  }
+
+  .app-modal {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    padding: 19px;
+    border-radius: 20px 20px 12px 12px;
+  }
+
+  .modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+
+  /* ---------- TOAST ---------- */
+
+  .admin-main > .toast {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+  }
+
+
+  /* ---------- LOGIN ---------- */
+
+  .login-page {
+    padding: 16px;
+  }
+
+  .login-card {
+    width: 100%;
+    padding: 25px 20px;
+    border-radius: 18px;
+  }
+
+  .login-card h1 {
+    font-size: 27px;
+  }
+}
+
+
+/* =========================================================
+   CELULARES PEQUENOS
+   ========================================================= */
+
+@media (max-width: 400px) {
+
+  .site-shell .hero-copy h1 {
+    font-size: 37px;
+  }
+
+  .admin-main {
+    padding-inline: 10px;
+  }
+
+  .admin-main .stats,
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .connection-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .offer-row-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions {
+    grid-template-columns: 1fr;
+  }
+}
