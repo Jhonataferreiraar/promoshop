@@ -89,9 +89,13 @@ Regras obrigatórias:
     { role: 'user', content: prompt }
   ];
   let response;
+  let apiKeySource = 'configuração';
   if (provider === 'groq') {
     const secrets = await readSecrets();
-    const apiKey = String(process.env.AI_API_KEY || secrets.aiApiKey || '').trim();
+    const savedApiKey = String(secrets.aiApiKey || '').trim();
+    const environmentApiKey = String(process.env.AI_API_KEY || '').trim();
+    const apiKey = savedApiKey || environmentApiKey;
+    apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
     if (!apiKey) throw new Error('Informe a chave da Groq no painel.');
     response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -117,6 +121,9 @@ Regras obrigatórias:
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
+    if (provider === 'groq' && response.status === 401) {
+      throw new Error(`A Groq recusou a chave configurada no ${apiKeySource}. Cole uma chave Groq válida no painel e teste novamente.`);
+    }
     throw new Error(`${provider === 'groq' ? 'Groq' : 'IA local'} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
   const payload = await response.json();
