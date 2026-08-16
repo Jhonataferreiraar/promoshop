@@ -1,10 +1,26 @@
 import assert from 'node:assert/strict';
 import { generateOfferMessage } from '../server/ai.js';
+import { makeQueueItem } from '../server/collectors.js';
 
 process.env.AI_API_KEY = 'REDACTED_GROQ_KEY';
 process.env.GEMINI_API_KEY = 'AIza_test_key_not_real_123456789';
 
 const originalFetch = globalThis.fetch;
+
+const queuedForAi = makeQueueItem({
+  id: 'oferta-fila-1',
+  title: 'Produto exclusivo',
+  store: 'Loja',
+  price: 49.9,
+  originalPrice: 79.9,
+  affiliateUrl: 'https://afiliado.example/fila',
+  freeShipping: true
+}, { aiEnabled: true, messageTemplate: 'TEXTO PADRÃO {title} {link}' });
+assert.equal(queuedForAi.message, '');
+assert.equal(queuedForAi.messageSource, 'awaiting-ai');
+assert.equal(queuedForAi.offerSnapshot.affiliateUrl, 'https://afiliado.example/fila');
+assert.equal(queuedForAi.offerSnapshot.price, 49.9);
+
 globalThis.fetch = async (url, options) => {
   assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
   assert.equal(options.headers.Authorization, 'Bearer REDACTED_GROQ_KEY');
@@ -50,6 +66,7 @@ try {
     assert.match(body.contents[0].parts[0].text, /Prioridade criativa/);
     assert.match(body.contents[0].parts[0].text, /claramente perceptíveis/);
     assert.match(body.contents[0].parts[0].text, /publicacao-gemini-2/);
+    assert.match(body.contents[0].parts[0].text, /Direção criativa exclusiva/);
     return new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina, com um texto realmente amigável e natural.\\n\\n*{title}* chegou por *{price}*.\\n\\nDá uma olhada 👇\\n{link}"}' }] } }]
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });

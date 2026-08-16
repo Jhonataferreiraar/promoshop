@@ -362,7 +362,10 @@ export async function runCollection() {
           savedOffer.affiliateUrl = offer.affiliateUrl;
           savedOffer.productUrl = offer.productUrl;
           for (const queueItem of data.queue.filter((item) => item.offerId === offer.id && item.status === 'pending')) {
-            queueItem.message = makeQueueItem(savedOffer, data.config).message;
+            const refreshedQueueItem = makeQueueItem(savedOffer, data.config);
+            queueItem.message = refreshedQueueItem.message;
+            queueItem.messageSource = refreshedQueueItem.messageSource;
+            queueItem.offerSnapshot = refreshedQueueItem.offerSnapshot;
             delete queueItem.aiStatus;
             delete queueItem.aiError;
             delete queueItem.aiRetryAt;
@@ -398,6 +401,32 @@ export function makeQueueItem(offer, config) {
     shipping: offer.freeShipping ? '🚚 Frete grátis' : '',
     link: offer.affiliateUrl
   };
-  const message = String(config.messageTemplate || '{title}\n{link}').replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
-  return { id: createId('queue'), offerId: offer.id, offerTitle: offer.title, store: offer.store, message, image: offer.image, status: 'pending', attempts: 0, createdAt: new Date().toISOString(), sentAt: null, error: null };
+  const aiRequired = config.aiEnabled !== false;
+  const message = aiRequired
+    ? ''
+    : String(config.messageTemplate || '{title}\n{link}').replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+  const offerSnapshot = {
+    id: offer.id,
+    title: offer.title,
+    store: offer.store,
+    price: Number(offer.price),
+    originalPrice: Number(offer.originalPrice || offer.price),
+    affiliateUrl: offer.affiliateUrl,
+    freeShipping: Boolean(offer.freeShipping)
+  };
+  return {
+    id: createId('queue'),
+    offerId: offer.id,
+    offerTitle: offer.title,
+    store: offer.store,
+    message,
+    messageSource: aiRequired ? 'awaiting-ai' : 'template',
+    offerSnapshot,
+    image: offer.image,
+    status: 'pending',
+    attempts: 0,
+    createdAt: new Date().toISOString(),
+    sentAt: null,
+    error: null
+  };
 }
