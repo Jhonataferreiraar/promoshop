@@ -50,6 +50,11 @@ const client = new Client({
       '--disable-gpu',
       '--disable-extensions',
       '--disable-software-rasterizer',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--no-zygote',
       '--renderer-process-limit=1',
       '--js-flags=--max-old-space-size=128'
     ]
@@ -186,7 +191,11 @@ async function processQueue(forcedOnly = false) {
   } finally { processing = false; }
 }
 
-client.on('qr', async (code) => { console.log('Leia o QR Code no painel ou abaixo:'); qrcode.generate(code, { small: true }); await request('/api/worker/qr', { method: 'POST', body: JSON.stringify({ qr: code }) }).catch(() => {}); });
+client.on('qr', async (code) => {
+  console.log('QR Code atualizado no painel.');
+  if (process.env.NODE_ENV !== 'production') qrcode.generate(code, { small: true });
+  await request('/api/worker/qr', { method: 'POST', body: JSON.stringify({ qr: code }) }).catch(() => {});
+});
 client.on('code', async (code) => {
   console.log('Código de conexão gerado.');
   await request('/api/worker/pairing-code', { method: 'POST', body: JSON.stringify({ code }) }).catch(() => {});

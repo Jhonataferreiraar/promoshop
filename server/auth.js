@@ -1,7 +1,26 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readSecrets } from './secrets.js';
 
-const sessionSecret = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function loadSessionSecret() {
+  if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
+  const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
+  const secretFile = path.join(dataDir, '.auth-secret');
+  try {
+    const saved = fs.readFileSync(secretFile, 'utf8').trim();
+    if (saved) return saved;
+  } catch {}
+  const generated = crypto.randomBytes(32).toString('hex');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(secretFile, generated, { encoding: 'utf8', mode: 0o600 });
+  return generated;
+}
+
+const sessionSecret = loadSessionSecret();
 
 function base64url(value) { return Buffer.from(value).toString('base64url'); }
 function signature(payload) { return crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); }

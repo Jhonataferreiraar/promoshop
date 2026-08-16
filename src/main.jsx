@@ -24,7 +24,11 @@ async function api(path, options = {}) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Falha na solicitação');
+  if (!response.ok) {
+    const error = new Error((await response.json().catch(() => ({}))).error || 'Falha na solicitação');
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
@@ -159,7 +163,12 @@ function AdminApp() {
       setData(result);
       setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
     }
-    catch { localStorage.removeItem('promoshop_token'); setToken(null); }
+    catch (error) {
+      if (error.status === 401) {
+        localStorage.removeItem('promoshop_token');
+        setToken(null);
+      }
+    }
   }
   useEffect(() => { if (token) load(); }, [token]);
   useEffect(() => {
