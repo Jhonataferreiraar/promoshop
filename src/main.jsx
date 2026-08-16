@@ -13,6 +13,37 @@ const fallbackConfig = {
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.'
 };
 
+const mercadoLivreCategories = [
+  { id: 'MLB5672', name: 'Acessórios para Veículos' },
+  { id: 'MLB271599', name: 'Agro' },
+  { id: 'MLB1403', name: 'Alimentos e Bebidas' },
+  { id: 'MLB1071', name: 'Animais e Pet Shop' },
+  { id: 'MLB1367', name: 'Antiguidades e Coleções' },
+  { id: 'MLB1368', name: 'Arte, Papelaria e Armarinho' },
+  { id: 'MLB1384', name: 'Bebês' },
+  { id: 'MLB1246', name: 'Beleza e Cuidado Pessoal' },
+  { id: 'MLB1132', name: 'Brinquedos e Hobbies' },
+  { id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' },
+  { id: 'MLB1039', name: 'Câmeras e Acessórios' },
+  { id: 'MLB1743', name: 'Carros, Motos e Outros' },
+  { id: 'MLB1574', name: 'Casa, Móveis e Decoração' },
+  { id: 'MLB1051', name: 'Celulares e Telefones' },
+  { id: 'MLB1500', name: 'Construção' },
+  { id: 'MLB5726', name: 'Eletrodomésticos' },
+  { id: 'MLB1000', name: 'Eletrônicos, Áudio e Vídeo' },
+  { id: 'MLB1276', name: 'Esportes e Fitness' },
+  { id: 'MLB263532', name: 'Ferramentas' },
+  { id: 'MLB12404', name: 'Festas e Lembrancinhas' },
+  { id: 'MLB1144', name: 'Games' },
+  { id: 'MLB1499', name: 'Indústria e Comércio' },
+  { id: 'MLB1648', name: 'Informática' },
+  { id: 'MLB1182', name: 'Instrumentos Musicais' },
+  { id: 'MLB3937', name: 'Joias e Relógios' },
+  { id: 'MLB1196', name: 'Livros, Revistas e Comics' },
+  { id: 'MLB1168', name: 'Música, Filmes e Seriados' },
+  { id: 'MLB264586', name: 'Saúde' }
+];
+
 const fallbackOffers = [
   { id: 'demo-1', title: 'Fone Bluetooth com cancelamento de ruído', store: 'Mercado Livre', category: 'Eletrônicos', price: 129.9, originalPrice: 219.9, image: 'https://http2.mlstatic.com/D_NQ_NP_2X_629644-MLA79812359049_102024-F.webp', affiliateUrl: '#', featured: true, freeShipping: true },
   { id: 'demo-2', title: 'Kit organizador para cozinha', store: 'Shopee', category: 'Casa', price: 49.9, originalPrice: 89.9, image: 'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=900&q=80', affiliateUrl: '#', featured: true, freeShipping: false },
@@ -56,7 +87,7 @@ function PublicSite() {
         setConfig({ ...fallbackConfig, ...configData });
         setOffers(offerData);
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, []);
 
@@ -342,9 +373,9 @@ function AdminApp() {
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
 
-  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i>{tabLabels[id]}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview','offers','sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
+  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i>{tabLabels[id]}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{Number(data.config.enableMercadoLivre) + Number(data.config.enableShopee) + Number(data.config.enableAliexpress)}</strong><small>Plataformas conectadas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
-    {tab === 'offers' && <div className="admin-columns"><form className="panel form-grid create-offer-panel" onSubmit={addOffer}><div className="panel-heading"><div><span className="section-step">CADASTRO MANUAL</span><h2>Adicionar oferta</h2><p>Use quando quiser incluir uma promoção específica.</p></div></div>{[['title','Produto'],['category','Categoria'],['price','Preço atual'],['originalPrice','Preço anterior'],['image','URL da imagem'],['affiliateUrl','Link de afiliado']].map(([key,label]) => <label key={key}>{label}<input required={!['originalPrice'].includes(key)} type={key.includes('Price') || key === 'price' ? 'number' : 'text'} step="0.01" value={newOffer[key]} onChange={(event) => setNewOffer({ ...newOffer, [key]: event.target.value })} /></label>)}<label>Loja<select value={newOffer.store} onChange={(event) => setNewOffer({ ...newOffer, store: event.target.value })}><option>Mercado Livre</option><option>Shopee</option><option>AliExpress</option><option>Outra</option></select></label><label className="check"><input type="checkbox" checked={newOffer.freeShipping} onChange={(event) => setNewOffer({ ...newOffer, freeShipping: event.target.checked })} /> Frete grátis</label><button className="button primary full">Adicionar oferta</button></form><section className="panel table-panel offers-manager"><div className="panel-heading"><div><h2>Ofertas cadastradas</h2><p>{adminFilteredOffers.length} de {data.offers.length} ofertas</p></div></div><div className="admin-toolbar"><label className="admin-search"><span>⌕</span><input value={adminOfferQuery} onChange={(event) => setAdminOfferQuery(event.target.value)} placeholder="Buscar oferta" /></label><select value={adminOfferStore} onChange={(event) => setAdminOfferStore(event.target.value)} aria-label="Filtrar ofertas por loja">{adminStores.map((item) => <option key={item}>{item}</option>)}</select></div><div className="offer-admin-list">{adminFilteredOffers.map((offer) => <div key={offer.id}><img src={offer.image} alt="" /><span><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price))} · {offer.status === 'active' ? 'Publicada' : 'Aguardando link'}</small></span><div className="offer-row-actions">{offer.status === 'active' ? <><button onClick={() => queueOffer(offer.id)}>Agendar</button><button className="force" onClick={() => queueOffer(offer.id, true)}>Publicar agora</button></> : <button onClick={() => activateOffer(offer)}>Vincular</button>}<button className="danger" onClick={() => removeOffer(offer.id)}>Excluir</button></div></div>)}</div></section></div>}
+    {tab === 'offers' && <div className="admin-columns"><form className="panel form-grid create-offer-panel" onSubmit={addOffer}><div className="panel-heading"><div><span className="section-step">CADASTRO MANUAL</span><h2>Adicionar oferta</h2><p>Use quando quiser incluir uma promoção específica.</p></div></div>{[['title', 'Produto'], ['category', 'Categoria'], ['price', 'Preço atual'], ['originalPrice', 'Preço anterior'], ['image', 'URL da imagem'], ['affiliateUrl', 'Link de afiliado']].map(([key, label]) => <label key={key}>{label}<input required={!['originalPrice'].includes(key)} type={key.includes('Price') || key === 'price' ? 'number' : 'text'} step="0.01" value={newOffer[key]} onChange={(event) => setNewOffer({ ...newOffer, [key]: event.target.value })} /></label>)}<label>Loja<select value={newOffer.store} onChange={(event) => setNewOffer({ ...newOffer, store: event.target.value })}><option>Mercado Livre</option><option>Shopee</option><option>AliExpress</option><option>Outra</option></select></label><label className="check"><input type="checkbox" checked={newOffer.freeShipping} onChange={(event) => setNewOffer({ ...newOffer, freeShipping: event.target.checked })} /> Frete grátis</label><button className="button primary full">Adicionar oferta</button></form><section className="panel table-panel offers-manager"><div className="panel-heading"><div><h2>Ofertas cadastradas</h2><p>{adminFilteredOffers.length} de {data.offers.length} ofertas</p></div></div><div className="admin-toolbar"><label className="admin-search"><span>⌕</span><input value={adminOfferQuery} onChange={(event) => setAdminOfferQuery(event.target.value)} placeholder="Buscar oferta" /></label><select value={adminOfferStore} onChange={(event) => setAdminOfferStore(event.target.value)} aria-label="Filtrar ofertas por loja">{adminStores.map((item) => <option key={item}>{item}</option>)}</select></div><div className="offer-admin-list">{adminFilteredOffers.map((offer) => <div key={offer.id}><img src={offer.image} alt="" /><span><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price))} · {offer.status === 'active' ? 'Publicada' : 'Aguardando link'}</small></span><div className="offer-row-actions">{offer.status === 'active' ? <><button onClick={() => queueOffer(offer.id)}>Agendar</button><button className="force" onClick={() => queueOffer(offer.id, true)}>Publicar agora</button></> : <button onClick={() => activateOffer(offer)}>Vincular</button>}<button className="danger" onClick={() => removeOffer(offer.id)}>Excluir</button></div></div>)}</div></section></div>}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div></div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -358,7 +389,205 @@ function AdminApp() {
       <div className="source-cards">
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand mercado">ML</div><div><h2>Mercado Livre</h2><p>{data.secrets?.mercadoLivreConnected ? 'Conta conectada com renovação automática.' : 'Conecte sua aplicação oficial.'}</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableMercadoLivre)} onChange={(event) => setData({ ...data, config: { ...data.config, enableMercadoLivre: event.target.checked } })} /><span></span></label></div>
-          <div className="source-card-body"><label>Assuntos para buscar<textarea value={data.config.mercadoLivreQueries ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, mercadoLivreQueries: event.target.value } })} placeholder="smartphone, notebook, air fryer" /><small>Separe por vírgula.</small></label><label>URL de redirecionamento<input value={data.config.mercadoLivreRedirectUri || `${window.location.origin}/api/mercadolivre/callback`} onChange={(event) => setData({ ...data, config: { ...data.config, mercadoLivreRedirectUri: event.target.value.trim() } })} /><small>Cadastre exatamente esta URL na aplicação do Mercado Livre.</small></label><label>Client ID<input value={secretForm.mercadoLivreClientId} onChange={(event) => setSecretForm({ ...secretForm, mercadoLivreClientId: event.target.value.trim() })} placeholder={data.secrets?.mercadoLivreClientIdConfigured ? 'Client ID configurado' : 'Cole o Client ID'} autoComplete="off" /></label><label>Client Secret<input type="password" value={secretForm.mercadoLivreClientSecret} onChange={(event) => setSecretForm({ ...secretForm, mercadoLivreClientSecret: event.target.value })} placeholder={data.secrets?.mercadoLivreClientSecretConfigured ? 'Secret configurado — digite para substituir' : 'Cole o Client Secret'} autoComplete="new-password" /><small>A chave será criptografada no servidor.</small></label>{data.secrets?.mercadoLivreConnected && <div className="source-note"><strong>Conectado</strong><span>{data.secrets.mercadoLivreUserId ? `Conta ${data.secrets.mercadoLivreUserId}. ` : ''}O token será renovado automaticamente.</span></div>}<button className="button primary full" type="button" onClick={connectMercadoLivre}>{data.secrets?.mercadoLivreConnected ? 'Reconectar Mercado Livre' : 'Conectar Mercado Livre'}</button>{data.secrets?.mercadoLivreConnected && <button className="button subtle full" type="button" onClick={testMercadoLivre}>Testar conexão do Mercado Livre</button>}</div>
+          <div className="source-card-body">
+
+            <div className="ml-category-selector">
+              <div className="ml-category-header">
+                <span>
+                  <strong>Categorias para coletar</strong>
+                  <small>
+                    Selecione os setores em que o PromoShop deve procurar produtos.
+                  </small>
+                </span>
+
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    const current = Array.isArray(data.config.mercadoLivreCategories)
+                      ? data.config.mercadoLivreCategories
+                      : [];
+
+                    const next =
+                      current.length === mercadoLivreCategories.length
+                        ? []
+                        : mercadoLivreCategories.map((category) => category.id);
+
+                    setData({
+                      ...data,
+                      config: {
+                        ...data.config,
+                        mercadoLivreCategories: next
+                      }
+                    });
+                  }}
+                >
+                  {(data.config.mercadoLivreCategories || []).length ===
+                    mercadoLivreCategories.length
+                    ? 'Desmarcar todas'
+                    : 'Selecionar todas'}
+                </button>
+              </div>
+
+              <div className="ml-category-grid">
+                {mercadoLivreCategories.map((category) => {
+                  const selected = Array.isArray(data.config.mercadoLivreCategories)
+                    ? data.config.mercadoLivreCategories
+                    : [];
+
+                  const checked = selected.includes(category.id);
+
+                  return (
+                    <label className="ml-category-option" key={category.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const current = Array.isArray(
+                            data.config.mercadoLivreCategories
+                          )
+                            ? data.config.mercadoLivreCategories
+                            : [];
+
+                          const next = event.target.checked
+                            ? [...new Set([...current, category.id])]
+                            : current.filter((id) => id !== category.id);
+
+                          setData({
+                            ...data,
+                            config: {
+                              ...data.config,
+                              mercadoLivreCategories: next
+                            }
+                          });
+                        }}
+                      />
+
+                      <span>{category.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <small className="ml-category-count">
+                {(data.config.mercadoLivreCategories || []).length} categorias selecionadas
+              </small>
+            </div>
+
+            <label>
+              Palavras-chave adicionais
+              <textarea
+                value={data.config.mercadoLivreQueries ?? ''}
+                onChange={(event) =>
+                  setData({
+                    ...data,
+                    config: {
+                      ...data.config,
+                      mercadoLivreQueries: event.target.value
+                    }
+                  })
+                }
+                placeholder="smartphone, notebook, air fryer, smartwatch"
+              />
+              <small>
+                Opcional. Separe por vírgula. Essas buscas complementam as categorias selecionadas.
+              </small>
+            </label>
+
+            <label>
+              URL de redirecionamento
+              <input
+                value={
+                  data.config.mercadoLivreRedirectUri ||
+                  `${window.location.origin}/api/mercadolivre/callback`
+                }
+                onChange={(event) =>
+                  setData({
+                    ...data,
+                    config: {
+                      ...data.config,
+                      mercadoLivreRedirectUri: event.target.value.trim()
+                    }
+                  })
+                }
+              />
+              <small>
+                Cadastre exatamente esta URL na aplicação do Mercado Livre.
+              </small>
+            </label>
+
+            <label>
+              Client ID
+              <input
+                value={secretForm.mercadoLivreClientId}
+                onChange={(event) =>
+                  setSecretForm({
+                    ...secretForm,
+                    mercadoLivreClientId: event.target.value.trim()
+                  })
+                }
+                placeholder={
+                  data.secrets?.mercadoLivreClientIdConfigured
+                    ? 'Client ID configurado'
+                    : 'Cole o Client ID'
+                }
+                autoComplete="off"
+              />
+            </label>
+
+            <label>
+              Client Secret
+              <input
+                type="password"
+                value={secretForm.mercadoLivreClientSecret}
+                onChange={(event) =>
+                  setSecretForm({
+                    ...secretForm,
+                    mercadoLivreClientSecret: event.target.value
+                  })
+                }
+                placeholder={
+                  data.secrets?.mercadoLivreClientSecretConfigured
+                    ? 'Secret configurado — digite para substituir'
+                    : 'Cole o Client Secret'
+                }
+                autoComplete="new-password"
+              />
+              <small>A chave será criptografada no servidor.</small>
+            </label>
+
+            {data.secrets?.mercadoLivreConnected && (
+              <div className="source-note">
+                <strong>Conectado</strong>
+                <span>
+                  {data.secrets.mercadoLivreUserId
+                    ? `Conta ${data.secrets.mercadoLivreUserId}. `
+                    : ''}
+                  O token será renovado automaticamente.
+                </span>
+              </div>
+            )}
+
+            <button
+              className="button primary full"
+              type="button"
+              onClick={connectMercadoLivre}
+            >
+              {data.secrets?.mercadoLivreConnected
+                ? 'Reconectar Mercado Livre'
+                : 'Conectar Mercado Livre'}
+            </button>
+
+            {data.secrets?.mercadoLivreConnected && (
+              <button
+                className="button subtle full"
+                type="button"
+                onClick={testMercadoLivre}
+              >
+                Testar conexão do Mercado Livre
+              </button>
+            )}
+          </div>
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand shopee">S</div><div><h2>Shopee</h2><p>Open API de afiliados.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableShopee)} onChange={(event) => setData({ ...data, config: { ...data.config, enableShopee: event.target.checked } })} /><span></span></label></div>
@@ -388,7 +617,7 @@ function AdminApp() {
         <div className="form-footer"><span>As alterações entram em vigor após salvar.</span><button className="button primary">Salvar grupos e regras</button></div>
       </form>
     </div>}
-    {tab === 'settings' && <form className="panel settings-form" onSubmit={saveConfig}><h2>Identidade do site</h2><div className="settings-grid">{[['brandName','Nome do site'],['heroTitle','Título principal'],['heroText','Texto principal'],['primaryColor','Cor principal'],['disclosure','Aviso de afiliado']].map(([key,label]) => <label key={key}>{label}{['heroText','disclosure'].includes(key) ? <textarea value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} /> : <input type={key === 'primaryColor' ? 'color' : 'text'} value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} />}</label>)}</div><button className="button primary">Salvar aparência</button></form>}
+    {tab === 'settings' && <form className="panel settings-form" onSubmit={saveConfig}><h2>Identidade do site</h2><div className="settings-grid">{[['brandName', 'Nome do site'], ['heroTitle', 'Título principal'], ['heroText', 'Texto principal'], ['primaryColor', 'Cor principal'], ['disclosure', 'Aviso de afiliado']].map(([key, label]) => <label key={key}>{label}{['heroText', 'disclosure'].includes(key) ? <textarea value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} /> : <input type={key === 'primaryColor' ? 'color' : 'text'} value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} />}</label>)}</div><button className="button primary">Salvar aparência</button></form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;

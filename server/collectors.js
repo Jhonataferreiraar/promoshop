@@ -75,41 +75,183 @@ async function fetchJson(url, options = {}) {
 
 export async function collectMercadoLivre(config, secrets) {
   if (!config.enableMercadoLivre) return [];
+
   const token = await getMercadoLivreAccessToken();
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const queries = String(config.mercadoLivreQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
+  const headers = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+
+  const categoryIds = Array.isArray(config.mercadoLivreCategories)
+    ? config.mercadoLivreCategories.filter(Boolean)
+    : [];
+
+  const queries = String(config.mercadoLivreQueries || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
   const collected = [];
-  for (const query of queries) {
-    const searchUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=MLB&q=${encodeURIComponent(query)}&limit=6`;
-    const search = await fetchJson(searchUrl, { headers });
-    const products = (search.results || []).slice(0, 6);
-    const detailResults = await Promise.allSettled(products.map(async (product) => {
-      const productId = encodeURIComponent(product.id);
-      const detail = product.buy_box_winner && product.pictures?.length
-        ? product
-        : await fetchJson(`https://api.mercadolibre.com/products/${productId}`, { headers });
-      if (detail.buy_box_winner) return detail;
-      let listings;
-      try { listings = await fetchJson(`https://api.mercadolibre.com/products/${productId}/items?limit=5`, { headers }); }
-      catch (error) {
-        if (/status 404|no winners found/i.test(error.message)) return detail;
-        throw error;
-      }
-      const availableListings = (listings.results || []).filter((item) => Number(item.price) > 0);
-      const selectedListing = availableListings[0] || null;
-      return selectedListing ? { ...detail, buy_box_winner: selectedListing } : detail;
-    }));
-    const normalized = detailResults
+
+  async function processProducts(products) {
+    const limitedProducts = products.slice(0, 10);
+
+    const detailResults = await Promise.allSettled(
+      limitedProducts.map(async (product) => {
+        const productId = encodeURIComponent(product.id);
+
+        const detail =
+          product.buy_box_winner && product.pictures?.length
+            ? product
+            : await fetchJson(
+              `https://api.mercadolibre.com/products/${productId}`,
+              { headers }
+            );
+
+        if (detail.buy_box_winner) {
+          return detail;
+        }
+
+        let listings;
+
+        try {
+          listings = await fetchJson(
+            `https://api.mercadolibre.com/products/${productId}/items?limit=5`,
+            { headers }
+          );
+        } catch (error) {
+          if (/status 404|no winners found/i.test(error.message)) {
+            return detail;
+          }
+
+          throw error;
+        }
+
+        const availableListings = (listings.results || [])
+          .filter((item) => Number(item.price) > 0);
+
+        const selectedListing = availableListings[0] || null;
+
+        return selectedListing
+          ? {
+            ...detail,
+            buy_box_winner: selectedListing
+          }
+          : detail;
+      })
+    );
+
+    return detailResults
       .filter((result) => result.status === 'fulfilled')
-      .map((result) => normalizeMercadoLivreCatalog(result.value))
+      .map((result) =>
+        normalizeMercadoLivreCatalog(result.value)
+      )
       .filter(Boolean);
-    if (products.length && !normalized.length) {
-      const failure = detailResults.find((result) => result.status === 'rejected');
-      if (failure) throw failure.reason;
-    }
-    collected.push(...normalized);
   }
-  return collected;
+
+  /*
+   * =====================================================
+   * 1. BUSCA POR CATEGORIAS SELECIONADAS
+   * =====================================================
+   */
+
+  for (const categoryId of categoryIds) {
+    try {
+      const searchUrl =
+        `https://api.mercadolibre.com/products/search` +
+        `?status=active` +
+        `&site_id=MLB` +
+        `&category_id=${encodeURIComponent(categoryId)}` +
+        `&limit=10`;
+
+      const search = await fetchJson(searchUrl, { headers });
+
+      const products = search.results || [];
+
+      if (!products.length) {
+        await addLog(
+          `Mercado Livre: nenhuma oferta encontrada na categoria ${categoryId}.`,
+          'info'
+        );
+
+        continue;
+      }
+
+      const normalized = await processProducts(products);
+
+      collected.push(...normalized);
+
+      await addLog(
+        `Mercado Livre: categoria ${categoryId} retornou ${normalized.length} ofertas.`,
+        'info'
+      );
+    } catch (error) {
+      await addLog(
+        `Mercado Livre: erro na categoria ${categoryId}: ${error.message}`,
+        'error'
+      );
+    }
+  }
+
+  /*
+   * =====================================================
+   * 2. BUSCA POR PALAVRAS-CHAVE
+   * =====================================================
+   */
+
+  for (const query of queries) {
+    try {
+      const searchUrl =
+        `https://api.mercadolibre.com/products/search` +
+        `?status=active` +
+        `&site_id=MLB` +
+        `&q=${encodeURIComponent(query)}` +
+        `&limit=10`;
+
+      const search = await fetchJson(searchUrl, { headers });
+
+      const products = search.results || [];
+
+      if (!products.length) {
+        await addLog(
+          `Mercado Livre: nenhuma oferta encontrada para "${query}".`,
+          'info'
+        );
+
+        continue;
+      }
+
+      const normalized = await processProducts(products);
+
+      collected.push(...normalized);
+
+      await addLog(
+        `Mercado Livre: busca "${query}" retornou ${normalized.length} ofertas.`,
+        'info'
+      );
+    } catch (error) {
+      await addLog(
+        `Mercado Livre: erro na busca "${query}": ${error.message}`,
+        'error'
+      );
+    }
+  }
+
+  /*
+   * =====================================================
+   * 3. REMOVE PRODUTOS DUPLICADOS
+   * =====================================================
+   */
+
+  const uniqueOffers = [
+    ...new Map(
+      collected.map((offer) => [
+        offer.id,
+        offer
+      ])
+    ).values()
+  ];
+
+  return uniqueOffers;
 }
 
 async function shopeeGraphQL(appId, appSecret, query) {
