@@ -157,11 +157,13 @@ function AdminApp() {
   const [adminOfferStore, setAdminOfferStore] = useState('Todas');
   const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
 
-  async function load() {
+  async function load({ preserveConfig = false } = {}) {
     try {
       const result = await authApi('/admin/dashboard');
-      setData(result);
-      setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
+      setData((current) => preserveConfig ? { ...result, config: current.config } : result);
+      if (!preserveConfig) {
+        setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
+      }
     }
     catch (error) {
       if (error.status === 401) {
@@ -173,7 +175,7 @@ function AdminApp() {
   useEffect(() => { if (token) load(); }, [token]);
   useEffect(() => {
     if (!token || tab !== 'whatsapp') return undefined;
-    const interval = window.setInterval(load, 4000);
+    const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   if (!token) return <Login onLogin={setToken} />;
