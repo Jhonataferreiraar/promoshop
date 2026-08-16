@@ -197,7 +197,7 @@ app.post('/api/admin/sources/mercadolivre/connect', requireAdmin, async (req, re
     const fallbackOrigin = String(process.env.RENDER_EXTERNAL_URL || process.env.SITE_URL || '').split(',')[0].replace(/\/$/, '');
     const redirectUri = configured || (fallbackOrigin ? `${fallbackOrigin}/api/mercadolivre/callback` : '');
     let parsed;
-    try { parsed = new URL(redirectUri); } catch {}
+    try { parsed = new URL(redirectUri); } catch { }
     if (!parsed || parsed.protocol !== 'https:' || parsed.pathname !== '/api/mercadolivre/callback' || parsed.search || parsed.hash) {
       return res.status(400).json({ error: 'Informe uma URL HTTPS terminada exatamente em /api/mercadolivre/callback.' });
     }
@@ -381,22 +381,77 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
       await addLog(`IA criou o texto da oferta: ${item.offerTitle}`, 'success');
       return { ...item, message, messageSource: 'ai', aiStatus: 'generated', aiGenerationVersion };
     } catch (error) {
+      const errorMessage = String(error.message || 'Erro desconhecido');
+
+      if (errorMessage === 'Os dados completos do produto não estão mais disponíveis para a IA.') {
+        await updateStore((data) => {
+          const saved = data.queue.find(
+            (entry) => entry.id === item.id && entry.status === 'pending'
+          );
+
+          if (saved) {
+            saved.status = 'failed';
+            saved.force = false;
+            saved.message = '';
+            saved.messageSource = 'awaiting-ai';
+            saved.aiStatus = 'failed';
+            saved.aiError = errorMessage.slice(0, 300);
+            saved.failedAt = new Date().toISOString();
+            delete saved.aiRetryAt;
+          }
+        });
+
+        await addLog(
+          `IA pulou ${item.offerTitle}: dados do produto indisponíveis. A fila seguirá para a próxima oferta válida.`,
+          'error'
+        );
+
+        return { skipped: true };
+      }
+
       const retryAt = new Date(Date.now() + 60_000).toISOString();
+
       await updateStore((data) => {
-        const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.message = ''; saved.messageSource = 'awaiting-ai'; saved.aiStatus = 'waiting'; saved.aiError = String(error.message).slice(0, 300); saved.aiRetryAt = retryAt; }
+        const saved = data.queue.find(
+          (entry) => entry.id === item.id && entry.status === 'pending'
+        );
+
+        if (saved) {
+          saved.message = '';
+          saved.messageSource = 'awaiting-ai';
+          saved.aiStatus = 'waiting';
+          saved.aiError = errorMessage.slice(0, 300);
+          saved.aiRetryAt = retryAt;
+        }
       });
-      await addLog(`IA não criou o texto de ${item.offerTitle}; nova tentativa em 1 minuto (${error.message}).`, 'error');
+
+      await addLog(
+        `IA não criou o texto de ${item.offerTitle}; nova tentativa em 1 minuto (${errorMessage}).`,
+        'error'
+      );
+
       return null;
     }
   }
   if (req.query.forced === '1') {
     const prepared = forced ? await prepareWithAi(forced) : null;
-    return prepared ? res.json(prepared) : res.status(204).end();
+
+    if (prepared && !prepared.skipped) {
+      return res.json(prepared);
+    }
+
+    return res.status(204).end();
   }
   if (forced) {
     const prepared = await prepareWithAi(forced);
-    return prepared ? res.json(prepared) : res.status(204).end();
+
+    if (prepared && !prepared.skipped) {
+      return res.json(prepared);
+    }
+
+    if (!prepared) {
+      return res.status(204).end();
+    }
   }
   const hourMinute = now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false });
   const publishingStart = config.publishingStart || config.quietEnd || '08:00';
@@ -411,18 +466,33 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
   const intervalMinutes = [5, 10, 15, 20, 25, 30].includes(Number(config.whatsappIntervalMinutes)) ? Number(config.whatsappIntervalMinutes) : 15;
   const lastSentAt = queue.filter((item) => item.status === 'sent' && item.sentAt).reduce((latest, item) => Math.max(latest, new Date(item.sentAt).getTime()), 0);
   if (lastSentAt && now.getTime() - lastSentAt < intervalMinutes * 60_000) return res.status(204).end();
-  const next = queue.find((item) => item.status === 'pending');
-  if (!next) return res.status(204).end();
-  const prepared = await prepareWithAi(next);
-  return prepared ? res.json(prepared) : res.status(204).end();
+  const pendingItems = queue.filter(
+    (item) => item.status === 'pending' && !item.force
+  );
+
+  for (const item of pendingItems) {
+    const prepared = await prepareWithAi(item);
+
+    if (prepared?.skipped) {
+      continue;
+    }
+
+    if (prepared) {
+      return res.json(prepared);
+    }
+
+    return res.status(204).end();
+  }
+
+  return res.status(204).end();
 });
 app.get('/api/worker/config', requireWorker, async (_req, res) => {
   const { config } = await readStore();
   const selectedGroups = Array.isArray(config.whatsappGroups)
     ? config.whatsappGroups
-        .slice(0, 100)
-        .map((group) => ({ id: String(group.id || '').slice(0, 120), name: String(group.name || '').slice(0, 160) }))
-        .filter((group) => group.id)
+      .slice(0, 100)
+      .map((group) => ({ id: String(group.id || '').slice(0, 120), name: String(group.name || '').slice(0, 160) }))
+      .filter((group) => group.id)
     : [];
   if (!selectedGroups.length && config.whatsappGroupId) selectedGroups.push({ id: config.whatsappGroupId, name: config.whatsappGroupName || '' });
   res.json({ selectedGroups, groupId: config.whatsappGroupId || '', groupName: config.whatsappGroupName || '', maxPerHour: Number(config.whatsappMaxPerHour || 10) });
