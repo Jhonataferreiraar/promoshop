@@ -1,0 +1,12 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sombra suave para dar o efeito de profundidade -->
+  <filter id="shadow">
+    <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#136ffb" flood-opacity="0.3"/>
+  </filter>
+  
+  <!-- Fundo azul com bordas arredondadas -->
+  <rect x="10" y="10" width="80" height="80" rx="20" fill="#1A6AFE" filter="url(#shadow)" />
+  
+  <!-- Símbolo de Porcentagem -->
+  <text x="50" y="68" font-family="Arial, sans-serif" font-weight="900" font-size="45" fill="white" text-anchor="middle">%</text>
+</svg>
