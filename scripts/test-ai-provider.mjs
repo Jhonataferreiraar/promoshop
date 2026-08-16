@@ -41,7 +41,7 @@ try {
   assert.match(message, /Um som mais livre/);
 
   globalThis.fetch = async (url, options) => {
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent');
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
     assert.equal(options.headers['x-goog-api-key'], 'AIza_test_key_not_real_123456789');
     const body = JSON.parse(options.body);
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
