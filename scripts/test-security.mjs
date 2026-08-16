@@ -46,6 +46,7 @@ try {
   await waitForServer();
   const health = await fetch(`${origin}/api/health`, { headers: { Origin: 'https://malicioso.example' } });
   assert.equal(health.headers.get('access-control-allow-origin'), null);
+  assert.equal(health.headers.get('x-powered-by'), null);
   assert.equal(health.headers.get('x-frame-options'), 'DENY');
   assert.match(health.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
 

@@ -15,6 +15,7 @@ import { generateOfferMessage } from './ai.js';
 import { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization, validateMercadoLivreConnection } from './mercadolivre.js';
 
 const app = express();
+app.disable('x-powered-by');
 const port = Number(process.env.PORT || 3001);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const aiGenerationVersion = 2;
