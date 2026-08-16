@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { generateOfferMessage } from '../server/ai.js';
 
 process.env.AI_API_KEY = 'REDACTED_GROQ_KEY';
+process.env.GEMINI_API_KEY = 'AIza_test_key_not_real_123456789';
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, options) => {
@@ -38,8 +39,35 @@ try {
   assert.match(message, /Fone Bluetooth Teste/);
   assert.match(message, /https:\/\/afiliado\.example\/produto/);
   assert.match(message, /Um som mais livre/);
+
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent');
+    assert.equal(options.headers['x-goog-api-key'], 'AIza_test_key_not_real_123456789');
+    const body = JSON.parse(options.body);
+    assert.equal(body.generationConfig.responseMimeType, 'application/json');
+    assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina.\\n\\n*{title}* por *{price}*.\\n\\nVeja a oferta 👇\\n{link}"}' }] } }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const geminiMessage = await generateOfferMessage({
+    title: 'Fone Bluetooth Teste',
+    store: 'Loja de Teste',
+    price: 99.9,
+    originalPrice: 149.9,
+    affiliateUrl: 'https://afiliado.example/produto',
+    freeShipping: true
+  }, {
+    aiProvider: 'gemini',
+    aiModel: 'gemini-2.5-flash-lite',
+    aiTone: 'friendly',
+    aiInstructions: 'Use poucos emojis.'
+  });
+  assert.match(geminiMessage, /Praticidade para sua rotina/);
+  assert.match(geminiMessage, /https:\/\/afiliado\.example\/produto/);
   console.log('Integração da IA externa validada.');
 } finally {
   globalThis.fetch = originalFetch;
   delete process.env.AI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 }
