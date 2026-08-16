@@ -33,8 +33,16 @@ function normalizeMercadoLivre(item) {
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), ...options });
-  if (!response.ok) throw new Error(`Fonte respondeu com status ${response.status}`);
-  return response.json();
+  const raw = await response.text();
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { payload = {}; }
+  if (!response.ok) {
+    const reason = payload.message || payload.error_description || payload.error || raw.slice(0, 180);
+    const requestId = response.headers.get('x-request-id') || response.headers.get('x-correlation-id');
+    throw new Error(`Fonte respondeu com status ${response.status}${reason ? `: ${reason}` : ''}${requestId ? ` (requisição ${requestId})` : ''}`);
+  }
+  return payload;
 }
 
 export async function collectMercadoLivre(config, secrets) {
