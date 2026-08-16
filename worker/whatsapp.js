@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
@@ -15,6 +15,14 @@ const authDataPath = process.env.WHATSAPP_AUTH_DIR
   : process.env.DATA_DIR
     ? path.join(path.resolve(process.env.DATA_DIR), 'whatsapp-auth')
     : path.join(root, '.wwebjs_auth');
+
+function clearStaleBrowserLocks() {
+  const sessionPath = path.join(authDataPath, 'session-promoshop');
+  for (const lockName of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    try { rmSync(path.join(sessionPath, lockName), { force: true }); }
+    catch (error) { console.warn(`Não foi possível remover ${lockName}: ${error.message}`); }
+  }
+}
 const pairingPhoneNumber = String(process.env.PAIRING_PHONE_NUMBER || '').replace(/\D/g, '');
 const storedSecrets = await readSecrets();
 const workerToken = process.env.WORKER_TOKEN || storedSecrets.workerToken;
@@ -216,6 +224,7 @@ client.on('disconnected', async (reason) => { console.error('WhatsApp desconecta
 
 await refreshConfig();
 await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => {});
+clearStaleBrowserLocks();
 client.initialize().catch(async (error) => {
   const message = error.message?.includes('ERR_NETWORK_ACCESS_DENIED')
     ? 'O Windows bloqueou o acesso ao WhatsApp Web. Reinicie o site fora do modo restrito.'
