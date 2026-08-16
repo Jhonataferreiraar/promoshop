@@ -2387,10 +2387,6 @@ button {
     white-space: nowrap;
   }
 
-  .sidebar-footer {
-    display: none;
-  }
-
   .admin-main {
     width: 100%;
     max-width: none;
@@ -3098,6 +3094,104 @@ button {
   }
 
   .modal-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   SIDEBAR FOOTER — VISÍVEL EM TODAS AS TELAS
+   ========================================================= */
+
+/* Desktop */
+@media (min-width: 901px) {
+  .sidebar-footer {
+    display: grid !important;
+    gap: 7px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, .09);
+  }
+
+  .sidebar-footer a,
+  .sidebar-footer button {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    border-radius: 9px;
+    color: #93a0b5;
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .sidebar-footer a:hover,
+  .sidebar-footer button:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, .05);
+  }
+}
+
+/* Tablet */
+@media (max-width: 900px) {
+  .sidebar-footer {
+    display: flex !important;
+    width: 100%;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, .09);
+  }
+
+  .sidebar-footer a,
+  .sidebar-footer button {
+    flex: 1;
+    min-height: 40px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 9px;
+    color: #aeb9ca;
+    background: rgba(255, 255, 255, .04);
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .sidebar-footer a:hover,
+  .sidebar-footer button:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, .08);
+  }
+}
+
+/* Celular */
+@media (max-width: 640px) {
+  .sidebar-footer {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .sidebar-footer a,
+  .sidebar-footer button {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+  }
+}
+
+/* Celulares muito pequenos */
+@media (max-width: 400px) {
+  .sidebar-footer {
     grid-template-columns: 1fr;
   }
 }
