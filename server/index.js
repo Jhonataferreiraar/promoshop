@@ -18,7 +18,7 @@ const app = express();
 app.disable('x-powered-by');
 const port = Number(process.env.PORT || 3001);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const aiGenerationVersion = 3;
+const aiGenerationVersion = 4;
 let whatsappProcess = null;
 let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
@@ -109,7 +109,7 @@ async function startWhatsappWorker({ mode = 'qr', phoneNumber = '', automatic = 
   return { started: true, message: automatic ? 'Publicador iniciado automaticamente.' : (mode === 'phone' ? 'Aguarde o código de pareamento.' : 'Aguarde o QR Code.') };
 }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString(), aiGenerationVersion, aiTextMode: 'exclusive' }));
 app.get('/api/config/public', async (_req, res) => {
   const { config } = await readStore();
   const { brandName, heroTitle, heroText, primaryColor, whatsappUrl, disclosure } = config;
@@ -175,6 +175,8 @@ app.put('/api/admin/config', requireAdmin, async (req, res) => {
         delete item.aiGeneratedAt;
         delete item.aiGenerationVersion;
         delete item.aiRetryAt;
+        item.message = '';
+        item.messageSource = 'awaiting-ai';
       }
     }
   });
@@ -360,23 +362,29 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
   const now = new Date();
   const forced = queue.find((item) => item.status === 'pending' && item.force);
   async function prepareWithAi(item) {
-    if (!item || config.aiEnabled === false || (item.aiStatus === 'generated' && Number(item.aiGenerationVersion) >= aiGenerationVersion)) return item;
+    if (!item || config.aiEnabled === false) return null;
+    if (item.aiStatus === 'generated'
+      && item.messageSource === 'ai'
+      && Number(item.aiGenerationVersion) >= aiGenerationVersion
+      && item.message) return item;
     if (item.aiStatus === 'waiting' && new Date(item.aiRetryAt || 0).getTime() > Date.now()) return null;
-    const offer = offers.find((entry) => entry.id === item.offerId);
-    if (!offer) return item;
     try {
+      const offer = offers.find((entry) => entry.id === item.offerId) || item.offerSnapshot;
+      if (!offer?.title || !offer?.affiliateUrl || !Number(offer?.price)) {
+        throw new Error('Os dados completos do produto não estão mais disponíveis para a IA.');
+      }
       const message = await generateOfferMessage({ ...offer, publicationId: item.id }, config);
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.message = message; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt; }
+        if (saved) { saved.message = message; saved.messageSource = 'ai'; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt; }
       });
       await addLog(`IA criou o texto da oferta: ${item.offerTitle}`, 'success');
-      return { ...item, message, aiStatus: 'generated', aiGenerationVersion };
+      return { ...item, message, messageSource: 'ai', aiStatus: 'generated', aiGenerationVersion };
     } catch (error) {
       const retryAt = new Date(Date.now() + 60_000).toISOString();
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.aiStatus = 'waiting'; saved.aiError = String(error.message).slice(0, 300); saved.aiRetryAt = retryAt; }
+        if (saved) { saved.message = ''; saved.messageSource = 'awaiting-ai'; saved.aiStatus = 'waiting'; saved.aiError = String(error.message).slice(0, 300); saved.aiRetryAt = retryAt; }
       });
       await addLog(`IA não criou o texto de ${item.offerTitle}; nova tentativa em 1 minuto (${error.message}).`, 'error');
       return null;

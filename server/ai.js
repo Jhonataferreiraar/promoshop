@@ -35,6 +35,17 @@ const toneProfiles = {
   minimal: { label: 'minimalista', instruction: 'Use o mínimo de palavras possível: uma abertura curta e uma chamada direta.' }
 };
 
+const creativeDirections = [
+  'Comece pelo principal benefício percebido no nome do produto.',
+  'Comece com uma pergunta curta relacionada ao uso do produto.',
+  'Comece com uma situação cotidiana em que o produto poderia ser interessante.',
+  'Comece diretamente pelo produto e pela condição de preço.',
+  'Comece destacando a economia, sem usar urgência artificial.',
+  'Comece com uma observação leve e natural, como uma recomendação entre amigos.',
+  'Use uma abertura curta e surpreendente, sem exagerar.',
+  'Apresente primeiro o problema cotidiano e depois conecte o produto.'
+];
+
 function resolveTone(configuredTone, offer) {
   if (configuredTone !== 'varied' && toneProfiles[configuredTone]) return configuredTone;
   const choices = Object.keys(toneProfiles);
@@ -115,6 +126,9 @@ export async function generateOfferMessage(offer, config) {
   const selectedTone = resolveTone(config.aiTone || 'seller', offer);
   const tone = toneProfiles[selectedTone];
   const publicationId = String(offer.publicationId || offer.id || 'prévia').slice(0, 80);
+  const creativeHash = [...`${publicationId}|${offer.title || ''}`]
+    .reduce((total, character) => ((total * 33) + character.codePointAt(0)) >>> 0, 11);
+  const creativeDirection = creativeDirections[creativeHash % creativeDirections.length];
   const prompt = `Crie a mensagem COMPLETA de uma oferta em português do Brasil para WhatsApp.
 
 Produto: ${offer.title}
@@ -122,6 +136,7 @@ Loja: ${offer.store}
 Identificador criativo desta publicação: ${publicationId}
 Estilo: ${tone.label}.
 Direção do estilo: ${tone.instruction}
+Direção criativa exclusiva: ${creativeDirection}
 Instruções adicionais do administrador: ${String(config.aiInstructions || 'Destaque o benefício principal do produto e crie uma chamada para ação curta.').slice(0, 3500)}
 
 Prioridade criativa:
