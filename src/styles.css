@@ -1180,6 +1180,22 @@ footer {
   .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
 }
 
+.ai-toggle small,
+.fallback-template > div > strong,
+.fallback-template > div > small { font-size: 0; }
+.ai-toggle small::after {
+  content: 'Se a IA falhar, a oferta aguarda e tenta novamente; o texto genérico não será publicado.';
+  font-size: 11px;
+}
+.fallback-template > div > strong::after {
+  content: 'Texto de segurança';
+  font-size: 13px;
+}
+.fallback-template > div > small::after {
+  content: 'Usado somente se você desativar a IA. A IA cria sua própria redação e estrutura.';
+  font-size: 11px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

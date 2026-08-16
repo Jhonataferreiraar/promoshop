@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { generateOfferMessage } from '../server/ai.js';
 
-process.env.AI_API_KEY = 'test-key-not-real';
+process.env.AI_API_KEY = 'gsk_test_key_not_real_123456789';
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, options) => {
   assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
-  assert.equal(options.headers.Authorization, 'Bearer test-key-not-real');
+  assert.equal(options.headers.Authorization, 'Bearer gsk_test_key_not_real_123456789');
   const body = JSON.parse(options.body);
   assert.equal(body.model, 'openai/gpt-oss-20b');
   const sentText = body.messages.map((message) => message.content).join('\n');
@@ -14,8 +14,9 @@ globalThis.fetch = async (url, options) => {
   assert.match(sentText, /Loja de Teste/);
   assert.doesNotMatch(sentText, /https:\/\/afiliado\.example/);
   assert.doesNotMatch(sentText, /11999999999/);
+  assert.doesNotMatch(sentText, /Modelo preferido do administrador/);
   return new Response(JSON.stringify({
-    choices: [{ message: { content: '{"category":"electronics","angle":"deal","cta":"check"}' } }]
+    choices: [{ message: { content: '{"message":"🎧 Um som mais livre para acompanhar sua rotina.\\n\\n*{title}* está por *{price}* e merece uma olhada.\\n\\nConfira aqui 👇\\n{link}"}' } }]
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
@@ -36,6 +37,7 @@ try {
   });
   assert.match(message, /Fone Bluetooth Teste/);
   assert.match(message, /https:\/\/afiliado\.example\/produto/);
+  assert.match(message, /Um som mais livre/);
   console.log('Integração da IA externa validada.');
 } finally {
   globalThis.fetch = originalFetch;
