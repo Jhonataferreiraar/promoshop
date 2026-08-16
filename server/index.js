@@ -23,13 +23,50 @@ let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let collectionInProgress = false;
+const loginAttempts = new Map();
+const loginWindowMs = 15 * 60 * 1000;
+const loginMaxAttempts = 5;
+
+app.set('trust proxy', 1);
+
+function loginAttemptState(ip) {
+  const now = Date.now();
+  for (const [key, value] of loginAttempts) {
+    if (value.resetAt <= now && value.blockedUntil <= now) loginAttempts.delete(key);
+  }
+  return loginAttempts.get(ip) || { count: 0, resetAt: now + loginWindowMs, blockedUntil: 0 };
+}
+
+function registerFailedLogin(ip) {
+  const state = loginAttemptState(ip);
+  state.count += 1;
+  if (state.count >= loginMaxAttempts) state.blockedUntil = Date.now() + loginWindowMs;
+  loginAttempts.set(ip, state);
+  return state;
+}
 
 function whatsappAutoStartEnabled(config) {
   if (process.env.WHATSAPP_AUTOSTART !== undefined) return !['0', 'false', 'no'].includes(String(process.env.WHATSAPP_AUTOSTART).toLowerCase());
   return config.whatsappAutoStart !== false;
 }
 
-app.use(cors({ origin: process.env.SITE_URL ? process.env.SITE_URL.split(',') : true }));
+const allowedOrigins = String(process.env.SITE_URL || '').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ''))) return callback(null, true);
+    return callback(null, false);
+  }
+}));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'");
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (req.path.startsWith('/api/admin') || req.path.startsWith('/api/auth')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 
 async function startWhatsappWorker({ mode = 'qr', phoneNumber = '', automatic = false } = {}) {
@@ -83,15 +120,37 @@ app.get('/api/offers', async (_req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const secrets = await readSecrets();
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  const attemptState = loginAttemptState(clientIp);
+  if (attemptState.blockedUntil > Date.now()) {
+    const retryAfter = Math.max(1, Math.ceil((attemptState.blockedUntil - Date.now()) / 1000));
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: 'Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.' });
+  }
+  let secrets = await readSecrets();
+  if (verifyPassword('admin123', secrets.adminPasswordHash)) {
+    const migrationPassword = String(process.env.ADMIN_PASSWORD || '');
+    if (migrationPassword.length < 12) {
+      return res.status(503).json({ error: 'A senha inicial antiga foi desativada. Defina ADMIN_PASSWORD com pelo menos 12 caracteres no ambiente.' });
+    }
+    secrets = await updateSecrets({ adminPassword: migrationPassword });
+  }
   const expectedUser = process.env.ADMIN_USER || secrets.adminUser;
   const userOk = String(req.body.username || '') === expectedUser;
   const password = String(req.body.password || '');
-  const passOk = process.env.ADMIN_PASSWORD
-    ? password.length === process.env.ADMIN_PASSWORD.length && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(process.env.ADMIN_PASSWORD))
-    : verifyPassword(password, secrets.adminPasswordHash);
-  if (!userOk || !passOk) return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
-  res.json({ token: createToken(expectedUser) });
+  const environmentPassword = String(process.env.ADMIN_PASSWORD || '');
+  if (!secrets.adminPasswordHash && environmentPassword.length < 12) {
+    return res.status(503).json({ error: 'Defina ADMIN_PASSWORD com pelo menos 12 caracteres antes do primeiro acesso.' });
+  }
+  const passOk = secrets.adminPasswordHash
+    ? verifyPassword(password, secrets.adminPasswordHash)
+    : environmentPassword && password.length === environmentPassword.length && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(environmentPassword));
+  if (!userOk || !passOk) {
+    registerFailedLogin(clientIp);
+    return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
+  }
+  loginAttempts.delete(clientIp);
+  res.json({ token: createToken(expectedUser, secrets.adminSessionVersion) });
 });
 
 app.get('/api/admin/dashboard', requireAdmin, async (_req, res) => {
@@ -120,6 +179,9 @@ app.put('/api/admin/config', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 app.put('/api/admin/secrets', requireAdmin, async (req, res) => {
+  if (req.body?.adminPassword && String(req.body.adminPassword).length < 12) {
+    return res.status(400).json({ error: 'A nova senha deve ter pelo menos 12 caracteres.' });
+  }
   const updated = await updateSecrets(req.body || {});
   await addLog('Credenciais protegidas foram atualizadas.', 'success');
   res.json(secretStatus(updated));

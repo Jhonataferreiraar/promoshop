@@ -9,6 +9,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SITE_URL
+        value: https://promoshop.onrender.com
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: DATA_DIR
         value: /var/data
       - key: CHROME_PATH

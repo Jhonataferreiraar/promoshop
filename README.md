@@ -14,11 +14,12 @@ Projeto de afiliados com site público, painel administrativo, coleta de ofertas
 No Windows, depois da primeira instalação, você pode simplesmente dar dois cliques em `INICIAR-SITE.cmd`. Não abra o `index.html` diretamente, pois aplicações React precisam do servidor local e a página ficará em branco.
 
 1. Execute `npm install` na primeira vez.
-2. Dê dois cliques em `INICIAR-SITE.cmd` ou execute `npm start`.
-3. Abra `http://localhost:3001`.
-4. O painel fica em `http://localhost:3001/admin`.
+2. Copie `.env.example` para `.env` e defina `ADMIN_PASSWORD` com uma senha exclusiva de pelo menos 12 caracteres.
+3. Dê dois cliques em `INICIAR-SITE.cmd` ou execute `npm start`.
+4. Abra `http://localhost:3001`.
+5. O painel fica em `http://localhost:3001/admin`.
 
-O primeiro acesso é `admin` / `admin123`. Entre em **Segurança** e troque esses dados antes de publicar.
+O primeiro usuário é `admin` e a senha é a definida em `ADMIN_PASSWORD`. Depois do primeiro acesso, você pode atualizá-los em **Segurança**.
 
 Todas as configurações comuns ficam no painel:
 
@@ -49,7 +50,7 @@ A Shopee fica desativada até que um feed autorizado da conta seja configurado n
 
 ## Configuração avançada
 
-O arquivo `.env` é opcional. Ele serve apenas para substituir configurações em ambientes de servidor ou implantação avançada. No uso local normal, faça tudo pelo painel.
+O arquivo `.env` é necessário somente para definir a senha segura no primeiro uso. Depois disso, as configurações comuns ficam no painel.
 
 ## Produção
 
@@ -59,6 +60,7 @@ Para manter o site, o agendador e o WhatsApp ligados continuamente, publique o p
 - O processo principal inicia e recupera o publicador do WhatsApp automaticamente quando essa opção estiver ligada no painel.
 - `data/`, `.wwebjs_auth/` e `.env` são persistentes e nunca devem ser enviados ao GitHub.
 - A chave da IA e as credenciais das plataformas são guardadas no cofre criptografado local.
+- Nunca envie `.env`, `data/` ou a sessão do WhatsApp ao GitHub. O `.gitignore` já bloqueia esses arquivos.
 
 ## Render Starter
 

@@ -59,7 +59,7 @@ Não transfira a sessão do WhatsApp criada no Windows. Faça uma nova conexão 
 
 ## 5. Configurar o ambiente e o serviço
 
-Copie `deploy/.env.production.example` para `/var/www/promoshop/.env`, substitua `SEU_DOMINIO` e gere o `AUTH_SECRET` com `openssl rand -hex 32`.
+Copie `deploy/.env.production.example` para `/var/www/promoshop/.env`, substitua `SEU_DOMINIO`, defina uma `ADMIN_PASSWORD` exclusiva com pelo menos 12 caracteres e gere o `AUTH_SECRET` com `openssl rand -hex 32`.
 
 ```bash
 sudo cp /var/www/promoshop/deploy/promoshop.service /etc/systemd/system/promoshop.service

@@ -63,9 +63,11 @@ async function writeSecrets(value) {
 }
 
 async function defaults() {
+  const bootstrapPassword = String(process.env.ADMIN_PASSWORD || '');
   return {
     adminUser: 'admin',
-    adminPasswordHash: hashPassword('admin123'),
+    adminPasswordHash: bootstrapPassword.length >= 12 ? hashPassword(bootstrapPassword) : '',
+    adminSessionVersion: 0,
     mercadoLivreClientId: '',
     mercadoLivreClientSecret: '',
     mercadoLivreAccessToken: '',
@@ -102,7 +104,10 @@ async function updateSecretsUnlocked(changes) {
   const current = await readSecrets();
   const next = { ...current };
   if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
-  if (changes.adminPassword) next.adminPasswordHash = hashPassword(String(changes.adminPassword));
+  if (changes.adminPassword) {
+    next.adminPasswordHash = hashPassword(String(changes.adminPassword));
+    next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
+  }
   if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
   if (typeof changes.mercadoLivreClientSecret === 'string' && changes.mercadoLivreClientSecret.trim()) next.mercadoLivreClientSecret = changes.mercadoLivreClientSecret.trim();
   if (typeof changes.mercadoLivreAccessToken === 'string' && changes.mercadoLivreAccessToken.trim()) next.mercadoLivreAccessToken = changes.mercadoLivreAccessToken.trim();
@@ -152,6 +157,7 @@ export function secretStatus(secrets) {
   const geminiApiKey = normalizeApiKey(secrets.geminiApiKey);
   return {
     adminUser: secrets.adminUser,
+    adminSetupRequired: !secrets.adminPasswordHash && !process.env.ADMIN_PASSWORD,
     mercadoLivreClientIdConfigured: Boolean(secrets.mercadoLivreClientId),
     mercadoLivreClientSecretConfigured: Boolean(secrets.mercadoLivreClientSecret),
     mercadoLivreClientId: secrets.mercadoLivreClientId || '',

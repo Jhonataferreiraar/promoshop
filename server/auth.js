@@ -25,23 +25,27 @@ const sessionSecret = loadSessionSecret();
 function base64url(value) { return Buffer.from(value).toString('base64url'); }
 function signature(payload) { return crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); }
 
-export function createToken(username) {
-  const payload = base64url(JSON.stringify({ username, expiresAt: Date.now() + 12 * 60 * 60 * 1000 }));
+export function createToken(username, sessionVersion = 0) {
+  const payload = base64url(JSON.stringify({ username, sessionVersion: Number(sessionVersion || 0), expiresAt: Date.now() + 12 * 60 * 60 * 1000 }));
   return `${payload}.${signature(payload)}`;
 }
 
-export function validateToken(token) {
+export function validateToken(token, expectedSessionVersion = 0) {
   if (!token?.includes('.')) return false;
   const [payload, provided] = token.split('.');
   const expected = signature(payload);
   if (provided.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) return false;
-  try { return JSON.parse(Buffer.from(payload, 'base64url').toString()).expiresAt > Date.now(); }
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return decoded.expiresAt > Date.now() && Number(decoded.sessionVersion || 0) === Number(expectedSessionVersion || 0);
+  }
   catch { return false; }
 }
 
-export function requireAdmin(req, res, next) {
+export async function requireAdmin(req, res, next) {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  if (!validateToken(token)) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  const secrets = await readSecrets();
+  if (!validateToken(token, secrets.adminSessionVersion)) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
   next();
 }
 
