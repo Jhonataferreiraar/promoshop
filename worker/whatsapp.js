@@ -31,6 +31,20 @@ let groupName = '';
 let selectedGroups = [];
 let maxPerHour = 10;
 const initialStore = await readStore();
+const chromiumArgs = [
+  '--disable-dev-shm-usage',
+  '--disable-gpu',
+  '--disable-extensions',
+  '--disable-software-rasterizer',
+  '--disable-default-apps',
+  '--disable-sync',
+  '--hide-scrollbars',
+  '--mute-audio',
+  '--no-zygote',
+  '--renderer-process-limit=1',
+  '--js-flags=--max-old-space-size=128'
+];
+if (typeof process.getuid === 'function' && process.getuid() === 0) chromiumArgs.unshift('--no-sandbox', '--disable-setuid-sandbox');
 const browserPath = process.env.CHROME_PATH || [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -51,21 +65,7 @@ const client = new Client({
   puppeteer: {
     headless: Boolean(initialStore.config.whatsappHeadless),
     ...(browserPath ? { executablePath: browserPath } : {}),
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-extensions',
-      '--disable-software-rasterizer',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--no-zygote',
-      '--renderer-process-limit=1',
-      '--js-flags=--max-old-space-size=128'
-    ]
+    args: chromiumArgs
   }
 });
 

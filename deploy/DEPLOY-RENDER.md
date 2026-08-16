@@ -5,7 +5,7 @@
 - Um Web Service Starter executa o site, a API, o agendador e o publicador do WhatsApp.
 - O Chromium roda sem janela aberta dentro do serviço.
 - O disco persistente `/var/data` guarda configurações, credenciais criptografadas e a sessão do WhatsApp.
-- A IA continua externa pela Groq.
+- A IA continua externa pelo Gemini, Groq ou outro provedor escolhido no painel.
 
 ## Criar pelo Blueprint
 
@@ -22,11 +22,12 @@
 ## Primeira entrada
 
 1. Abra a URL `onrender.com` criada pelo Render.
-2. Entre no painel inicialmente com `admin` / `admin123`.
-3. Troque imediatamente usuário e senha na seção de segurança do painel.
-4. Cadastre novamente as credenciais do Mercado Livre, Shopee, AliExpress e Groq. Elas não são enviadas ao GitHub.
-5. Em WhatsApp, clique para conectar e leia o QR Code exibido no painel.
-6. Aguarde os grupos carregarem, selecione os destinos e salve.
+2. Em **Environment**, crie `ADMIN_PASSWORD` com uma senha exclusiva de pelo menos 12 caracteres e faça um novo deploy.
+3. Entre com o usuário `admin` e a senha definida nessa variável.
+4. Salve uma nova senha na seção **Segurança**; ela passará a ser protegida no disco persistente e as sessões anteriores serão encerradas.
+5. Cadastre as credenciais do Mercado Livre, Shopee, AliExpress e da IA. Elas não são enviadas ao GitHub.
+6. Em WhatsApp, clique para conectar e leia o QR Code exibido no painel.
+7. Aguarde os grupos carregarem, selecione os destinos e salve.
 
 ## Domínio
 

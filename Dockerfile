@@ -9,6 +9,7 @@ RUN apt-get update \
       chromium \
       fonts-liberation \
       fonts-noto-color-emoji \
+      gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -19,9 +20,14 @@ RUN npm ci --include=dev
 COPY . .
 RUN npm run build
 RUN npm prune --omit=dev
+RUN mkdir -p /var/data \
+    && chown -R node:node /app /var/data \
+    && chmod 0755 /app/docker-entrypoint.sh
 
 ENV NODE_ENV=production
 
 EXPOSE 10000
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 CMD ["npm", "start"]
