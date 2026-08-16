@@ -84,8 +84,16 @@ export async function collectMercadoLivre(config, secrets) {
     const search = await fetchJson(searchUrl, { headers });
     const products = (search.results || []).slice(0, 6);
     const detailResults = await Promise.allSettled(products.map(async (product) => {
-      if (product.buy_box_winner && product.permalink && product.pictures?.length) return product;
-      return fetchJson(`https://api.mercadolibre.com/products/${encodeURIComponent(product.id)}`, { headers });
+      const productId = encodeURIComponent(product.id);
+      const [detail, listings] = await Promise.all([
+        product.buy_box_winner && product.pictures?.length
+          ? Promise.resolve(product)
+          : fetchJson(`https://api.mercadolibre.com/products/${productId}`, { headers }),
+        fetchJson(`https://api.mercadolibre.com/products/${productId}/items?limit=5`, { headers })
+      ]);
+      const availableListings = (listings.results || []).filter((item) => Number(item.price) > 0);
+      const selectedListing = detail.buy_box_winner || availableListings[0] || null;
+      return selectedListing ? { ...detail, buy_box_winner: selectedListing } : detail;
     }));
     const normalized = detailResults
       .filter((result) => result.status === 'fulfilled')
