@@ -135,11 +135,13 @@ Regras obrigatórias:
   ];
   let response;
   let apiKeySource = 'configuração';
+  let apiKeyEnding = '';
   if (provider === 'groq') {
     const secrets = await readSecrets();
     const savedApiKey = normalizeApiKey(secrets.aiApiKey);
     const environmentApiKey = normalizeApiKey(process.env.AI_API_KEY);
     const apiKey = savedApiKey || environmentApiKey;
+    apiKeyEnding = apiKey.slice(-4);
     apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
     if (!apiKey) throw new Error('Informe a chave da Groq no painel.');
     if (!apiKey.startsWith('gsk_') || apiKey.length < 20) {
@@ -170,7 +172,7 @@ Regras obrigatórias:
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     if (provider === 'groq' && response.status === 401) {
-      throw new Error(`A Groq recusou a chave do ${apiKeySource} (final ${apiKey.slice(-4)}). Revogue essa chave, crie outra em console.groq.com/keys e copie o valor secreto completo que começa com gsk_.`);
+      throw new Error(`A Groq recusou a chave do ${apiKeySource} (final ${apiKeyEnding}). Revogue essa chave, crie outra em console.groq.com/keys e copie o valor secreto completo que começa com gsk_.`);
     }
     throw new Error(`${provider === 'groq' ? 'Groq' : 'IA local'} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
