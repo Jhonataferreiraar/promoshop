@@ -31,6 +31,34 @@ function normalizeMercadoLivre(item) {
   };
 }
 
+function normalizeMercadoLivreCatalog(product) {
+  const winner = product.buy_box_winner || {};
+  const price = Number(winner.price || 0);
+  const originalPrice = Number(winner.original_price || 0);
+  const id = winner.item_id || product.id;
+  const permalink = product.permalink || (product.id ? `https://www.mercadolivre.com.br/p/${product.id}` : '');
+  const picture = product.pictures?.[0]?.secure_url || product.pictures?.[0]?.url || product.thumbnail || '';
+  if (!id || !product.name || !price || !permalink) return null;
+  return {
+    id: `ml_${id}`,
+    externalId: id,
+    title: product.name,
+    store: 'Mercado Livre',
+    category: product.domain_id?.replace('MLB-', '').replaceAll('_', ' ') || 'Mercado Livre',
+    price,
+    originalPrice,
+    image: String(picture).replace('http://', 'https://'),
+    productUrl: permalink,
+    affiliateUrl: permalink,
+    freeShipping: Boolean(winner.shipping?.free_shipping),
+    featured: calculateDiscount(price, originalPrice) >= 30,
+    status: 'pending-link',
+    source: 'mercado-livre',
+    score: calculateDiscount(price, originalPrice),
+    createdAt: new Date().toISOString()
+  };
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), ...options });
   const raw = await response.text();
@@ -52,9 +80,22 @@ export async function collectMercadoLivre(config, secrets) {
   const queries = String(config.mercadoLivreQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
   const collected = [];
   for (const query of queries) {
-    const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(query)}&limit=15`;
-    const payload = await fetchJson(url, { headers });
-    collected.push(...(payload.results || []).map(normalizeMercadoLivre));
+    const searchUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=MLB&q=${encodeURIComponent(query)}&limit=6`;
+    const search = await fetchJson(searchUrl, { headers });
+    const products = (search.results || []).slice(0, 6);
+    const detailResults = await Promise.allSettled(products.map(async (product) => {
+      if (product.buy_box_winner && product.permalink && product.pictures?.length) return product;
+      return fetchJson(`https://api.mercadolibre.com/products/${encodeURIComponent(product.id)}`, { headers });
+    }));
+    const normalized = detailResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => normalizeMercadoLivreCatalog(result.value))
+      .filter(Boolean);
+    if (products.length && !normalized.length) {
+      const failure = detailResults.find((result) => result.status === 'rejected');
+      if (failure) throw failure.reason;
+    }
+    collected.push(...normalized);
   }
   return collected;
 }
