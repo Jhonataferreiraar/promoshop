@@ -1,0 +1,35 @@
+{
+  "name": "promoshop-afiliados",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n SITE,API -c blue,green \"vite\" \"node --watch server/index.js\"",
+    "dev:web": "vite",
+    "dev:api": "node --watch server/index.js",
+    "build": "vite build",
+    "test:ai": "node scripts/test-ai-provider.mjs",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "whatsapp": "node worker/whatsapp.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "whatsapp-web.js": "^1.33.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "vite": "^7.1.2"
+  },
+  "overrides": {
+    "puppeteer": "24.38.0"
+  }
+}

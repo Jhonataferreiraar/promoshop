@@ -1,0 +1,336 @@
+import { addLog, createId, updateStore } from './store.js';
+import { readSecrets } from './secrets.js';
+import crypto from 'node:crypto';
+
+function calculateDiscount(price, originalPrice) {
+  if (!originalPrice || originalPrice <= price) return 0;
+  return Math.round((1 - price / originalPrice) * 100);
+}
+
+function normalizeMercadoLivre(item) {
+  const price = Number(item.price || 0);
+  const originalPrice = Number(item.original_price || item.originalPrice || 0);
+  return {
+    id: `ml_${item.id}`,
+    externalId: item.id,
+    title: item.title,
+    store: 'Mercado Livre',
+    category: item.domain_id?.replace('MLB-', '').replaceAll('_', ' ') || 'Mercado Livre',
+    price,
+    originalPrice,
+    image: item.thumbnail?.replace('http://', 'https://').replace('-I.', '-O.') || '',
+    productUrl: item.permalink,
+    affiliateUrl: item.permalink,
+    freeShipping: Boolean(item.shipping?.free_shipping),
+    featured: calculateDiscount(price, originalPrice) >= 30,
+    status: 'pending-link',
+    source: 'mercado-livre',
+    score: calculateDiscount(price, originalPrice),
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000), ...options });
+  if (!response.ok) throw new Error(`Fonte respondeu com status ${response.status}`);
+  return response.json();
+}
+
+export async function collectMercadoLivre(config, secrets) {
+  if (!config.enableMercadoLivre) return [];
+  const token = secrets.mercadoLivreAccessToken || process.env.MERCADO_LIVRE_ACCESS_TOKEN;
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const queries = String(config.mercadoLivreQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
+  const collected = [];
+  for (const query of queries) {
+    const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(query)}&limit=15`;
+    const payload = await fetchJson(url, { headers });
+    collected.push(...(payload.results || []).map(normalizeMercadoLivre));
+  }
+  return collected;
+}
+
+async function shopeeGraphQL(appId, appSecret, query) {
+  const body = JSON.stringify({ query });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = crypto.createHash('sha256').update(`${appId}${timestamp}${body}${appSecret}`).digest('hex');
+  const response = await fetch('https://open-api.affiliate.shopee.com.br/graphql', {
+    method: 'POST',
+    signal: AbortSignal.timeout(20_000),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`
+    },
+    body
+  });
+  if (!response.ok) throw new Error(`Open API respondeu com status ${response.status}`);
+  const payload = await response.json();
+  if (payload.errors?.length) {
+    const detail = payload.errors[0]?.extensions?.message || payload.errors[0]?.message || 'Erro desconhecido da Open API';
+    throw new Error(detail);
+  }
+  return payload.data?.productOfferV2?.nodes || [];
+}
+
+function escapeGraphQL(value) {
+  return JSON.stringify(String(value)).slice(1, -1);
+}
+
+export async function collectShopee(config, secrets) {
+  if (!config.enableShopee) return [];
+  const appId = secrets.shopeeAppId || process.env.SHOPEE_APP_ID;
+  const appSecret = secrets.shopeeAppSecret || process.env.SHOPEE_APP_SECRET;
+  if (!appId || !appSecret) throw new Error('Configure o App ID e o App Secret da Open API no painel.');
+  const keywords = String(config.shopeeQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
+  const items = [];
+  for (const keyword of keywords) {
+    const query = `{ productOfferV2(keyword: "${escapeGraphQL(keyword)}", page: 1, limit: 20) { nodes { itemId productName productLink offerLink imageUrl priceMin priceMax priceDiscountRate sales ratingStar commissionRate shopId shopName periodEndTime } pageInfo { page limit hasNextPage } } }`;
+    items.push(...await shopeeGraphQL(appId, appSecret, query));
+  }
+  return items.map((item) => ({
+    id: item.itemId ? `shopee_${item.itemId}` : createId('shopee'),
+    externalId: item.itemId || null,
+    title: item.productName,
+    store: 'Shopee',
+    category: item.shopName || 'Shopee',
+    price: Number(item.priceMin || item.priceMax || 0),
+    originalPrice: Number(item.priceDiscountRate || 0) > 0 ? Number(item.priceMin || item.priceMax || 0) / (1 - Number(item.priceDiscountRate) / 100) : Number(item.priceMax || 0),
+    image: item.imageUrl || '',
+    productUrl: item.productLink || item.offerLink,
+    affiliateUrl: item.offerLink,
+    freeShipping: false,
+    featured: Number(item.priceDiscountRate || 0) >= 30,
+    status: item.offerLink ? 'active' : 'pending-link',
+    source: 'shopee-open-api',
+    score: Number(item.priceDiscountRate || 0),
+    commissionRate: Number(item.commissionRate || 0),
+    sales: Number(item.sales || 0),
+    createdAt: new Date().toISOString()
+  }));
+}
+
+function chinaTimestamp() {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).format(new Date());
+}
+
+function parsePercent(value) {
+  const parsed = Number.parseFloat(String(value || '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function extractAliProducts(value, found = []) {
+  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+    try { return extractAliProducts(JSON.parse(value), found); } catch { return found; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) extractAliProducts(item, found);
+    return found;
+  }
+  if (!value || typeof value !== 'object') return found;
+  if (value.product_id && value.product_title) {
+    found.push(value);
+    return found;
+  }
+  for (const item of Object.values(value)) extractAliProducts(item, found);
+  return found;
+}
+
+function extractAliPromoNames(value, found = []) {
+  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+    try { return extractAliPromoNames(JSON.parse(value), found); } catch { return found; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) extractAliPromoNames(item, found);
+    return found;
+  }
+  if (!value || typeof value !== 'object') return found;
+  if (typeof value.promo_name === 'string' && value.promo_name.trim()) found.push(value.promo_name.trim());
+  for (const item of Object.values(value)) extractAliPromoNames(item, found);
+  return found;
+}
+
+function extractAliPromotionLinks(value, found = []) {
+  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+    try { return extractAliPromotionLinks(JSON.parse(value), found); } catch { return found; }
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) extractAliPromotionLinks(item, found);
+    return found;
+  }
+  if (!value || typeof value !== 'object') return found;
+  if (typeof value.promotion_link === 'string' && value.promotion_link.trim()) {
+    found.push({ sourceValue: String(value.source_value || '').trim(), promotionLink: value.promotion_link.trim() });
+    return found;
+  }
+  for (const item of Object.values(value)) extractAliPromotionLinks(item, found);
+  return found;
+}
+
+async function aliexpressRequest(appKey, appSecret, method, businessParams) {
+  const params = {
+    method,
+    app_key: appKey,
+    sign_method: 'sha256',
+    timestamp: String(Date.now()),
+    format: 'json',
+    v: '2.0',
+    ...businessParams
+  };
+  const canonical = Object.keys(params).sort().map((key) => `${key}${params[key]}`).join('');
+  params.sign = crypto.createHmac('sha256', appSecret).update(canonical, 'utf8').digest('hex').toUpperCase();
+  const response = await fetch('https://api-sg.aliexpress.com/sync', {
+    method: 'POST',
+    signal: AbortSignal.timeout(20_000),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body: new URLSearchParams(params)
+  });
+  if (!response.ok) throw new Error(`Open API respondeu com status ${response.status}`);
+  const payload = await response.json();
+  if (payload.error_response) throw new Error(payload.error_response.sub_msg || payload.error_response.msg || 'Falha de autenticação');
+  const responseKey = `${method.replaceAll('.', '_')}_response`;
+  const responseBody = payload[responseKey]?.resp_result;
+  if (!responseBody) throw new Error('A Open API não retornou uma resposta de produtos.');
+  if (String(responseBody.resp_code || '200') !== '200') throw new Error(responseBody.resp_msg || `Código ${responseBody.resp_code}`);
+  return typeof responseBody.result === 'string' ? JSON.parse(responseBody.result) : responseBody.result;
+}
+
+async function generateCompactAliexpressLinks(items, { appKey, appSecret, appSignature, trackingId }) {
+  const linksByProductId = new Map();
+  for (let offset = 0; offset < items.length; offset += 20) {
+    const batch = items.slice(offset, offset + 20);
+    const sources = batch.map((item) => `https://www.aliexpress.com/item/${item.product_id}.html`);
+    const result = await aliexpressRequest(appKey, appSecret, 'aliexpress.affiliate.link.generate', {
+      ...(appSignature ? { app_signature: appSignature } : {}),
+      tracking_id: trackingId,
+      promotion_link_type: '0',
+      source_values: sources.join(',')
+    });
+    const generated = extractAliPromotionLinks(result);
+    for (let index = 0; index < generated.length; index += 1) {
+      const entry = generated[index];
+      const productId = entry.sourceValue.match(/\/item\/(\d+)\.html/i)?.[1] || String(batch[index]?.product_id || '');
+      if (productId && entry.promotionLink) linksByProductId.set(productId, entry.promotionLink);
+    }
+  }
+  return linksByProductId;
+}
+
+export async function collectAliexpress(config, secrets) {
+  if (!config.enableAliexpress) return [];
+  const appKey = secrets.aliexpressAppKey || process.env.ALIEXPRESS_APP_KEY;
+  const appSecret = secrets.aliexpressAppSecret || process.env.ALIEXPRESS_APP_SECRET;
+  const appSignature = secrets.aliexpressAppSignature || process.env.ALIEXPRESS_APP_SIGNATURE;
+  const trackingId = config.aliexpressTrackingId || process.env.ALIEXPRESS_TRACKING_ID;
+  if (!appKey || !appSecret || !trackingId) throw new Error('Configure App Key, App Secret e Tracking ID no painel.');
+  const products = [];
+  const promoInfo = await aliexpressRequest(appKey, appSecret, 'aliexpress.affiliate.featuredpromo.get', {
+    ...(appSignature ? { app_signature: appSignature } : {})
+  });
+  const promotions = [...new Set(extractAliPromoNames(promoInfo))].slice(0, 10);
+  for (const promotionName of promotions) {
+    const result = await aliexpressRequest(appKey, appSecret, 'aliexpress.affiliate.featuredpromo.products.get', {
+      ...(appSignature ? { app_signature: appSignature } : {}),
+      tracking_id: trackingId,
+      promotion_name: promotionName,
+      page_no: '1',
+      page_size: '25',
+      target_currency: 'BRL',
+      target_language: 'PT',
+      country: 'BR',
+      sort: 'discountDesc',
+      fields: 'product_id,product_title,product_main_image_url,target_sale_price,target_original_price,discount,promotion_link,product_detail_url,commission_rate,lastest_volume'
+    });
+    products.push(...extractAliProducts(result));
+  }
+  const uniqueProducts = [...new Map(products.map((item) => [String(item.product_id), item])).values()];
+  const compactLinks = await generateCompactAliexpressLinks(uniqueProducts, { appKey, appSecret, appSignature, trackingId });
+  return uniqueProducts.map((item) => {
+    const price = Number(item.target_sale_price || item.sale_price || 0);
+    const discount = parsePercent(item.discount);
+    const originalPrice = Number(item.target_original_price || item.original_price || 0) || (discount > 0 ? price / (1 - discount / 100) : price);
+    return {
+      id: `aliexpress_${item.product_id}`,
+      externalId: item.product_id,
+      title: item.product_title,
+      store: 'AliExpress',
+      category: 'AliExpress',
+      price,
+      originalPrice,
+      image: item.product_main_image_url || '',
+      productUrl: item.product_detail_url || item.promotion_link,
+      affiliateUrl: compactLinks.get(String(item.product_id)) || item.promotion_link,
+      freeShipping: false,
+      featured: discount >= 30,
+      status: item.promotion_link ? 'active' : 'pending-link',
+      source: 'aliexpress-open-api',
+      score: discount,
+      commissionRate: parsePercent(item.commission_rate),
+      sales: Number(item.lastest_volume || 0),
+      createdAt: new Date().toISOString()
+    };
+  });
+}
+
+export async function runCollection() {
+  const snapshot = await (await import('./store.js')).readStore();
+  const config = snapshot.config;
+  const secrets = await readSecrets();
+  let candidates = [];
+  const errors = [];
+  try { candidates.push(...await collectMercadoLivre(config, secrets)); }
+  catch (error) { errors.push(`Mercado Livre: ${error.message}`); }
+  try { candidates.push(...await collectShopee(config, secrets)); }
+  catch (error) { errors.push(`Shopee: ${error.message}`); }
+  try { candidates.push(...await collectAliexpress(config, secrets)); }
+  catch (error) { errors.push(`AliExpress: ${error.message}`); }
+
+  const minDiscount = Number(config.minDiscount || 0);
+  candidates = candidates.filter((offer) => offer.title && offer.price > 0 && offer.score >= minDiscount);
+  let imported = 0;
+  let refreshedLinks = 0;
+  await updateStore((data) => {
+    const existing = new Map(data.offers.map((offer) => [offer.id, offer]));
+    for (const offer of candidates.sort((a, b) => b.score - a.score)) {
+      const savedOffer = existing.get(offer.id);
+      if (savedOffer) {
+        if (offer.affiliateUrl && savedOffer.affiliateUrl !== offer.affiliateUrl) {
+          savedOffer.affiliateUrl = offer.affiliateUrl;
+          savedOffer.productUrl = offer.productUrl;
+          for (const queueItem of data.queue.filter((item) => item.offerId === offer.id && item.status === 'pending')) {
+            queueItem.message = makeQueueItem(savedOffer, data.config).message;
+          }
+          refreshedLinks += 1;
+        }
+        continue;
+      }
+      data.offers.unshift(offer);
+      existing.set(offer.id, offer);
+      imported += 1;
+      if (data.config.autoQueue && offer.status === 'active') {
+        data.queue.push(makeQueueItem(offer, data.config));
+      }
+    }
+    data.offers = data.offers.slice(0, 500);
+    data.meta.lastCollectionAt = new Date().toISOString();
+  });
+  await addLog(`Coleta finalizada: ${imported} ofertas novas${refreshedLinks ? ` e ${refreshedLinks} links compactados` : ''}.`, imported || refreshedLinks ? 'success' : 'info');
+  for (const error of errors) await addLog(error, 'error');
+  return { imported, refreshedLinks, errors };
+}
+
+export function makeQueueItem(offer, config) {
+  const discount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
+  const values = {
+    title: offer.title,
+    price: Number(offer.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    originalPrice: Number(offer.originalPrice || offer.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    discount,
+    shipping: offer.freeShipping ? '🚚 Frete grátis' : '',
+    link: offer.affiliateUrl
+  };
+  const message = String(config.messageTemplate || '{title}\n{link}').replace(/\{(\w+)\}/g, (_, key) => values[key] ?? '');
+  return { id: createId('queue'), offerId: offer.id, offerTitle: offer.title, store: offer.store, message, image: offer.image, status: 'pending', attempts: 0, createdAt: new Date().toISOString(), sentAt: null, error: null };
+}

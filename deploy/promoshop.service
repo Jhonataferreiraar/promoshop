@@ -1,0 +1,19 @@
+[Unit]
+Description=PromoShop - site, agendador e publicador WhatsApp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=promoshop
+Group=promoshop
+WorkingDirectory=/var/www/promoshop
+EnvironmentFile=/var/www/promoshop/.env
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

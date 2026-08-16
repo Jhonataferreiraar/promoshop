@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.wwebjs_auth*/
+.wwebjs_cache*/
+data/db.json
+data/*.tmp
+data/.secret-key
+data/secrets.enc
+npm-debug.log*
+/Projeto de Afiliado/
