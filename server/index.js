@@ -102,7 +102,8 @@ app.get('/api/admin/dashboard', requireAdmin, async (_req, res) => {
 app.put('/api/admin/config', requireAdmin, async (req, res) => {
   await updateStore((data) => {
     const writingStyleChanged = ('aiTone' in req.body && req.body.aiTone !== data.config.aiTone)
-      || ('aiInstructions' in req.body && req.body.aiInstructions !== data.config.aiInstructions);
+      || ('aiInstructions' in req.body && req.body.aiInstructions !== data.config.aiInstructions)
+      || ('messageTemplate' in req.body && req.body.messageTemplate !== data.config.messageTemplate);
     data.config = { ...data.config, ...req.body };
     if (writingStyleChanged) {
       for (const item of data.queue) {

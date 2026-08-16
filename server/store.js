@@ -46,7 +46,7 @@ const initialData = {
     enableShopee: false,
     enableAliexpress: false,
     autoQueue: false,
-    messageTemplate: '🔥 *{title}*\n\nDe: ~{originalPrice}~\nPor: *{price}* ({discount}% OFF)\n{shipping}\n\n🛒 {link}\n\nPreço e estoque podem mudar.'
+    messageTemplate: '🔥 *{title}*\n\n✨ {benefit}\n\nDe: ~{originalPrice}~\nPor: *{price}* 🔥\n💸 {discount}% OFF\n\n{shipping}\n\n👉 Confira a oferta:\n🛒 {link}\n\n⚠️ Preço, promoção e estoque podem mudar a qualquer momento.\n\n_Link de afiliado._'
   },
   offers: [],
   queue: [],
