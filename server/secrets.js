@@ -8,6 +8,14 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const keyFile = path.join(dataDir, '.secret-key');
 const secretsFile = path.join(dataDir, 'secrets.enc');
 
+export function normalizeApiKey(value) {
+  return String(value || '')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\s+/g, '');
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
@@ -87,13 +95,14 @@ export async function updateSecrets(changes) {
   if (typeof changes.aliexpressAppSecret === 'string' && changes.aliexpressAppSecret.trim()) next.aliexpressAppSecret = changes.aliexpressAppSecret.trim();
   if (typeof changes.aliexpressAppSignature === 'string' && changes.aliexpressAppSignature.trim()) next.aliexpressAppSignature = changes.aliexpressAppSignature.trim();
   if (changes.clearAliexpressCredentials) { next.aliexpressAppKey = ''; next.aliexpressAppSecret = ''; next.aliexpressAppSignature = ''; }
-  if (typeof changes.aiApiKey === 'string' && changes.aiApiKey.trim()) next.aiApiKey = changes.aiApiKey.trim();
+  if (typeof changes.aiApiKey === 'string' && normalizeApiKey(changes.aiApiKey)) next.aiApiKey = normalizeApiKey(changes.aiApiKey);
   if (changes.clearAiApiKey) next.aiApiKey = '';
   await fs.writeFile(secretsFile, await encrypt(next), { encoding: 'utf8', mode: 0o600 });
   return next;
 }
 
 export function secretStatus(secrets) {
+  const aiApiKey = normalizeApiKey(secrets.aiApiKey);
   return {
     adminUser: secrets.adminUser,
     mercadoLivreAccessTokenConfigured: Boolean(secrets.mercadoLivreAccessToken),
@@ -106,6 +115,8 @@ export function secretStatus(secrets) {
     aliexpressAppSecretConfigured: Boolean(secrets.aliexpressAppSecret),
     aliexpressAppSignatureConfigured: Boolean(secrets.aliexpressAppSignature),
     aliexpressAppKey: secrets.aliexpressAppKey || '',
-    aiApiKeyConfigured: Boolean(secrets.aiApiKey)
+    aiApiKeyConfigured: Boolean(aiApiKey),
+    aiApiKeyFormatValid: !aiApiKey || (aiApiKey.startsWith('gsk_') && aiApiKey.length >= 20),
+    aiApiKeyEnding: aiApiKey ? aiApiKey.slice(-4) : ''
   };
 }

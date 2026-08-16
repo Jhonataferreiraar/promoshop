@@ -1,4 +1,4 @@
-import { readSecrets } from './secrets.js';
+import { normalizeApiKey, readSecrets } from './secrets.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -137,11 +137,14 @@ Regras obrigatórias:
   let apiKeySource = 'configuração';
   if (provider === 'groq') {
     const secrets = await readSecrets();
-    const savedApiKey = String(secrets.aiApiKey || '').trim();
-    const environmentApiKey = String(process.env.AI_API_KEY || '').trim();
+    const savedApiKey = normalizeApiKey(secrets.aiApiKey);
+    const environmentApiKey = normalizeApiKey(process.env.AI_API_KEY);
     const apiKey = savedApiKey || environmentApiKey;
     apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
     if (!apiKey) throw new Error('Informe a chave da Groq no painel.');
+    if (!apiKey.startsWith('gsk_') || apiKey.length < 20) {
+      throw new Error(`A chave salva no ${apiKeySource} não tem o formato de uma chave Groq. Copie a chave secreta completa, que começa com gsk_, sem aspas.`);
+    }
     response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       signal: AbortSignal.timeout(45_000),
@@ -167,7 +170,7 @@ Regras obrigatórias:
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     if (provider === 'groq' && response.status === 401) {
-      throw new Error(`A Groq recusou a chave configurada no ${apiKeySource}. Cole uma chave Groq válida no painel e teste novamente.`);
+      throw new Error(`A Groq recusou a chave do ${apiKeySource} (final ${apiKey.slice(-4)}). Revogue essa chave, crie outra em console.groq.com/keys e copie o valor secreto completo que começa com gsk_.`);
     }
     throw new Error(`${provider === 'groq' ? 'Groq' : 'IA local'} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
