@@ -38,7 +38,7 @@ const initialData = {
     whatsappAutoStart: true,
     aiEnabled: true,
     aiProvider: 'gemini',
-    aiModel: 'gemini-2.5-flash-lite',
+    aiModel: 'gemini-3.5-flash-lite',
     aiBaseUrl: 'https://api.groq.com/openai/v1',
     aiOllamaUrl: 'http://127.0.0.1:11434',
     aiTone: 'varied',
@@ -79,6 +79,9 @@ export async function readStore() {
   }
   if (!data) throw lastError;
   data.config = { ...initialData.config, ...(data.config || {}) };
+  if (data.config.aiProvider === 'gemini' && data.config.aiModel === 'gemini-2.5-flash-lite') {
+    data.config.aiModel = 'gemini-3.5-flash-lite';
+  }
   data.meta = { ...initialData.meta, ...(data.meta || {}), whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) } };
   data.offers ||= [];
   data.queue ||= [];

@@ -97,8 +97,9 @@ function finalizeGeneratedMessage(generated, offer, config) {
 export async function generateOfferMessage(offer, config) {
   const provider = String(config.aiProvider || 'groq').trim().toLowerCase();
   if (!['gemini', 'groq', 'ollama'].includes(provider)) throw new Error('Escolha Gemini, Groq ou Ollama como provedor da IA.');
-  const defaultModels = { gemini: 'gemini-2.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' };
-  const model = String(process.env.AI_MODEL || config.aiModel || defaultModels[provider]).trim();
+  const defaultModels = { gemini: 'gemini-3.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' };
+  const configuredModel = String(process.env.AI_MODEL || config.aiModel || defaultModels[provider]).trim();
+  const model = provider === 'gemini' && configuredModel === 'gemini-2.5-flash-lite' ? defaultModels.gemini : configuredModel;
   if (!model) throw new Error('Informe o modelo da IA no painel.');
   const discount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
   const selectedTone = resolveTone(config.aiTone || 'seller', offer);
