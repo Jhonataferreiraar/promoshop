@@ -44,7 +44,9 @@ const chromiumArgs = [
   '--renderer-process-limit=1',
   '--js-flags=--max-old-space-size=128'
 ];
-if (typeof process.getuid === 'function' && process.getuid() === 0) chromiumArgs.unshift('--no-sandbox', '--disable-setuid-sandbox');
+const chromiumSandboxDisabled = process.env.CHROME_DISABLE_SANDBOX === 'true'
+  || (typeof process.getuid === 'function' && process.getuid() === 0);
+if (chromiumSandboxDisabled) chromiumArgs.unshift('--no-sandbox', '--disable-setuid-sandbox');
 const browserPath = process.env.CHROME_PATH || [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
