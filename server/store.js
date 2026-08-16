@@ -40,7 +40,7 @@ const initialData = {
     aiModel: 'openai/gpt-oss-20b',
     aiBaseUrl: 'https://api.groq.com/openai/v1',
     aiOllamaUrl: 'http://127.0.0.1:11434',
-    aiTone: 'seller',
+    aiTone: 'varied',
     aiInstructions: 'Destaque o principal benefício do produto, seja convincente sem exagerar e use uma chamada para ação curta.',
     enableMercadoLivre: true,
     enableShopee: false,

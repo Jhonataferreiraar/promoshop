@@ -100,7 +100,19 @@ app.get('/api/admin/dashboard', requireAdmin, async (_req, res) => {
   res.json({ ...data, secrets: secretStatus(secrets) });
 });
 app.put('/api/admin/config', requireAdmin, async (req, res) => {
-  await updateStore((data) => { data.config = { ...data.config, ...req.body }; });
+  await updateStore((data) => {
+    const writingStyleChanged = ('aiTone' in req.body && req.body.aiTone !== data.config.aiTone)
+      || ('aiInstructions' in req.body && req.body.aiInstructions !== data.config.aiInstructions);
+    data.config = { ...data.config, ...req.body };
+    if (writingStyleChanged) {
+      for (const item of data.queue) {
+        if (item.status !== 'pending') continue;
+        delete item.aiStatus;
+        delete item.aiError;
+        delete item.aiGeneratedAt;
+      }
+    }
+  });
   await addLog('Configurações atualizadas.', 'success');
   res.json({ ok: true });
 });
