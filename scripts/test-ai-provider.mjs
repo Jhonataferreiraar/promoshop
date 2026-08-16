@@ -46,8 +46,10 @@ try {
     const body = JSON.parse(options.body);
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
     assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);
+    assert.match(body.contents[0].parts[0].text, /Prioridade criativa/);
+    assert.match(body.contents[0].parts[0].text, /claramente perceptíveis/);
     return new Response(JSON.stringify({
-      candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina.\\n\\n*{title}* por *{price}*.\\n\\nVeja a oferta 👇\\n{link}"}' }] } }]
+      candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina, com um texto realmente amigável e natural."}' }] } }]
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   const geminiMessage = await generateOfferMessage({
@@ -64,6 +66,8 @@ try {
     aiInstructions: 'Use poucos emojis.'
   });
   assert.match(geminiMessage, /Praticidade para sua rotina/);
+  assert.match(geminiMessage, /Fone Bluetooth Teste/);
+  assert.match(geminiMessage, /R\$\s*99,90/);
   assert.match(geminiMessage, /https:\/\/afiliado\.example\/produto/);
   console.log('Integração da IA externa validada.');
 } finally {
