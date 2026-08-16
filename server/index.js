@@ -17,6 +17,7 @@ import { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization, valida
 const app = express();
 const port = Number(process.env.PORT || 3001);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const aiGenerationVersion = 2;
 let whatsappProcess = null;
 let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
@@ -230,9 +231,10 @@ app.post('/api/admin/ai/test', requireAdmin, async (_req, res) => {
     const message = await generateOfferMessage(offer, data.config);
     await updateStore((store) => {
       for (const item of store.queue) {
-        if (item.status === 'pending' && item.aiStatus === 'fallback') {
+        if (item.status === 'pending' && ['fallback', 'waiting'].includes(item.aiStatus)) {
           delete item.aiStatus;
           delete item.aiError;
+          delete item.aiRetryAt;
         }
       }
     });
@@ -293,28 +295,36 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
   const now = new Date();
   const forced = queue.find((item) => item.status === 'pending' && item.force);
   async function prepareWithAi(item) {
-    if (!item || !config.aiEnabled || item.aiStatus === 'generated' || item.aiStatus === 'fallback') return item;
+    if (!item || config.aiEnabled === false || (item.aiStatus === 'generated' && Number(item.aiGenerationVersion) >= aiGenerationVersion)) return item;
+    if (item.aiStatus === 'waiting' && new Date(item.aiRetryAt || 0).getTime() > Date.now()) return null;
     const offer = offers.find((entry) => entry.id === item.offerId);
     if (!offer) return item;
     try {
       const message = await generateOfferMessage(offer, config);
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.message = message; saved.aiStatus = 'generated'; saved.aiGeneratedAt = new Date().toISOString(); }
+        if (saved) { saved.message = message; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt; }
       });
       await addLog(`IA criou o texto da oferta: ${item.offerTitle}`, 'success');
-      return { ...item, message, aiStatus: 'generated' };
+      return { ...item, message, aiStatus: 'generated', aiGenerationVersion };
     } catch (error) {
+      const retryAt = new Date(Date.now() + 60_000).toISOString();
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.aiStatus = 'fallback'; saved.aiError = String(error.message).slice(0, 300); }
+        if (saved) { saved.aiStatus = 'waiting'; saved.aiError = String(error.message).slice(0, 300); saved.aiRetryAt = retryAt; }
       });
-      await addLog(`IA indisponível; usando texto padrão para ${item.offerTitle} (${error.message}).`, 'error');
-      return { ...item, aiStatus: 'fallback' };
+      await addLog(`IA não criou o texto de ${item.offerTitle}; nova tentativa em 1 minuto (${error.message}).`, 'error');
+      return null;
     }
   }
-  if (req.query.forced === '1') return forced ? res.json(await prepareWithAi(forced)) : res.status(204).end();
-  if (forced) return res.json(await prepareWithAi(forced));
+  if (req.query.forced === '1') {
+    const prepared = forced ? await prepareWithAi(forced) : null;
+    return prepared ? res.json(prepared) : res.status(204).end();
+  }
+  if (forced) {
+    const prepared = await prepareWithAi(forced);
+    return prepared ? res.json(prepared) : res.status(204).end();
+  }
   const hourMinute = now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false });
   const publishingStart = config.publishingStart || config.quietEnd || '08:00';
   const publishingEnd = config.publishingEnd || config.quietStart || '23:00';
@@ -330,7 +340,8 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
   if (lastSentAt && now.getTime() - lastSentAt < intervalMinutes * 60_000) return res.status(204).end();
   const next = queue.find((item) => item.status === 'pending');
   if (!next) return res.status(204).end();
-  res.json(await prepareWithAi(next));
+  const prepared = await prepareWithAi(next);
+  return prepared ? res.json(prepared) : res.status(204).end();
 });
 app.get('/api/worker/config', requireWorker, async (_req, res) => {
   const { config } = await readStore();
