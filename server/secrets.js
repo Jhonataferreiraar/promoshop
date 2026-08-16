@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const keyFile = path.join(dataDir, '.secret-key');
 const secretsFile = path.join(dataDir, 'secrets.enc');
+let secretsUpdateQueue = Promise.resolve();
 
 export function normalizeApiKey(value) {
   return String(value || '')
@@ -31,7 +32,8 @@ export function verifyPassword(password, stored) {
 async function getKey() {
   await fs.mkdir(dataDir, { recursive: true });
   try { return Buffer.from(await fs.readFile(keyFile, 'utf8'), 'hex'); }
-  catch {
+  catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
     const key = crypto.randomBytes(32);
     await fs.writeFile(keyFile, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
     return key;
@@ -52,6 +54,12 @@ async function decrypt(payload) {
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(parsed.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(parsed.tag, 'base64'));
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(parsed.data, 'base64')), decipher.final()]).toString('utf8'));
+}
+
+async function writeSecrets(value) {
+  const temporaryFile = `${secretsFile}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  await fs.writeFile(temporaryFile, await encrypt(value), { encoding: 'utf8', mode: 0o600 });
+  await fs.rename(temporaryFile, secretsFile);
 }
 
 async function defaults() {
@@ -81,14 +89,15 @@ async function defaults() {
 export async function readSecrets() {
   await fs.mkdir(dataDir, { recursive: true });
   try { return await decrypt(await fs.readFile(secretsFile, 'utf8')); }
-  catch {
+  catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
     const value = await defaults();
-    await fs.writeFile(secretsFile, await encrypt(value), { encoding: 'utf8', mode: 0o600 });
+    await writeSecrets(value);
     return value;
   }
 }
 
-export async function updateSecrets(changes) {
+async function updateSecretsUnlocked(changes) {
   const current = await readSecrets();
   const next = { ...current };
   if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
@@ -122,8 +131,17 @@ export async function updateSecrets(changes) {
   if (changes.clearAliexpressCredentials) { next.aliexpressAppKey = ''; next.aliexpressAppSecret = ''; next.aliexpressAppSignature = ''; }
   if (typeof changes.aiApiKey === 'string' && normalizeApiKey(changes.aiApiKey)) next.aiApiKey = normalizeApiKey(changes.aiApiKey);
   if (changes.clearAiApiKey) next.aiApiKey = '';
-  await fs.writeFile(secretsFile, await encrypt(next), { encoding: 'utf8', mode: 0o600 });
+  await writeSecrets(next);
   return next;
+}
+
+export function updateSecrets(changes) {
+  const operation = secretsUpdateQueue.then(
+    () => updateSecretsUnlocked(changes),
+    () => updateSecretsUnlocked(changes)
+  );
+  secretsUpdateQueue = operation.then(() => undefined, () => undefined);
+  return operation;
 }
 
 export function secretStatus(secrets) {

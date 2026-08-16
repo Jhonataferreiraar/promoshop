@@ -9,6 +9,11 @@ process.env.DATA_DIR = testDataDir;
 try {
   const { readSecrets, secretStatus, updateSecrets } = await import('../server/secrets.js');
   const { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization } = await import('../server/mercadolivre.js');
+  await Promise.all([
+    updateSecrets({ aiApiKey: 'gsk_test_key_that_must_be_preserved' }),
+    updateSecrets({ mercadoLivreUserId: 'concurrent-update' })
+  ]);
+  assert.equal((await readSecrets()).aiApiKey, 'gsk_test_key_that_must_be_preserved');
   await updateSecrets({ mercadoLivreClientId: '123456', mercadoLivreClientSecret: 'secret-for-test' });
   const redirectUri = 'https://example.com/api/mercadolivre/callback';
   const authorizationUrl = new URL(await beginMercadoLivreAuthorization(redirectUri));

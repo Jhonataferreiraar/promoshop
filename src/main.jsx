@@ -201,10 +201,10 @@ function AdminApp() {
 
   async function saveConfig(event) {
     event.preventDefault();
-    await Promise.all([
-      authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) }),
-      authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) })
-    ]);
+    await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
+    if (secretForm.aiApiKey.trim()) {
+      await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) });
+    }
     setSecretForm((current) => ({ ...current, aiApiKey: '' }));
     await load();
     setMessage('Configurações salvas.');
@@ -270,10 +270,10 @@ function AdminApp() {
     setMessage('A IA está criando um texto de teste…');
     setAiPreview('');
     try {
-      await Promise.all([
-        authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) }),
-        authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) })
-      ]);
+      await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
+      if (secretForm.aiApiKey.trim()) {
+        await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) });
+      }
       const result = await authApi('/admin/ai/test', { method: 'POST', body: '{}' });
       setSecretForm((current) => ({ ...current, aiApiKey: '' }));
       await load();
