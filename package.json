@@ -9,6 +9,7 @@
     "dev:api": "node --watch server/index.js",
     "build": "vite build",
     "test:ai": "node scripts/test-ai-provider.mjs",
+    "test:mercadolivre": "node scripts/test-mercadolivre-oauth.mjs",
     "preview": "vite preview",
     "start": "node server/index.js",
     "whatsapp": "node worker/whatsapp.js"

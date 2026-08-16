@@ -58,7 +58,15 @@ async function defaults() {
   return {
     adminUser: 'admin',
     adminPasswordHash: hashPassword('admin123'),
+    mercadoLivreClientId: '',
+    mercadoLivreClientSecret: '',
     mercadoLivreAccessToken: '',
+    mercadoLivreRefreshToken: '',
+    mercadoLivreTokenExpiresAt: 0,
+    mercadoLivreUserId: '',
+    mercadoLivreOAuthState: '',
+    mercadoLivreCodeVerifier: '',
+    mercadoLivreOAuthRedirectUri: '',
     shopeeFeedUrl: '',
     shopeeAppId: '',
     shopeeAppSecret: '',
@@ -85,8 +93,25 @@ export async function updateSecrets(changes) {
   const next = { ...current };
   if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
   if (changes.adminPassword) next.adminPasswordHash = hashPassword(String(changes.adminPassword));
+  if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
+  if (typeof changes.mercadoLivreClientSecret === 'string' && changes.mercadoLivreClientSecret.trim()) next.mercadoLivreClientSecret = changes.mercadoLivreClientSecret.trim();
   if (typeof changes.mercadoLivreAccessToken === 'string' && changes.mercadoLivreAccessToken.trim()) next.mercadoLivreAccessToken = changes.mercadoLivreAccessToken.trim();
+  if (typeof changes.mercadoLivreRefreshToken === 'string') next.mercadoLivreRefreshToken = changes.mercadoLivreRefreshToken.trim();
+  if (Number.isFinite(Number(changes.mercadoLivreTokenExpiresAt))) next.mercadoLivreTokenExpiresAt = Number(changes.mercadoLivreTokenExpiresAt);
+  if (changes.mercadoLivreUserId !== undefined) next.mercadoLivreUserId = String(changes.mercadoLivreUserId || '').trim();
+  if (typeof changes.mercadoLivreOAuthState === 'string') next.mercadoLivreOAuthState = changes.mercadoLivreOAuthState.trim();
+  if (typeof changes.mercadoLivreCodeVerifier === 'string') next.mercadoLivreCodeVerifier = changes.mercadoLivreCodeVerifier.trim();
+  if (typeof changes.mercadoLivreOAuthRedirectUri === 'string') next.mercadoLivreOAuthRedirectUri = changes.mercadoLivreOAuthRedirectUri.trim();
   if (changes.clearMercadoLivreAccessToken) next.mercadoLivreAccessToken = '';
+  if (changes.clearMercadoLivreConnection) {
+    next.mercadoLivreAccessToken = '';
+    next.mercadoLivreRefreshToken = '';
+    next.mercadoLivreTokenExpiresAt = 0;
+    next.mercadoLivreUserId = '';
+    next.mercadoLivreOAuthState = '';
+    next.mercadoLivreCodeVerifier = '';
+    next.mercadoLivreOAuthRedirectUri = '';
+  }
   if (typeof changes.shopeeFeedUrl === 'string') next.shopeeFeedUrl = changes.shopeeFeedUrl.trim();
   if (typeof changes.shopeeAppId === 'string' && changes.shopeeAppId.trim()) next.shopeeAppId = changes.shopeeAppId.trim();
   if (typeof changes.shopeeAppSecret === 'string' && changes.shopeeAppSecret.trim()) next.shopeeAppSecret = changes.shopeeAppSecret.trim();
@@ -105,7 +130,14 @@ export function secretStatus(secrets) {
   const aiApiKey = normalizeApiKey(secrets.aiApiKey);
   return {
     adminUser: secrets.adminUser,
+    mercadoLivreClientIdConfigured: Boolean(secrets.mercadoLivreClientId),
+    mercadoLivreClientSecretConfigured: Boolean(secrets.mercadoLivreClientSecret),
+    mercadoLivreClientId: secrets.mercadoLivreClientId || '',
     mercadoLivreAccessTokenConfigured: Boolean(secrets.mercadoLivreAccessToken),
+    mercadoLivreRefreshTokenConfigured: Boolean(secrets.mercadoLivreRefreshToken),
+    mercadoLivreConnected: Boolean(secrets.mercadoLivreAccessToken && (secrets.mercadoLivreRefreshToken || !secrets.mercadoLivreTokenExpiresAt)),
+    mercadoLivreTokenExpiresAt: Number(secrets.mercadoLivreTokenExpiresAt || 0),
+    mercadoLivreUserId: secrets.mercadoLivreUserId || '',
     shopeeFeedUrlConfigured: Boolean(secrets.shopeeFeedUrl),
     shopeeFeedUrl: secrets.shopeeFeedUrl || '',
     shopeeAppIdConfigured: Boolean(secrets.shopeeAppId),

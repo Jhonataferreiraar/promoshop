@@ -9,9 +9,10 @@ import { spawn } from 'node:child_process';
 import QRCode from 'qrcode';
 import { addLog, createId, readStore, updateStore } from './store.js';
 import { createToken, requireAdmin, requireWorker } from './auth.js';
-import { collectAliexpress, collectShopee, makeQueueItem, runCollection } from './collectors.js';
+import { collectAliexpress, collectMercadoLivre, collectShopee, makeQueueItem, runCollection } from './collectors.js';
 import { readSecrets, secretStatus, updateSecrets, verifyPassword } from './secrets.js';
 import { generateOfferMessage } from './ai.js';
+import { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization, validateMercadoLivreConnection } from './mercadolivre.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -121,6 +122,46 @@ app.put('/api/admin/secrets', requireAdmin, async (req, res) => {
   const updated = await updateSecrets(req.body || {});
   await addLog('Credenciais protegidas foram atualizadas.', 'success');
   res.json(secretStatus(updated));
+});
+app.post('/api/admin/sources/mercadolivre/connect', requireAdmin, async (req, res) => {
+  try {
+    const configured = String(req.body.redirectUri || '').trim();
+    const fallbackOrigin = String(process.env.RENDER_EXTERNAL_URL || process.env.SITE_URL || '').split(',')[0].replace(/\/$/, '');
+    const redirectUri = configured || (fallbackOrigin ? `${fallbackOrigin}/api/mercadolivre/callback` : '');
+    let parsed;
+    try { parsed = new URL(redirectUri); } catch {}
+    if (!parsed || parsed.protocol !== 'https:' || parsed.pathname !== '/api/mercadolivre/callback' || parsed.search || parsed.hash) {
+      return res.status(400).json({ error: 'Informe uma URL HTTPS terminada exatamente em /api/mercadolivre/callback.' });
+    }
+    const authorizationUrl = await beginMercadoLivreAuthorization(redirectUri);
+    res.json({ ok: true, authorizationUrl, redirectUri });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+app.get('/api/mercadolivre/callback', async (req, res) => {
+  if (req.query.error) {
+    await addLog(`Mercado Livre: autorização cancelada (${String(req.query.error).slice(0, 100)}).`, 'error');
+    return res.redirect('/admin?mercadolivre=cancelled');
+  }
+  try {
+    await finishMercadoLivreAuthorization({ code: String(req.query.code || ''), state: String(req.query.state || '') });
+    await addLog('Conta do Mercado Livre conectada e renovação automática ativada.', 'success');
+    res.redirect('/admin?mercadolivre=connected');
+  } catch (error) {
+    await addLog(`Mercado Livre: falha na autorização (${error.message}).`, 'error');
+    res.redirect('/admin?mercadolivre=error');
+  }
+});
+app.post('/api/admin/sources/mercadolivre/test', requireAdmin, async (_req, res) => {
+  try {
+    const user = await validateMercadoLivreConnection();
+    const { config } = await readStore();
+    const offers = await collectMercadoLivre({ ...config, enableMercadoLivre: true }, await readSecrets());
+    res.json({ ok: true, userId: user.id, nickname: user.nickname || '', count: offers.length, sample: offers[0]?.title || null });
+  } catch (error) {
+    res.status(400).json({ error: `Mercado Livre: ${error.message}` });
+  }
 });
 app.post('/api/admin/offers', requireAdmin, async (req, res) => {
   const offer = { ...req.body, id: createId('offer'), price: Number(req.body.price), originalPrice: Number(req.body.originalPrice || 0), createdAt: new Date().toISOString(), source: 'manual' };

@@ -23,6 +23,7 @@ const initialData = {
     publishingEnd: '23:00',
     collectionIntervalMinutes: 15,
     mercadoLivreQueries: 'smartphone, fone bluetooth, notebook, casa e decoração',
+    mercadoLivreRedirectUri: 'https://promoshop.onrender.com/api/mercadolivre/callback',
     shopeeQueries: 'eletrônicos, casa, beleza, moda, ferramentas',
     aliexpressQueries: 'eletrônicos, ferramentas, casa, acessórios',
     aliexpressTrackingId: 'promoshop',

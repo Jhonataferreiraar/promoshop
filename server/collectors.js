@@ -1,6 +1,7 @@
 import { addLog, createId, updateStore } from './store.js';
 import { readSecrets } from './secrets.js';
 import crypto from 'node:crypto';
+import { getMercadoLivreAccessToken } from './mercadolivre.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -38,7 +39,7 @@ async function fetchJson(url, options = {}) {
 
 export async function collectMercadoLivre(config, secrets) {
   if (!config.enableMercadoLivre) return [];
-  const token = secrets.mercadoLivreAccessToken || process.env.MERCADO_LIVRE_ACCESS_TOKEN;
+  const token = await getMercadoLivreAccessToken();
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   const queries = String(config.mercadoLivreQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
   const collected = [];

@@ -149,7 +149,7 @@ function AdminApp() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
-  const [secretForm, setSecretForm] = useState({ adminUser: 'admin', adminPassword: '', mercadoLivreAccessToken: '', shopeeAppId: '', shopeeAppSecret: '', aliexpressAppKey: '', aliexpressAppSecret: '', aliexpressAppSignature: '', aiApiKey: '' });
+  const [secretForm, setSecretForm] = useState({ adminUser: 'admin', adminPassword: '', mercadoLivreClientId: '', mercadoLivreClientSecret: '', mercadoLivreAccessToken: '', shopeeAppId: '', shopeeAppSecret: '', aliexpressAppKey: '', aliexpressAppSecret: '', aliexpressAppSignature: '', aiApiKey: '' });
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [message, setMessage] = useState('');
   const [aiPreview, setAiPreview] = useState('');
@@ -162,7 +162,7 @@ function AdminApp() {
       const result = await authApi('/admin/dashboard');
       setData((current) => preserveConfig ? { ...result, config: current.config } : result);
       if (!preserveConfig) {
-        setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
+        setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, mercadoLivreClientId: result.secrets?.mercadoLivreClientId || current.mercadoLivreClientId, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
       }
     }
     catch (error) {
@@ -173,6 +173,13 @@ function AdminApp() {
     }
   }
   useEffect(() => { if (token) load(); }, [token]);
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get('mercadolivre');
+    if (!status) return;
+    setTab('sources');
+    setMessage(status === 'connected' ? 'Mercado Livre conectado com sucesso.' : status === 'cancelled' ? 'A autorização do Mercado Livre foi cancelada.' : 'Não foi possível concluir a autorização. Confira o log do painel.');
+    window.history.replaceState({}, '', '/admin');
+  }, []);
   useEffect(() => {
     if (!token || tab !== 'whatsapp') return undefined;
     const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
@@ -195,11 +202,31 @@ function AdminApp() {
     event.preventDefault();
     await Promise.all([
       authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) }),
-      authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ mercadoLivreAccessToken: secretForm.mercadoLivreAccessToken, shopeeAppId: secretForm.shopeeAppId, shopeeAppSecret: secretForm.shopeeAppSecret, aliexpressAppKey: secretForm.aliexpressAppKey, aliexpressAppSecret: secretForm.aliexpressAppSecret, aliexpressAppSignature: secretForm.aliexpressAppSignature }) })
+      authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ mercadoLivreClientId: secretForm.mercadoLivreClientId, mercadoLivreClientSecret: secretForm.mercadoLivreClientSecret, mercadoLivreAccessToken: secretForm.mercadoLivreAccessToken, shopeeAppId: secretForm.shopeeAppId, shopeeAppSecret: secretForm.shopeeAppSecret, aliexpressAppKey: secretForm.aliexpressAppKey, aliexpressAppSecret: secretForm.aliexpressAppSecret, aliexpressAppSignature: secretForm.aliexpressAppSignature }) })
     ]);
-    setSecretForm((current) => ({ ...current, mercadoLivreAccessToken: '', shopeeAppSecret: '', aliexpressAppSecret: '', aliexpressAppSignature: '' }));
+    setSecretForm((current) => ({ ...current, mercadoLivreClientSecret: '', mercadoLivreAccessToken: '', shopeeAppSecret: '', aliexpressAppSecret: '', aliexpressAppSignature: '' }));
     await load();
     setMessage('Fontes e credenciais salvas com segurança.');
+  }
+  async function connectMercadoLivre() {
+    setMessage('Preparando a conexão segura com o Mercado Livre…');
+    try {
+      const redirectUri = data.config.mercadoLivreRedirectUri || `${window.location.origin}/api/mercadolivre/callback`;
+      await Promise.all([
+        authApi('/admin/config', { method: 'PUT', body: JSON.stringify({ ...data.config, mercadoLivreRedirectUri: redirectUri }) }),
+        authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ mercadoLivreClientId: secretForm.mercadoLivreClientId, mercadoLivreClientSecret: secretForm.mercadoLivreClientSecret }) })
+      ]);
+      const result = await authApi('/admin/sources/mercadolivre/connect', { method: 'POST', body: JSON.stringify({ redirectUri }) });
+      window.location.assign(result.authorizationUrl);
+    } catch (error) { setMessage(error.message); }
+  }
+  async function testMercadoLivre() {
+    setMessage('Testando a conexão do Mercado Livre…');
+    try {
+      const result = await authApi('/admin/sources/mercadolivre/test', { method: 'POST', body: '{}' });
+      await load();
+      setMessage(`Mercado Livre conectado${result.nickname ? ` como ${result.nickname}` : ''}: ${result.count} ofertas encontradas${result.sample ? `, incluindo “${result.sample}”` : ''}.`);
+    } catch (error) { setMessage(error.message); }
   }
   async function testShopee() {
     setMessage('Testando a Open API da Shopee…');
@@ -289,8 +316,8 @@ function AdminApp() {
       </section>
       <div className="source-cards">
         <section className="panel source-card">
-          <div className="source-card-head"><div className="source-brand mercado">ML</div><div><h2>Mercado Livre</h2><p>Buscas públicas e token opcional.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableMercadoLivre)} onChange={(event) => setData({ ...data, config: { ...data.config, enableMercadoLivre: event.target.checked } })} /><span></span></label></div>
-          <div className="source-card-body"><label>Assuntos para buscar<textarea value={data.config.mercadoLivreQueries ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, mercadoLivreQueries: event.target.value } })} placeholder="smartphone, notebook, air fryer" /><small>Separe por vírgula.</small></label><label>Token de acesso<input type="password" value={secretForm.mercadoLivreAccessToken} onChange={(event) => setSecretForm({ ...secretForm, mercadoLivreAccessToken: event.target.value })} placeholder={data.secrets?.mercadoLivreAccessTokenConfigured ? 'Token configurado — digite para substituir' : 'Opcional: cole o token'} autoComplete="off" /></label></div>
+          <div className="source-card-head"><div className="source-brand mercado">ML</div><div><h2>Mercado Livre</h2><p>{data.secrets?.mercadoLivreConnected ? 'Conta conectada com renovação automática.' : 'Conecte sua aplicação oficial.'}</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableMercadoLivre)} onChange={(event) => setData({ ...data, config: { ...data.config, enableMercadoLivre: event.target.checked } })} /><span></span></label></div>
+          <div className="source-card-body"><label>Assuntos para buscar<textarea value={data.config.mercadoLivreQueries ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, mercadoLivreQueries: event.target.value } })} placeholder="smartphone, notebook, air fryer" /><small>Separe por vírgula.</small></label><label>URL de redirecionamento<input value={data.config.mercadoLivreRedirectUri || `${window.location.origin}/api/mercadolivre/callback`} onChange={(event) => setData({ ...data, config: { ...data.config, mercadoLivreRedirectUri: event.target.value.trim() } })} /><small>Cadastre exatamente esta URL na aplicação do Mercado Livre.</small></label><label>Client ID<input value={secretForm.mercadoLivreClientId} onChange={(event) => setSecretForm({ ...secretForm, mercadoLivreClientId: event.target.value.trim() })} placeholder={data.secrets?.mercadoLivreClientIdConfigured ? 'Client ID configurado' : 'Cole o Client ID'} autoComplete="off" /></label><label>Client Secret<input type="password" value={secretForm.mercadoLivreClientSecret} onChange={(event) => setSecretForm({ ...secretForm, mercadoLivreClientSecret: event.target.value })} placeholder={data.secrets?.mercadoLivreClientSecretConfigured ? 'Secret configurado — digite para substituir' : 'Cole o Client Secret'} autoComplete="new-password" /><small>A chave será criptografada no servidor.</small></label>{data.secrets?.mercadoLivreConnected && <div className="source-note"><strong>Conectado</strong><span>{data.secrets.mercadoLivreUserId ? `Conta ${data.secrets.mercadoLivreUserId}. ` : ''}O token será renovado automaticamente.</span></div>}<button className="button primary full" type="button" onClick={connectMercadoLivre}>{data.secrets?.mercadoLivreConnected ? 'Reconectar Mercado Livre' : 'Conectar Mercado Livre'}</button>{data.secrets?.mercadoLivreConnected && <button className="button subtle full" type="button" onClick={testMercadoLivre}>Testar conexão do Mercado Livre</button>}</div>
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand shopee">S</div><div><h2>Shopee</h2><p>Open API de afiliados.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableShopee)} onChange={(event) => setData({ ...data, config: { ...data.config, enableShopee: event.target.checked } })} /><span></span></label></div>
