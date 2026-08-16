@@ -128,7 +128,7 @@ async function syncGroups(attempt = 1) {
     await request('/api/worker/heartbeat', {
       method: 'POST',
       body: JSON.stringify({ status: 'connected', message: 'WhatsApp conectado. Carregando a lista de grupos…' })
-    }).catch(() => {});
+    }).catch(() => { });
     if (attempt < 12) setTimeout(() => syncGroups(attempt + 1), 10_000);
   }
 }
@@ -139,12 +139,13 @@ async function startConnectedServices() {
   await request('/api/worker/heartbeat', {
     method: 'POST',
     body: JSON.stringify({ status: 'connected', message: 'WhatsApp conectado. Carregando a lista de grupos…' })
-  }).catch(() => {});
+  }).catch(() => { });
   await refreshConfig().catch((error) => console.error('Não foi possível carregar as configurações:', error.message));
   await syncGroups();
   processQueue();
-  setInterval(() => processQueue(true), 500);
-  setInterval(() => processQueue(false), 15_000);
+  setInterval(() => {
+    processQueue();
+  }, 2000);
   setInterval(() => {
     request('/api/worker/heartbeat', {
       method: 'POST',
@@ -162,14 +163,14 @@ async function resolveDestinations() {
   return match ? [match] : [];
 }
 
-async function processQueue(forcedOnly = false) {
+async function processQueue() {
   if (processing) return;
   processing = true;
   let item = null;
   try {
     await refreshConfig();
     if (!selectedGroups.length && !groupId && !groupName) return;
-    item = await request(`/api/worker/queue/next${forcedOnly ? '?forced=1' : ''}`);
+    item = await request('/api/worker/queue/next');
     if (!item) return;
     sentTimes = sentTimes.filter((time) => Date.now() - time < 60 * 60 * 1000);
     if (!item.force && sentTimes.length >= maxPerHour) return;
@@ -197,7 +198,7 @@ async function processQueue(forcedOnly = false) {
     console.log(`Enviado para ${destinations.length} grupo(s): ${item.offerTitle}`);
   } catch (error) {
     console.error(error.message);
-    if (item) await request(`/api/worker/queue/${item.id}/fail`, { method: 'POST', body: JSON.stringify({ error: error.message }) }).catch(() => {});
+    if (item) await request(`/api/worker/queue/${item.id}/fail`, { method: 'POST', body: JSON.stringify({ error: error.message }) }).catch(() => { });
   } finally { processing = false; }
 }
 
@@ -208,21 +209,26 @@ client.on('qr', async (code) => {
 });
 client.on('code', async (code) => {
   console.log('Código de conexão gerado.');
-  await request('/api/worker/pairing-code', { method: 'POST', body: JSON.stringify({ code }) }).catch(() => {});
+  await request('/api/worker/pairing-code', { method: 'POST', body: JSON.stringify({ code }) }).catch(() => { });
 });
 client.on('authenticated', async () => {
-  console.log('WhatsApp autenticado.');
+  console.log('WhatsApp autenticado. Aguardando o cliente ficar pronto para publicar.');
+
   await request('/api/worker/heartbeat', {
     method: 'POST',
-    body: JSON.stringify({ status: 'authenticated', message: 'Número vinculado. Carregando seus grupos…' })
-  }).catch(() => {});
-  setTimeout(startConnectedServices, 3_000);
+    body: JSON.stringify({
+      status: 'authenticated',
+      message: 'Número vinculado. Aguardando o WhatsApp ficar pronto…'
+    })
+  }).catch(() => { });
 });
 client.on('ready', async () => {
+  console.log('WhatsApp pronto. Iniciando o publicador.');
+
   await startConnectedServices();
 });
-client.on('auth_failure', async (message) => { console.error('Falha de autenticação:', message); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => {}); });
-client.on('disconnected', async (reason) => { console.error('WhatsApp desconectado:', reason); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'offline', message: String(reason) }) }).catch(() => {}); });
+client.on('auth_failure', async (message) => { console.error('Falha de autenticação:', message); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => { }); });
+client.on('disconnected', async (reason) => { console.error('WhatsApp desconectado:', reason); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'offline', message: String(reason) }) }).catch(() => { }); });
 
 await refreshConfig();
 await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => {});
@@ -232,7 +238,7 @@ client.initialize().catch(async (error) => {
     ? 'O Windows bloqueou o acesso ao WhatsApp Web. Reinicie o site fora do modo restrito.'
     : `Não foi possível abrir o WhatsApp Web: ${error.message}`;
   console.error(message);
-  await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => {});
+  await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => { });
   process.exitCode = 1;
   setTimeout(() => process.exit(1), 500);
 });
