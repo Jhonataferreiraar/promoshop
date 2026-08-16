@@ -148,8 +148,8 @@ Regras obrigatórias:
     apiKeyEnding = apiKey.slice(-4);
     apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
     if (!apiKey) throw new Error('Informe a chave do Gemini no painel.');
-    if (!apiKey.startsWith('AIza') || apiKey.length < 20) {
-      throw new Error(`A chave salva no ${apiKeySource} não tem o formato de uma chave Gemini. Copie a chave completa do Google AI Studio, normalmente iniciada por AIza.`);
+    if (apiKey.length < 20) {
+      throw new Error(`A chave salva no ${apiKeySource} parece incompleta. No Google AI Studio, use o botão Copiar chave de API — não copie o nome nem o número do projeto.`);
     }
     response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
