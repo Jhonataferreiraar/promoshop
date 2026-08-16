@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+dist
+data
+.wwebjs_auth*
+.wwebjs_cache*
+npm-debug.log*
+Projeto de Afiliado

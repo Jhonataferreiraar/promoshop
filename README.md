@@ -59,3 +59,7 @@ Para manter o site, o agendador e o WhatsApp ligados continuamente, publique o p
 - O processo principal inicia e recupera o publicador do WhatsApp automaticamente quando essa opção estiver ligada no painel.
 - `data/`, `.wwebjs_auth/` e `.env` são persistentes e nunca devem ser enviados ao GitHub.
 - A chave da IA e as credenciais das plataformas são guardadas no cofre criptografado local.
+
+## Render Starter
+
+O projeto inclui `Dockerfile` e `render.yaml` para publicação no Render com Chromium e disco persistente. Consulte `deploy/DEPLOY-RENDER.md`. No Render, use `DATA_DIR=/var/data` e monte um disco de 1 GB nesse caminho para preservar configurações e a sessão do WhatsApp.

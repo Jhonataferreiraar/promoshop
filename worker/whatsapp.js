@@ -2,11 +2,19 @@ import 'dotenv/config';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
 import { readStore } from '../server/store.js';
 
 const { Client, LocalAuth } = pkg;
-const apiUrl = process.env.API_URL || 'http://localhost:3001';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+const authDataPath = process.env.WHATSAPP_AUTH_DIR
+  ? path.resolve(process.env.WHATSAPP_AUTH_DIR)
+  : process.env.DATA_DIR
+    ? path.join(path.resolve(process.env.DATA_DIR), 'whatsapp-auth')
+    : path.join(root, '.wwebjs_auth');
 const pairingPhoneNumber = String(process.env.PAIRING_PHONE_NUMBER || '').replace(/\D/g, '');
 const storedSecrets = await readSecrets();
 const workerToken = process.env.WORKER_TOKEN || storedSecrets.workerToken;
@@ -30,9 +38,22 @@ if (!workerToken) {
 }
 
 const client = new Client({
-  authStrategy: new LocalAuth({ clientId: 'promoshop' }),
+  authStrategy: new LocalAuth({ clientId: 'promoshop', dataPath: authDataPath }),
   ...(pairingPhoneNumber ? { pairWithPhoneNumber: { phoneNumber: pairingPhoneNumber, showNotification: true, intervalMs: 180000 } } : {}),
-  puppeteer: { headless: Boolean(initialStore.config.whatsappHeadless), ...(browserPath ? { executablePath: browserPath } : {}), args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+  puppeteer: {
+    headless: Boolean(initialStore.config.whatsappHeadless),
+    ...(browserPath ? { executablePath: browserPath } : {}),
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-software-rasterizer',
+      '--renderer-process-limit=1',
+      '--js-flags=--max-old-space-size=128'
+    ]
+  }
 });
 
 let sentTimes = [];

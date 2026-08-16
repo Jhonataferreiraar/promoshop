@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dataDir = path.join(root, 'data');
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const dataFile = path.join(dataDir, 'db.json');
 
 const initialData = {

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: promoshop
+    runtime: docker
+    plan: starter
+    region: virginia
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: CHROME_PATH
+        value: /usr/bin/chromium
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
+      - key: WHATSAPP_AUTOSTART
+        value: "true"
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=192
+      - key: AUTH_SECRET
+        generateValue: true
+    disk:
+      name: promoshop-data
+      mountPath: /var/data
+      sizeGB: 1
