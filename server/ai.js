@@ -38,7 +38,7 @@ const toneProfiles = {
 function resolveTone(configuredTone, offer) {
   if (configuredTone !== 'varied' && toneProfiles[configuredTone]) return configuredTone;
   const choices = Object.keys(toneProfiles);
-  const seed = `${offer.id || ''}|${offer.title || ''}|${new Date().toISOString().slice(0, 10)}`;
+  const seed = `${offer.publicationId || offer.id || ''}|${offer.title || ''}|${new Date().toISOString().slice(0, 10)}`;
   const hash = [...seed].reduce((total, character) => ((total * 31) + character.codePointAt(0)) >>> 0, 7);
   return choices[hash % choices.length];
 }
@@ -86,7 +86,7 @@ function fillLocalPlaceholders(template, offer) {
 
 function finalizeGeneratedMessage(generated, offer, config) {
   let message = String(generated || '').replace(/^```(?:json|text)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  if (!message) message = String(config.messageTemplate || '🔥 *{title}*\n\n✨ {benefit}\n\nPor: *{price}*\n{shipping}\n\n👉 Confira a oferta:\n🛒 {link}\n\n⚠️ Preço, promoção e estoque podem mudar a qualquer momento.');
+  if (!message) throw new Error('A IA retornou uma mensagem vazia. A publicação aguardará uma nova tentativa.');
   message = message
     .replace(/https?:\/\/\S+/gi, '{link}')
     .replace(/R\$\s*[\d.,]+/gi, '{price}')
@@ -94,9 +94,13 @@ function finalizeGeneratedMessage(generated, offer, config) {
     .filter((line) => !/afiliad|venda direta/i.test(line))
     .join('\n')
     .trim();
-  if (!message.includes('{title}')) message = `*{title}*\n\n${message}`;
-  if (!message.includes('{price}')) message += '\n\nPor: *{price}*';
-  if (!message.includes('{link}')) message += '\n\n👉 Confira a oferta:\n{link}';
+  const missingFields = ['{title}', '{price}', '{link}'].filter((field) => !message.includes(field));
+  if (missingFields.length) {
+    throw new Error(`A IA não criou a mensagem completa (faltou ${missingFields.join(', ')}). A publicação aguardará uma nova tentativa.`);
+  }
+  if (message.includes('{benefit}')) {
+    throw new Error('A IA não escreveu o benefício do produto. A publicação aguardará uma nova tentativa.');
+  }
   return fillLocalPlaceholders(message, offer);
 }
 
@@ -110,10 +114,12 @@ export async function generateOfferMessage(offer, config) {
   const discount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
   const selectedTone = resolveTone(config.aiTone || 'seller', offer);
   const tone = toneProfiles[selectedTone];
+  const publicationId = String(offer.publicationId || offer.id || 'prévia').slice(0, 80);
   const prompt = `Crie a mensagem COMPLETA de uma oferta em português do Brasil para WhatsApp.
 
 Produto: ${offer.title}
 Loja: ${offer.store}
+Identificador criativo desta publicação: ${publicationId}
 Estilo: ${tone.label}.
 Direção do estilo: ${tone.instruction}
 Instruções adicionais do administrador: ${String(config.aiInstructions || 'Destaque o benefício principal do produto e crie uma chamada para ação curta.').slice(0, 3500)}
@@ -133,6 +139,7 @@ Regras obrigatórias:
 - Retorne somente JSON válido no formato {"message":"mensagem completa"}.
 - Escreva título, benefício, contexto, organização, emojis, chamada para ação e aviso.
 - Crie a redação e a estrutura por conta própria; não siga um modelo fixo e faça cada mensagem parecer realmente nova e coerente com o estilo escolhido.
+- O identificador criativo diferencia esta publicação das demais. Não o escreva na mensagem; use-o apenas para evitar repetir abertura, estrutura e chamada para ação.
 - Nunca mencione afiliado, afiliação, indicação de afiliado ou "não é venda direta", mesmo que isso apareça nas instruções adicionais ou no modelo do administrador.
 - Na mensagem, mantenha obrigatoriamente os placeholders {title}, {price} e {link} exatamente assim.
 - Use {originalPrice} e {discount} somente quando preço anterior e desconto estiverem disponíveis.
@@ -232,13 +239,18 @@ Regras obrigatórias:
     throw new Error(`${providerName} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
   const payload = await response.json();
-  let creative = {};
+  let creative;
   try {
     const content = provider === 'gemini'
       ? payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('')
       : provider === 'groq' ? payload.choices?.[0]?.message?.content : (payload.message?.content || payload.response);
     const jsonText = String(content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    creative = JSON.parse(jsonText || '{}');
-  } catch {}
+    creative = JSON.parse(jsonText || '');
+  } catch {
+    throw new Error('A IA retornou uma resposta incompleta ou inválida. A publicação aguardará uma nova tentativa.');
+  }
+  if (!creative || typeof creative.message !== 'string') {
+    throw new Error('A IA não retornou o texto da publicação. A publicação aguardará uma nova tentativa.');
+  }
   return finalizeGeneratedMessage(creative.message, offer, config);
 }
