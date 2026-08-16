@@ -173,7 +173,7 @@ export function secretStatus(secrets) {
     aiApiKeyFormatValid: !aiApiKey || (aiApiKey.startsWith('gsk_') && aiApiKey.length >= 20),
     aiApiKeyEnding: aiApiKey ? aiApiKey.slice(-4) : '',
     geminiApiKeyConfigured: Boolean(geminiApiKey),
-    geminiApiKeyFormatValid: !geminiApiKey || (geminiApiKey.startsWith('AIza') && geminiApiKey.length >= 20),
+    geminiApiKeyFormatValid: !geminiApiKey || geminiApiKey.length >= 20,
     geminiApiKeyEnding: geminiApiKey ? geminiApiKey.slice(-4) : ''
   };
 }
