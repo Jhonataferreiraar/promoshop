@@ -96,8 +96,9 @@ function finalizeGeneratedMessage(generated, offer, config) {
 
 export async function generateOfferMessage(offer, config) {
   const provider = String(config.aiProvider || 'groq').trim().toLowerCase();
-  if (!['groq', 'ollama'].includes(provider)) throw new Error('Escolha Groq ou Ollama como provedor da IA.');
-  const model = String(process.env.AI_MODEL || config.aiModel || (provider === 'groq' ? 'openai/gpt-oss-20b' : 'qwen2.5:3b')).trim();
+  if (!['gemini', 'groq', 'ollama'].includes(provider)) throw new Error('Escolha Gemini, Groq ou Ollama como provedor da IA.');
+  const defaultModels = { gemini: 'gemini-2.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' };
+  const model = String(process.env.AI_MODEL || config.aiModel || defaultModels[provider]).trim();
   if (!model) throw new Error('Informe o modelo da IA no painel.');
   const discount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
   const selectedTone = resolveTone(config.aiTone || 'seller', offer);
@@ -139,7 +140,32 @@ Regras obrigatórias:
   let response;
   let apiKeySource = 'configuração';
   let apiKeyEnding = '';
-  if (provider === 'groq') {
+  if (provider === 'gemini') {
+    const secrets = await readSecrets();
+    const savedApiKey = normalizeApiKey(secrets.geminiApiKey);
+    const environmentApiKey = normalizeApiKey(process.env.GEMINI_API_KEY);
+    const apiKey = savedApiKey || environmentApiKey;
+    apiKeyEnding = apiKey.slice(-4);
+    apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
+    if (!apiKey) throw new Error('Informe a chave do Gemini no painel.');
+    if (!apiKey.startsWith('AIza') || apiKey.length < 20) {
+      throw new Error(`A chave salva no ${apiKeySource} não tem o formato de uma chave Gemini. Copie a chave completa do Google AI Studio, normalmente iniciada por AIza.`);
+    }
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(45_000),
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: messages[0].content }] },
+        contents: [{ role: 'user', parts: [{ text: messages[1].content }] }],
+        generationConfig: {
+          temperature: selectedTone === 'minimal' ? 0.7 : 1.05,
+          maxOutputTokens: 700,
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+  } else if (provider === 'groq') {
     const secrets = await readSecrets();
     const savedApiKey = normalizeApiKey(secrets.aiApiKey);
     const environmentApiKey = normalizeApiKey(process.env.AI_API_KEY);
@@ -183,12 +209,21 @@ Regras obrigatórias:
       const safeReason = String(reason || '').replace(/gsk_[A-Za-z0-9_-]+/g, '[chave protegida]').slice(0, 180);
       throw new Error(`A Groq recusou a autenticação do ${apiKeySource} (chave salva com final ${apiKeyEnding})${safeReason ? `: ${safeReason}` : ''}. O estilo selecionado não altera a chave.`);
     }
-    throw new Error(`${provider === 'groq' ? 'Groq' : 'IA local'} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
+    if (provider === 'gemini' && [400, 401, 403].includes(response.status)) {
+      let reason = '';
+      try { reason = JSON.parse(detail)?.error?.message || ''; } catch { reason = detail; }
+      const safeReason = String(reason || '').replace(/AIza[A-Za-z0-9_-]+/g, '[chave protegida]').slice(0, 180);
+      throw new Error(`O Gemini recusou a chave do ${apiKeySource} (final ${apiKeyEnding})${safeReason ? `: ${safeReason}` : ''}.`);
+    }
+    const providerName = provider === 'gemini' ? 'Gemini' : provider === 'groq' ? 'Groq' : 'IA local';
+    throw new Error(`${providerName} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
   }
   const payload = await response.json();
   let creative = {};
   try {
-    const content = provider === 'groq' ? payload.choices?.[0]?.message?.content : (payload.message?.content || payload.response);
+    const content = provider === 'gemini'
+      ? payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('')
+      : provider === 'groq' ? payload.choices?.[0]?.message?.content : (payload.message?.content || payload.response);
     const jsonText = String(content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     creative = JSON.parse(jsonText || '{}');
   } catch {}
