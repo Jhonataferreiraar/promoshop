@@ -29,7 +29,8 @@ try {
     originalPrice: 149.9,
     affiliateUrl: 'https://afiliado.example/produto',
     phone: '11999999999',
-    freeShipping: true
+    freeShipping: true,
+    publicationId: 'publicacao-groq-1'
   }, {
     aiProvider: 'groq',
     aiModel: 'openai/gpt-oss-20b',
@@ -48,8 +49,9 @@ try {
     assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);
     assert.match(body.contents[0].parts[0].text, /Prioridade criativa/);
     assert.match(body.contents[0].parts[0].text, /claramente perceptíveis/);
+    assert.match(body.contents[0].parts[0].text, /publicacao-gemini-2/);
     return new Response(JSON.stringify({
-      candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina, com um texto realmente amigável e natural."}' }] } }]
+      candidates: [{ content: { parts: [{ text: '{"message":"✨ Praticidade para sua rotina, com um texto realmente amigável e natural.\\n\\n*{title}* chegou por *{price}*.\\n\\nDá uma olhada 👇\\n{link}"}' }] } }]
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
   const geminiMessage = await generateOfferMessage({
@@ -58,7 +60,8 @@ try {
     price: 99.9,
     originalPrice: 149.9,
     affiliateUrl: 'https://afiliado.example/produto',
-    freeShipping: true
+    freeShipping: true,
+    publicationId: 'publicacao-gemini-2'
   }, {
     aiProvider: 'gemini',
     aiModel: 'gemini-2.5-flash-lite',
@@ -69,6 +72,42 @@ try {
   assert.match(geminiMessage, /Fone Bluetooth Teste/);
   assert.match(geminiMessage, /R\$\s*99,90/);
   assert.match(geminiMessage, /https:\/\/afiliado\.example\/produto/);
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    candidates: [{ content: { parts: [{ text: '{"message":"Texto sem os campos obrigatórios"}' }] } }]
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  await assert.rejects(
+    generateOfferMessage({
+      title: 'Produto sem padrão',
+      store: 'Loja',
+      price: 10,
+      affiliateUrl: 'https://afiliado.example/produto',
+      publicationId: 'publicacao-invalida'
+    }, {
+      aiProvider: 'gemini',
+      aiModel: 'gemini-3.5-flash-lite',
+      aiTone: 'varied'
+    }),
+    /não criou a mensagem completa/
+  );
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    candidates: [{ content: { parts: [{ text: 'resposta que não é JSON' }] } }]
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  await assert.rejects(
+    generateOfferMessage({
+      title: 'Produto com resposta inválida',
+      store: 'Loja',
+      price: 10,
+      affiliateUrl: 'https://afiliado.example/produto',
+      publicationId: 'publicacao-json-invalido'
+    }, {
+      aiProvider: 'gemini',
+      aiModel: 'gemini-3.5-flash-lite',
+      aiTone: 'varied'
+    }),
+    /resposta incompleta ou inválida/
+  );
   console.log('Integração da IA externa validada.');
 } finally {
   globalThis.fetch = originalFetch;

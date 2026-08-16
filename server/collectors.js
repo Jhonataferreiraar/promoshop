@@ -363,6 +363,11 @@ export async function runCollection() {
           savedOffer.productUrl = offer.productUrl;
           for (const queueItem of data.queue.filter((item) => item.offerId === offer.id && item.status === 'pending')) {
             queueItem.message = makeQueueItem(savedOffer, data.config).message;
+            delete queueItem.aiStatus;
+            delete queueItem.aiError;
+            delete queueItem.aiRetryAt;
+            delete queueItem.aiGeneratedAt;
+            delete queueItem.aiGenerationVersion;
           }
           refreshedLinks += 1;
         }

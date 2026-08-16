@@ -18,7 +18,7 @@ const app = express();
 app.disable('x-powered-by');
 const port = Number(process.env.PORT || 3001);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const aiGenerationVersion = 2;
+const aiGenerationVersion = 3;
 let whatsappProcess = null;
 let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
@@ -173,6 +173,8 @@ app.put('/api/admin/config', requireAdmin, async (req, res) => {
         delete item.aiStatus;
         delete item.aiError;
         delete item.aiGeneratedAt;
+        delete item.aiGenerationVersion;
+        delete item.aiRetryAt;
       }
     }
   });
@@ -363,7 +365,7 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
     const offer = offers.find((entry) => entry.id === item.offerId);
     if (!offer) return item;
     try {
-      const message = await generateOfferMessage(offer, config);
+      const message = await generateOfferMessage({ ...offer, publicationId: item.id }, config);
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
         if (saved) { saved.message = message; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt; }
