@@ -739,6 +739,7 @@ export function makeQueueItem(offer, config) {
     price: Number(offer.price),
     originalPrice: Number(offer.originalPrice || offer.price),
     affiliateUrl: offer.affiliateUrl,
+    image: offer.image || '',
     freeShipping: Boolean(offer.freeShipping)
   };
   return {
