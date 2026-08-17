@@ -3285,3 +3285,49 @@ button {
     max-height: 300px;
   }
 }
+
+/* =========================================================
+   MERCADO LIVRE — AUTOMAÇÃO DE AFILIADOS
+   ========================================================= */
+
+.affiliate-automation {
+  display: grid;
+  gap: 14px;
+  margin-top: 6px;
+  padding-top: 20px;
+  border-top: 1px solid #e4e7ec;
+}
+
+.affiliate-automation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.affiliate-automation-head > span {
+  display: grid;
+  gap: 4px;
+}
+
+.affiliate-automation-head strong {
+  color: #344054;
+  font-size: 13px;
+}
+
+.affiliate-automation-head small {
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.affiliate-automation .source-note {
+  margin: 0;
+}
+
+.affiliate-automation textarea {
+  min-height: 105px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 11px;
+}

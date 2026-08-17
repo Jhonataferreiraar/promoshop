@@ -180,7 +180,28 @@ function AdminApp() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
-  const [secretForm, setSecretForm] = useState({ adminUser: 'admin', adminPassword: '', mercadoLivreClientId: '', mercadoLivreClientSecret: '', mercadoLivreAccessToken: '', shopeeAppId: '', shopeeAppSecret: '', aliexpressAppKey: '', aliexpressAppSecret: '', aliexpressAppSignature: '', aiApiKey: '', geminiApiKey: '' });
+  const [secretForm, setSecretForm] = useState({
+    adminUser: 'admin',
+    adminPassword: '',
+
+    mercadoLivreClientId: '',
+    mercadoLivreClientSecret: '',
+    mercadoLivreAccessToken: '',
+
+    mercadoLivreAffiliateCookie: '',
+    mercadoLivreAffiliateCsrfToken: '',
+    mercadoLivreAffiliateTag: 'promoshop',
+
+    shopeeAppId: '',
+    shopeeAppSecret: '',
+
+    aliexpressAppKey: '',
+    aliexpressAppSecret: '',
+    aliexpressAppSignature: '',
+
+    aiApiKey: '',
+    geminiApiKey: ''
+  });
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [message, setMessage] = useState('');
   const [dialog, setDialog] = useState(null);
@@ -194,7 +215,30 @@ function AdminApp() {
       const result = await authApi('/admin/dashboard');
       setData((current) => preserveConfig ? { ...result, config: current.config } : result);
       if (!preserveConfig) {
-        setSecretForm((current) => ({ ...current, adminUser: result.secrets?.adminUser || current.adminUser, mercadoLivreClientId: result.secrets?.mercadoLivreClientId || current.mercadoLivreClientId, shopeeAppId: result.secrets?.shopeeAppId || current.shopeeAppId, aliexpressAppKey: result.secrets?.aliexpressAppKey || current.aliexpressAppKey }));
+        setSecretForm((current) => ({
+          ...current,
+
+          adminUser:
+            result.secrets?.adminUser ||
+            current.adminUser,
+
+          mercadoLivreClientId:
+            result.secrets?.mercadoLivreClientId ||
+            current.mercadoLivreClientId,
+
+          mercadoLivreAffiliateTag:
+            result.secrets?.mercadoLivreAffiliateTag ||
+            current.mercadoLivreAffiliateTag ||
+            'promoshop',
+
+          shopeeAppId:
+            result.secrets?.shopeeAppId ||
+            current.shopeeAppId,
+
+          aliexpressAppKey:
+            result.secrets?.aliexpressAppKey ||
+            current.aliexpressAppKey
+        }));
       }
     }
     catch (error) {
@@ -265,6 +309,47 @@ function AdminApp() {
       const result = await authApi('/admin/sources/mercadolivre/connect', { method: 'POST', body: JSON.stringify({ redirectUri }) });
       window.location.assign(result.authorizationUrl);
     } catch (error) { setMessage(error.message); }
+  }
+  async function saveMercadoLivreAffiliate() {
+    setMessage('Salvando automação de afiliados do Mercado Livre…');
+
+    try {
+      const payload = {};
+
+      if (secretForm.mercadoLivreAffiliateCookie.trim()) {
+        payload.mercadoLivreAffiliateCookie =
+          secretForm.mercadoLivreAffiliateCookie.trim();
+      }
+
+      if (secretForm.mercadoLivreAffiliateCsrfToken.trim()) {
+        payload.mercadoLivreAffiliateCsrfToken =
+          secretForm.mercadoLivreAffiliateCsrfToken.trim();
+      }
+
+      if (secretForm.mercadoLivreAffiliateTag.trim()) {
+        payload.mercadoLivreAffiliateTag =
+          secretForm.mercadoLivreAffiliateTag.trim();
+      }
+
+      await authApi('/admin/secrets', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+
+      setSecretForm((current) => ({
+        ...current,
+        mercadoLivreAffiliateCookie: '',
+        mercadoLivreAffiliateCsrfToken: ''
+      }));
+
+      await load();
+
+      setMessage(
+        'Credenciais de afiliado do Mercado Livre salvas com segurança.'
+      );
+    } catch (error) {
+      setMessage(error.message);
+    }
   }
   async function testMercadoLivre() {
     setMessage('Testando a conexão do Mercado Livre…');
@@ -567,6 +652,114 @@ function AdminApp() {
                 </span>
               </div>
             )}
+
+            <div className="affiliate-automation">
+              <div className="affiliate-automation-head">
+                <span>
+                  <strong>Automação de links de afiliado</strong>
+                  <small>
+                    Permite transformar automaticamente os produtos encontrados em links
+                    do Programa de Afiliados.
+                  </small>
+                </span>
+              </div>
+
+              <div className="source-note">
+                <strong>
+                  {data.secrets?.mercadoLivreAffiliateCookieConfigured &&
+                    data.secrets?.mercadoLivreAffiliateCsrfTokenConfigured
+                    ? 'Automação configurada'
+                    : 'Configuração necessária'}
+                </strong>
+
+                <span>
+                  Cookie:{' '}
+                  {data.secrets?.mercadoLivreAffiliateCookieConfigured
+                    ? 'configurado'
+                    : 'não configurado'}
+                  {' · '}
+                  CSRF:{' '}
+                  {data.secrets?.mercadoLivreAffiliateCsrfTokenConfigured
+                    ? 'configurado'
+                    : 'não configurado'}
+                </span>
+              </div>
+
+              <label>
+                Cookie da sessão de afiliados
+                <textarea
+                  value={secretForm.mercadoLivreAffiliateCookie}
+                  onChange={(event) =>
+                    setSecretForm({
+                      ...secretForm,
+                      mercadoLivreAffiliateCookie: event.target.value
+                    })
+                  }
+                  placeholder={
+                    data.secrets?.mercadoLivreAffiliateCookieConfigured
+                      ? 'Cookie configurado — cole um novo somente para substituir'
+                      : 'Cole o conteúdo completo do header Cookie'
+                  }
+                  autoComplete="off"
+                />
+
+                <small>
+                  Copie o valor completo do header Cookie da solicitação createLink no
+                  DevTools do Mercado Livre.
+                </small>
+              </label>
+
+              <label>
+                CSRF Token
+                <input
+                  type="password"
+                  value={secretForm.mercadoLivreAffiliateCsrfToken}
+                  onChange={(event) =>
+                    setSecretForm({
+                      ...secretForm,
+                      mercadoLivreAffiliateCsrfToken: event.target.value
+                    })
+                  }
+                  placeholder={
+                    data.secrets?.mercadoLivreAffiliateCsrfTokenConfigured
+                      ? 'CSRF configurado — digite para substituir'
+                      : 'Cole o x-csrf-token'
+                  }
+                  autoComplete="new-password"
+                />
+
+                <small>
+                  Use o valor do header x-csrf-token da solicitação createLink.
+                </small>
+              </label>
+
+              <label>
+                Tag do afiliado
+                <input
+                  value={secretForm.mercadoLivreAffiliateTag}
+                  onChange={(event) =>
+                    setSecretForm({
+                      ...secretForm,
+                      mercadoLivreAffiliateTag: event.target.value
+                    })
+                  }
+                  placeholder="promoshop"
+                  autoComplete="off"
+                />
+
+                <small>
+                  Essa tag será enviada ao gerador de links. Exemplo: promoshop.
+                </small>
+              </label>
+
+              <button
+                className="button primary full"
+                type="button"
+                onClick={saveMercadoLivreAffiliate}
+              >
+                Salvar automação de afiliados
+              </button>
+            </div>
 
             <button
               className="button primary full"

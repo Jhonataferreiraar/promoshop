@@ -77,6 +77,9 @@ async function defaults() {
     mercadoLivreOAuthState: '',
     mercadoLivreCodeVerifier: '',
     mercadoLivreOAuthRedirectUri: '',
+    mercadoLivreAffiliateCookie: '',
+    mercadoLivreAffiliateCsrfToken: '',
+    mercadoLivreAffiliateTag: '',
     shopeeFeedUrl: '',
     shopeeAppId: '',
     shopeeAppSecret: '',
@@ -127,6 +130,34 @@ async function updateSecretsUnlocked(changes) {
     next.mercadoLivreCodeVerifier = '';
     next.mercadoLivreOAuthRedirectUri = '';
   }
+  if (
+    typeof changes.mercadoLivreAffiliateCookie === 'string' &&
+    changes.mercadoLivreAffiliateCookie.trim()
+  ) {
+    next.mercadoLivreAffiliateCookie =
+      changes.mercadoLivreAffiliateCookie.trim();
+  }
+
+  if (
+    typeof changes.mercadoLivreAffiliateCsrfToken === 'string' &&
+    changes.mercadoLivreAffiliateCsrfToken.trim()
+  ) {
+    next.mercadoLivreAffiliateCsrfToken =
+      changes.mercadoLivreAffiliateCsrfToken.trim();
+  }
+
+  if (
+    typeof changes.mercadoLivreAffiliateTag === 'string' &&
+    changes.mercadoLivreAffiliateTag.trim()
+  ) {
+    next.mercadoLivreAffiliateTag =
+      changes.mercadoLivreAffiliateTag.trim();
+  }
+
+  if (changes.clearMercadoLivreAffiliateSession) {
+    next.mercadoLivreAffiliateCookie = '';
+    next.mercadoLivreAffiliateCsrfToken = '';
+  }
   if (typeof changes.shopeeFeedUrl === 'string') next.shopeeFeedUrl = changes.shopeeFeedUrl.trim();
   if (typeof changes.shopeeAppId === 'string' && changes.shopeeAppId.trim()) next.shopeeAppId = changes.shopeeAppId.trim();
   if (typeof changes.shopeeAppSecret === 'string' && changes.shopeeAppSecret.trim()) next.shopeeAppSecret = changes.shopeeAppSecret.trim();
@@ -166,6 +197,16 @@ export function secretStatus(secrets) {
     mercadoLivreConnected: Boolean(secrets.mercadoLivreAccessToken && (secrets.mercadoLivreRefreshToken || !secrets.mercadoLivreTokenExpiresAt)),
     mercadoLivreTokenExpiresAt: Number(secrets.mercadoLivreTokenExpiresAt || 0),
     mercadoLivreUserId: secrets.mercadoLivreUserId || '',
+    mercadoLivreAffiliateCookieConfigured: Boolean(
+      secrets.mercadoLivreAffiliateCookie
+    ),
+    mercadoLivreAffiliateCsrfTokenConfigured: Boolean(
+      secrets.mercadoLivreAffiliateCsrfToken
+    ),
+    mercadoLivreAffiliateTag:
+      secrets.mercadoLivreAffiliateTag ||
+      process.env.MERCADO_LIVRE_AFFILIATE_TAG ||
+      'promoshop',
     shopeeFeedUrlConfigured: Boolean(secrets.shopeeFeedUrl),
     shopeeFeedUrl: secrets.shopeeFeedUrl || '',
     shopeeAppIdConfigured: Boolean(secrets.shopeeAppId),
