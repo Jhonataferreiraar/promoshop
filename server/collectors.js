@@ -2,6 +2,10 @@ import { addLog, createId, updateStore } from './store.js';
 import { readSecrets } from './secrets.js';
 import crypto from 'node:crypto';
 import { getMercadoLivreAccessToken } from './mercadolivre.js';
+import {
+  generateMercadoLivreAffiliateLinks,
+  normalizeMercadoLivreAffiliateUrl
+} from './mercadolivreAffiliate.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -434,6 +438,41 @@ export async function collectMercadoLivre(config, secrets) {
   await addLog(
     `Mercado Livre: ${uniqueOffers.length} ofertas únicas encontradas antes do filtro de desconto.`,
     'info'
+  );
+
+  /*
+   * =====================================================
+   * 4. TENTA GERAR LINKS DE AFILIADO AUTOMATICAMENTE
+   * =====================================================
+   */
+
+  const linksByProduct = await generateMercadoLivreAffiliateLinks(
+    uniqueOffers.map((offer) => offer.productUrl),
+    {
+      tag: config.mercadoLivreAffiliateTag || 'promoshop'
+    }
+  );
+
+  for (const offer of uniqueOffers) {
+    const normalizedUrl = normalizeMercadoLivreAffiliateUrl(
+      offer.productUrl
+    );
+
+    const affiliateUrl = linksByProduct.get(normalizedUrl);
+
+    if (affiliateUrl) {
+      offer.affiliateUrl = affiliateUrl;
+      offer.status = 'active';
+    }
+  }
+
+  const automaticLinks = uniqueOffers.filter(
+    (offer) => offer.status === 'active'
+  ).length;
+
+  await addLog(
+    `Mercado Livre: ${automaticLinks} de ${uniqueOffers.length} ofertas receberam link de afiliado automaticamente.`,
+    automaticLinks ? 'success' : 'info'
   );
 
   return uniqueOffers;
