@@ -77,6 +77,7 @@ export async function collectMercadoLivre(config, secrets) {
   if (!config.enableMercadoLivre) return [];
 
   const token = await getMercadoLivreAccessToken();
+
   const headers = token
     ? { Authorization: `Bearer ${token}` }
     : {};
@@ -85,12 +86,192 @@ export async function collectMercadoLivre(config, secrets) {
     ? config.mercadoLivreCategories.filter(Boolean)
     : [];
 
-  const queries = String(config.mercadoLivreQueries || '')
+  const manualQueries = String(config.mercadoLivreQueries || '')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
 
+  /*
+   * Cada categoria do painel é convertida em palavras-chave.
+   *
+   * O endpoint /products/search que estamos usando exige um
+   * critério de pesquisa como keywords/q, portanto não usamos
+   * mais category_id sozinho.
+   */
+  const categoryQueries = {
+    MLB5672: [
+      'acessórios automotivos',
+      'peças automotivas',
+      'acessórios para carro'
+    ],
+
+    MLB271599: [
+      'agro',
+      'ferramentas agrícolas',
+      'irrigação'
+    ],
+
+    MLB1403: [
+      'alimentos',
+      'bebidas',
+      'mercearia'
+    ],
+
+    MLB1071: [
+      'pet shop',
+      'ração cachorro',
+      'ração gato'
+    ],
+
+    MLB1367: [
+      'colecionáveis',
+      'antiguidades'
+    ],
+
+    MLB1368: [
+      'papelaria',
+      'material escolar',
+      'artesanato'
+    ],
+
+    MLB1384: [
+      'bebê',
+      'fralda bebê',
+      'carrinho bebê'
+    ],
+
+    MLB1246: [
+      'beleza',
+      'perfume',
+      'maquiagem'
+    ],
+
+    MLB1132: [
+      'brinquedos',
+      'boneca',
+      'blocos de montar'
+    ],
+
+    MLB1430: [
+      'roupas',
+      'tênis',
+      'bolsa'
+    ],
+
+    MLB1039: [
+      'câmera',
+      'câmera digital',
+      'lente câmera'
+    ],
+
+    MLB1743: [
+      'carro',
+      'moto'
+    ],
+
+    MLB1574: [
+      'casa',
+      'decoração',
+      'móveis'
+    ],
+
+    MLB1051: [
+      'smartphone',
+      'celular',
+      'smartwatch'
+    ],
+
+    MLB1500: [
+      'construção',
+      'material construção',
+      'torneira'
+    ],
+
+    MLB5726: [
+      'air fryer',
+      'microondas',
+      'cafeteira'
+    ],
+
+    MLB1000: [
+      'fone bluetooth',
+      'caixa de som',
+      'televisão'
+    ],
+
+    MLB1276: [
+      'academia',
+      'fitness',
+      'bicicleta'
+    ],
+
+    MLB263532: [
+      'furadeira',
+      'parafusadeira',
+      'ferramentas'
+    ],
+
+    MLB12404: [
+      'festa',
+      'decoração festa',
+      'fantasia'
+    ],
+
+    MLB1144: [
+      'videogame',
+      'playstation',
+      'xbox'
+    ],
+
+    MLB1499: [
+      'equipamento comercial',
+      'equipamento industrial',
+      'embalagem'
+    ],
+
+    MLB1648: [
+      'notebook',
+      'computador',
+      'monitor'
+    ],
+
+    MLB1182: [
+      'violão',
+      'guitarra',
+      'teclado musical'
+    ],
+
+    MLB3937: [
+      'relógio',
+      'joias',
+      'colar'
+    ],
+
+    MLB1196: [
+      'livros',
+      'mangá'
+    ],
+
+    MLB1168: [
+      'filmes',
+      'vinil',
+      'cd música'
+    ],
+
+    MLB264586: [
+      'massageador',
+      'ortopedia',
+      'cuidados saúde'
+    ]
+  };
+
   const collected = [];
+
+  /*
+   * =====================================================
+   * PROCESSA OS PRODUTOS ENCONTRADOS
+   * =====================================================
+   */
 
   async function processProducts(products) {
     const limitedProducts = products.slice(0, 10);
@@ -142,63 +323,17 @@ export async function collectMercadoLivre(config, secrets) {
 
     return detailResults
       .filter((result) => result.status === 'fulfilled')
-      .map((result) =>
-        normalizeMercadoLivreCatalog(result.value)
-      )
+      .map((result) => normalizeMercadoLivreCatalog(result.value))
       .filter(Boolean);
   }
 
   /*
    * =====================================================
-   * 1. BUSCA POR CATEGORIAS SELECIONADAS
+   * FUNÇÃO DE BUSCA
    * =====================================================
    */
 
-  for (const categoryId of categoryIds) {
-    try {
-      const searchUrl =
-        `https://api.mercadolibre.com/products/search` +
-        `?status=active` +
-        `&site_id=MLB` +
-        `&category_id=${encodeURIComponent(categoryId)}` +
-        `&limit=10`;
-
-      const search = await fetchJson(searchUrl, { headers });
-
-      const products = search.results || [];
-
-      if (!products.length) {
-        await addLog(
-          `Mercado Livre: nenhuma oferta encontrada na categoria ${categoryId}.`,
-          'info'
-        );
-
-        continue;
-      }
-
-      const normalized = await processProducts(products);
-
-      collected.push(...normalized);
-
-      await addLog(
-        `Mercado Livre: categoria ${categoryId} retornou ${normalized.length} ofertas.`,
-        'info'
-      );
-    } catch (error) {
-      await addLog(
-        `Mercado Livre: erro na categoria ${categoryId}: ${error.message}`,
-        'error'
-      );
-    }
-  }
-
-  /*
-   * =====================================================
-   * 2. BUSCA POR PALAVRAS-CHAVE
-   * =====================================================
-   */
-
-  for (const query of queries) {
+  async function searchProducts(query, origin = 'busca') {
     try {
       const searchUrl =
         `https://api.mercadolibre.com/products/search` +
@@ -213,27 +348,72 @@ export async function collectMercadoLivre(config, secrets) {
 
       if (!products.length) {
         await addLog(
-          `Mercado Livre: nenhuma oferta encontrada para "${query}".`,
+          `Mercado Livre: ${origin} "${query}" não retornou ofertas.`,
           'info'
         );
 
-        continue;
+        return [];
       }
 
       const normalized = await processProducts(products);
 
-      collected.push(...normalized);
-
       await addLog(
-        `Mercado Livre: busca "${query}" retornou ${normalized.length} ofertas.`,
+        `Mercado Livre: ${origin} "${query}" retornou ${normalized.length} ofertas.`,
         'info'
       );
+
+      return normalized;
     } catch (error) {
       await addLog(
-        `Mercado Livre: erro na busca "${query}": ${error.message}`,
+        `Mercado Livre: erro em ${origin} "${query}": ${error.message}`,
         'error'
       );
+
+      return [];
     }
+  }
+
+  /*
+   * =====================================================
+   * 1. BUSCA PELAS CATEGORIAS SELECIONADAS
+   * =====================================================
+   */
+
+  for (const categoryId of categoryIds) {
+    const queriesForCategory = categoryQueries[categoryId] || [];
+
+    if (!queriesForCategory.length) {
+      await addLog(
+        `Mercado Livre: categoria ${categoryId} não possui palavras-chave configuradas.`,
+        'info'
+      );
+
+      continue;
+    }
+
+    for (const query of queriesForCategory) {
+      const offers = await searchProducts(
+        query,
+        `categoria ${categoryId}`
+      );
+
+      collected.push(...offers);
+    }
+  }
+
+  /*
+   * =====================================================
+   * 2. BUSCAS MANUAIS DO PAINEL
+   * =====================================================
+   */
+
+  for (const query of manualQueries) {
+    const offers = await searchProducts(
+      query,
+      'busca adicional'
+    );
+
+    collected.push(...offers);
   }
 
   /*
@@ -250,6 +430,11 @@ export async function collectMercadoLivre(config, secrets) {
       ])
     ).values()
   ];
+
+  await addLog(
+    `Mercado Livre: ${uniqueOffers.length} ofertas únicas encontradas antes do filtro de desconto.`,
+    'info'
+  );
 
   return uniqueOffers;
 }
