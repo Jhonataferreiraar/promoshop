@@ -101,12 +101,14 @@ export async function generateMercadoLivreAffiliateLinks(
             payload = {};
         }
 
-        if (!response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+
+        if (!response.ok || !contentType.includes('application/json')) {
             throw new Error(
-                payload.message ||
-                payload.error ||
-                raw.slice(0, 180) ||
-                `HTTP ${response.status}`
+                `HTTP ${response.status} | ` +
+                `content-type: ${contentType || 'desconhecido'} | ` +
+                `URL final: ${response.url} | ` +
+                `resposta: ${raw.slice(0, 220).replace(/\s+/g, ' ')}`
             );
         }
 
