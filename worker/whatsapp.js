@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
 import { readStore } from '../server/store.js';
 
-const { Client, LocalAuth } = pkg;
+const { Client, LocalAuth, MessageMedia } = pkg;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
 const authDataPath = process.env.WHATSAPP_AUTH_DIR
@@ -182,7 +182,43 @@ async function processQueue() {
       for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
         try {
           await refreshActivePage();
-          await client.sendMessage(destination.id, item.message);
+
+          if (item.image) {
+            try {
+              console.log(`Baixando imagem da oferta: ${item.image}`);
+
+              const media = await MessageMedia.fromUrl(item.image, {
+                unsafeMime: true
+              });
+
+              console.log(
+                `Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`
+              );
+
+              await client.sendMessage(destination.id, media, {
+                caption: item.message
+              });
+
+              console.log(
+                `Imagem e mensagem enviadas: ${item.offerTitle}`
+              );
+            } catch (mediaError) {
+              console.error(
+                `Falha ao enviar imagem de "${item.offerTitle}": ${mediaError.message}`
+              );
+
+              console.log('Enviando somente o texto como alternativa.');
+
+              await client.sendMessage(destination.id, item.message);
+            }
+          } else {
+            console.warn(
+              `Oferta sem imagem: "${item.offerTitle}"`
+            );
+
+            await client.sendMessage(destination.id, item.message);
+          }
+
           sent = true;
         } catch (error) {
           lastSendError = error;
@@ -205,7 +241,7 @@ async function processQueue() {
 client.on('qr', async (code) => {
   console.log('QR Code atualizado no painel.');
   if (process.env.NODE_ENV !== 'production') qrcode.generate(code, { small: true });
-  await request('/api/worker/qr', { method: 'POST', body: JSON.stringify({ qr: code }) }).catch(() => {});
+  await request('/api/worker/qr', { method: 'POST', body: JSON.stringify({ qr: code }) }).catch(() => { });
 });
 client.on('code', async (code) => {
   console.log('Código de conexão gerado.');
@@ -231,7 +267,7 @@ client.on('auth_failure', async (message) => { console.error('Falha de autentica
 client.on('disconnected', async (reason) => { console.error('WhatsApp desconectado:', reason); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'offline', message: String(reason) }) }).catch(() => { }); });
 
 await refreshConfig();
-await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => {});
+await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => { });
 clearStaleBrowserLocks();
 client.initialize().catch(async (error) => {
   const message = error.message?.includes('ERR_NETWORK_ACCESS_DENIED')
