@@ -20,8 +20,11 @@ import {
 } from './collectors.js';
 import { readSecrets, secretStatus, updateSecrets, verifyPassword } from './secrets.js';
 import { generateOfferMessage } from './ai.js';
-import { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization, validateMercadoLivreConnection } from './mercadolivre.js';
-import { generateOfferMessage } from './ai.js';
+import {
+  beginMercadoLivreAuthorization,
+  finishMercadoLivreAuthorization,
+  validateMercadoLivreConnection
+} from './mercadolivre.js';
 import { getAudienceCodesForOffer } from './audienceRouting.js';
 
 const app = express();
