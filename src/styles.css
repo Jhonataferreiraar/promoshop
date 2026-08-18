@@ -3331,3 +3331,53 @@ button {
   font-family: monospace;
   font-size: 11px;
 }
+
+/* =========================================================
+   CORREÇÃO DOS NOMES DOS GRUPOS DO WHATSAPP
+   ========================================================= */
+
+.group-selector .group-option {
+  color: #111827;
+}
+
+.group-selector .group-option > span {
+  display: block;
+  color: #111827 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  -webkit-text-fill-color: #111827;
+}
+
+.group-selector .group-options {
+  color: #111827;
+}
+
+/* =========================================================
+   GRUPOS DO WHATSAPP
+   ========================================================= */
+
+.group-selector .group-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #111827;
+}
+
+.group-selector .group-option > span {
+  display: block;
+  flex: 1;
+  min-width: 0;
+
+  color: #111827 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  -webkit-text-fill-color: #111827;
+
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.group-selector .group-option input {
+  flex: 0 0 auto;
+}
