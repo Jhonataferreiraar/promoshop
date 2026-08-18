@@ -293,10 +293,15 @@ app.post('/api/admin/search-products', requireAdmin, async (req, res) => {
     ? req.body.stores
     : [];
 
-  const limit = Math.min(
-    Math.max(Number(req.body.limit) || 10, 1),
-    20
-  );
+  const requestedLimit = req.body.limit;
+
+  const limit =
+    requestedLimit === 'all'
+      ? 100
+      : Math.min(
+        Math.max(Number(requestedLimit) || 10, 1),
+        100
+      );
 
   if (!query) {
     return res.status(400).json({

@@ -506,7 +506,10 @@ function AdminApp() {
         body: JSON.stringify({
           query,
           stores: productSearch.stores,
-          limit: Number(productSearch.limit || 10)
+          limit:
+            productSearch.limit === 'all'
+              ? 'all'
+              : Number(productSearch.limit || 10)
         })
       });
 
@@ -615,14 +618,19 @@ function AdminApp() {
                 onChange={(event) =>
                   setProductSearch({
                     ...productSearch,
-                    limit: Number(event.target.value)
+                    limit:
+                      event.target.value === 'all'
+                        ? 'all'
+                        : Number(event.target.value)
                   })
                 }
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
-                <option value={15}>15</option>
                 <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value="all">Todos</option>
               </select>
             </label>
 
