@@ -186,7 +186,7 @@ function PublicSite() {
           <a href="#grupos">Grupos</a>
           <a href="#como-funciona">Como funciona</a>
         </nav>
-        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a><a className="admin-link" href="/admin" aria-label="Área administrativa">Painel</a></div>
+        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
       </div>
     </header>
 
@@ -388,7 +388,12 @@ function PublicSite() {
       <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Quero receber ofertas</a></div></section>
     </main>
 
-    <footer><div className="container footer-grid"><Logo name={config.brandName} /><p>{config.disclosure}</p><a href="/admin">Administrar</a></div></footer>
+    <footer>
+      <div className="container footer-grid">
+        <Logo name={config.brandName} />
+        <p>{config.disclosure}</p>
+      </div>
+    </footer>
   </div>;
 }
 
