@@ -132,7 +132,30 @@ app.get('/api/offers', async (_req, res) => {
   const { offers } = await readStore();
   res.json(offers.filter((offer) => offer.status === 'active').sort((a, b) => Number(b.featured) - Number(a.featured)));
 });
+app.get('/api/audiences/public', async (_req, res) => {
+  const { config } = await readStore();
 
+  const audiences = Array.isArray(
+    config.whatsappAudiences
+  )
+    ? config.whatsappAudiences
+    : [];
+
+  res.json(
+    audiences
+      .filter((audience) =>
+        audience.enabled !== false &&
+        audience.whatsappLink
+      )
+      .map((audience) => ({
+        code: String(audience.code || ''),
+        name: String(audience.name || ''),
+        whatsappLink: String(
+          audience.whatsappLink || ''
+        )
+      }))
+  );
+});
 app.post('/api/auth/login', async (req, res) => {
   const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
   const attemptState = loginAttemptState(clientIp);
@@ -272,10 +295,13 @@ app.post('/api/admin/offers', requireAdmin, async (req, res) => {
    * Se tiver 40% ou mais de desconto,
    * também poderá receber G10.
    */
-  offer.targetAudienceCodes =
-    getAudienceCodesForOffer(offer);
-
   await updateStore((data) => {
+    offer.targetAudienceCodes =
+      getAudienceCodesForOffer(
+        offer,
+        data.config.whatsappAudiences
+      );
+
     data.offers.unshift(offer);
   });
 
@@ -384,7 +410,10 @@ app.put('/api/admin/offers/:id', requireAdmin, async (req, res) => {
     }
 
     offer.targetAudienceCodes =
-      getAudienceCodesForOffer(offer);
+      getAudienceCodesForOffer(
+        offer,
+        data.config.whatsappAudiences
+      );
 
     updated = offer;
   });
