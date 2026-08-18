@@ -265,33 +265,15 @@ async function resolveDestinations(item) {
   }
 
   /*
-   * Compatibilidade com a configuração antiga.
-   * Itens antigos continuam funcionando.
-   */
-  if (selectedGroups.length) {
-    return selectedGroups;
-  }
+ * Segurança:
+ * nenhuma oferta deve ser enviada para todos os grupos
+ * quando não possuir classificação de público.
+ */
+console.warn(
+  `Oferta "${item?.offerTitle || 'sem título'}" não possui targetAudienceCodes. Envio cancelado para evitar publicação em todos os grupos.`
+);
 
-  if (groupId) {
-    return [{
-      id: groupId,
-      name: groupName
-    }];
-  }
-
-  if (!groupName) {
-    return [];
-  }
-
-  const groups = await listGroups();
-
-  const match = groups.find(
-    (group) =>
-      group.name.trim().toLowerCase() ===
-      groupName.trim().toLowerCase()
-  );
-
-  return match ? [match] : [];
+return [];
 }
 
 async function processQueue() {
