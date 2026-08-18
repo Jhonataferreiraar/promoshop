@@ -103,43 +103,55 @@ async function refreshActivePage() {
 }
 
 async function listGroups() {
-  const chats = await client.getChats();
+  const page = await refreshActivePage();
 
-  const groups = [];
+  return page.evaluate(() => {
+    const collection =
+      window.require?.('WAWebCollections')?.Chat ||
+      window.Store?.Chat;
 
-  for (const chat of chats) {
-    try {
-      const id =
-        chat.id?._serialized ||
-        (
-          chat.id?.user && chat.id?.server
-            ? `${chat.id.user}@${chat.id.server}`
-            : ''
-        );
+    const chats =
+      collection?.getModelsArray?.() ||
+      collection?.models ||
+      [];
 
-      if (!id || !id.endsWith('@g.us')) {
-        continue;
-      }
+    return chats
+      .map((chat) => {
+        const id =
+          chat.id?._serialized ||
+          (
+            chat.id?.user && chat.id?.server
+              ? `${chat.id.user}@${chat.id.server}`
+              : ''
+          );
 
-      const name = String(
-        chat.name ||
-        chat.groupMetadata?.subject ||
-        ''
-      ).trim();
+        if (!id || !id.endsWith('@g.us')) {
+          return null;
+        }
 
-      groups.push({
-        id,
-        name
-      });
-    } catch (error) {
-      console.warn(
-        'Não foi possível interpretar um grupo:',
-        error?.message || String(error)
-      );
-    }
-  }
+        const metadata =
+          chat.groupMetadata ||
+          chat.groupMetadata?.groupMetadata ||
+          null;
 
-  return groups;
+        const name =
+          chat.name ||
+          chat.formattedTitle ||
+          chat.title ||
+          metadata?.subject ||
+          metadata?.name ||
+          chat.contact?.pushname ||
+          chat.contact?.name ||
+          chat.contact?.shortName ||
+          '';
+
+        return {
+          id,
+          name: String(name || '').trim()
+        };
+      })
+      .filter(Boolean);
+  });
 }
 
 async function syncGroups(attempt = 1) {
@@ -166,7 +178,12 @@ async function syncGroups(attempt = 1) {
     );
     await request('/api/worker/heartbeat', {
       method: 'POST',
-      body: JSON.stringify({ status: 'connected', message: 'WhatsApp conectado. Carregando a lista de grupos…' })
+      body: JSON.stringify({
+        status: whatsappReady ? 'connected' : 'offline',
+        message: whatsappReady
+          ? 'WhatsApp conectado, mas não foi possível atualizar a lista de grupos.'
+          : 'WhatsApp desconectado. Não foi possível carregar os grupos.'
+      })
     }).catch(() => { });
     if (attempt < 12) setTimeout(() => syncGroups(attempt + 1), 10_000);
   }
@@ -185,39 +202,23 @@ async function startConnectedServices() {
   setInterval(() => {
     processQueue();
   }, 2000);
-  setInterval(async () => {
-    try {
-      const state = await client.getState();
+  setInterval(() => {
+    if (!whatsappReady) {
+      return;
+    }
 
-      const connected = state === 'CONNECTED';
-
-      whatsappReady = connected;
-
-      await request('/api/worker/heartbeat', {
-        method: 'POST',
-        body: JSON.stringify({
-          status: connected ? 'connected' : 'offline',
-          message: connected
-            ? 'WhatsApp conectado e publicador ativo.'
-            : `WhatsApp não está conectado (${state || 'estado desconhecido'}).`
-        })
-      });
-    } catch (error) {
-      whatsappReady = false;
-
-      await request('/api/worker/heartbeat', {
-        method: 'POST',
-        body: JSON.stringify({
-          status: 'offline',
-          message: 'Não foi possível confirmar a conexão com o WhatsApp.'
-        })
-      }).catch(() => { });
-
+    request('/api/worker/heartbeat', {
+      method: 'POST',
+      body: JSON.stringify({
+        status: 'connected',
+        message: 'WhatsApp conectado e publicador ativo.'
+      })
+    }).catch((error) => {
       console.error(
-        'Falha ao verificar estado do WhatsApp:',
+        'Falha ao atualizar o estado da conexão:',
         error.message
       );
-    }
+    });
   }, 15_000);
 }
 
@@ -240,7 +241,10 @@ async function resolveDestinations(item) {
       const name = String(group.name || '').trim();
 
       return audienceCodes.some((code) => {
-        const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedCode = code.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&'
+        );
 
         return new RegExp(
           `(?:\\||\\s)${escapedCode}\\s*$`,
@@ -256,6 +260,8 @@ async function resolveDestinations(item) {
     console.warn(
       `Nenhum grupo encontrado para os públicos: ${audienceCodes.join(', ')}`
     );
+
+    return [];
   }
 
   /*
@@ -297,7 +303,6 @@ async function processQueue() {
       return;
     }
     await refreshConfig();
-    if (!selectedGroups.length && !groupId && !groupName) return;
     item = await request('/api/worker/queue/next');
     if (!item) return;
     sentTimes = sentTimes.filter((time) => Date.now() - time < 60 * 60 * 1000);
