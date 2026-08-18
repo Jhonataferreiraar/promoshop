@@ -2,6 +2,7 @@ import { addLog, createId, updateStore } from './store.js';
 import { readSecrets } from './secrets.js';
 import crypto from 'node:crypto';
 import { getMercadoLivreAccessToken } from './mercadolivre.js';
+import { getAudienceCodesForOffer } from './audienceRouting.js';
 import {
   generateMercadoLivreAffiliateLinks,
   normalizeMercadoLivreAffiliateUrl
@@ -732,6 +733,7 @@ export async function runCollection() {
             queueItem.message = refreshedQueueItem.message;
             queueItem.messageSource = refreshedQueueItem.messageSource;
             queueItem.offerSnapshot = refreshedQueueItem.offerSnapshot;
+            queueItem.targetAudienceCodes = refreshedQueueItem.targetAudienceCodes;
             delete queueItem.aiStatus;
             delete queueItem.aiError;
             delete queueItem.aiRetryAt;
@@ -767,6 +769,7 @@ export function makeQueueItem(offer, config) {
     shipping: offer.freeShipping ? '🚚 Frete grátis' : '',
     link: offer.affiliateUrl
   };
+  const targetAudienceCodes = getAudienceCodesForOffer(offer);
   const aiRequired = config.aiEnabled !== false;
   const message = aiRequired
     ? ''
@@ -786,6 +789,7 @@ export function makeQueueItem(offer, config) {
     offerId: offer.id,
     offerTitle: offer.title,
     store: offer.store,
+    targetAudienceCodes,
     message,
     messageSource: aiRequired ? 'awaiting-ai' : 'template',
     offerSnapshot,
