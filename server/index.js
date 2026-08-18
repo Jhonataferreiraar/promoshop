@@ -356,7 +356,47 @@ app.post('/api/admin/whatsapp/stop', requireAdmin, async (_req, res) => {
   await updateStore((store) => { store.meta.whatsapp = { ...store.meta.whatsapp, status: 'offline', qrDataUrl: null, pairingCode: null, message: 'Publicador parado pelo painel.' }; });
   res.json({ ok: true });
 });
+app.post('/api/admin/whatsapp/check', requireAdmin, async (_req, res) => {
+  const data = await readStore();
 
+  const whatsapp = data.meta.whatsapp || {};
+
+  const lastSeenAt = whatsapp.lastSeenAt
+    ? new Date(whatsapp.lastSeenAt).getTime()
+    : 0;
+
+  const heartbeatAge = lastSeenAt
+    ? Date.now() - lastSeenAt
+    : Infinity;
+
+  const processRunning =
+    Boolean(whatsappProcess) &&
+    whatsappProcess.exitCode === null;
+
+  const heartbeatFresh = heartbeatAge < 30_000;
+
+  const connected =
+    processRunning &&
+    heartbeatFresh &&
+    whatsapp.status === 'connected';
+
+  res.json({
+    ok: true,
+    connected,
+    processRunning,
+    status: connected
+      ? 'connected'
+      : whatsapp.status || 'offline',
+    lastSeenAt: whatsapp.lastSeenAt || null,
+    message: connected
+      ? 'WhatsApp conectado e publicador respondendo normalmente.'
+      : !processRunning
+        ? 'O publicador do WhatsApp não está em execução.'
+        : !heartbeatFresh
+          ? 'O publicador está aberto, mas não respondeu recentemente.'
+          : whatsapp.message || 'WhatsApp não conectado.'
+  });
+});
 app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
   const { config, queue, offers } = await readStore();
   const now = new Date();
