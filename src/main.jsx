@@ -10,8 +10,9 @@ const fallbackConfig = {
   heroText: 'Promoções selecionadas e verificadas para você economizar sem perder tempo.',
   primaryColor: '#1269f3',
   whatsappUrl: '#',
+  whatsappAudiences: [],
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.'
-};
+}
 
 const mercadoLivreCategories = [
   { id: 'MLB5672', name: 'Acessórios para Veículos' },
@@ -81,6 +82,11 @@ function PublicSite() {
   const [visibleCount, setVisibleCount] = useState(24);
   const [loading, setLoading] = useState(true);
   const [audiences, setAudiences] = useState([]);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState('');
+  const [assistantReply, setAssistantReply] = useState('');
+  const [assistantAudiences, setAssistantAudiences] = useState([]);
+  const [assistantLoading, setAssistantLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -130,11 +136,56 @@ function PublicSite() {
 
   useEffect(() => setVisibleCount(24), [query, store, sort]);
 
+  async function askAssistant(event) {
+    event.preventDefault();
+
+    const message = assistantMessage.trim();
+
+    if (!message) return;
+
+    setAssistantLoading(true);
+    setAssistantReply('');
+    setAssistantAudiences([]);
+
+    try {
+      const result = await api('/assistant/recommend', {
+        method: 'POST',
+        body: JSON.stringify({
+          message
+        })
+      });
+
+      setAssistantMessage('');
+
+      setAssistantReply(
+        result.message ||
+        'Encontrei alguns grupos para você.'
+      );
+
+      setAssistantAudiences(
+        Array.isArray(result.audiences)
+          ? result.audiences
+          : []
+      );
+    } catch (error) {
+      setAssistantReply(
+        error.message ||
+        'Não consegui fazer a recomendação agora.'
+      );
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
   return <div className="site-shell">
     <header className="topbar">
       <div className="container nav-wrap">
         <Logo name={config.brandName} />
-        <nav><a href="#ofertas">Ofertas</a><a href="#como-funciona">Como funciona</a></nav>
+        <nav>
+          <a href="#ofertas">Ofertas</a>
+          <a href="#grupos">Grupos</a>
+          <a href="#como-funciona">Como funciona</a>
+        </nav>
         <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a><a className="admin-link" href="/admin" aria-label="Área administrativa">Painel</a></div>
       </div>
     </header>
@@ -238,6 +289,96 @@ function PublicSite() {
               ))}
 
             </div>
+
+            <button
+              className="assistant-floating-button"
+              type="button"
+              onClick={() =>
+                setAssistantOpen((current) => !current)
+              }
+            >
+              🤖
+              <span>Escolher grupo</span>
+            </button>
+
+            {assistantOpen && (
+              <section className="assistant-chat">
+                <div className="assistant-chat-head">
+                  <div>
+                    <strong>Assistente PromoShop</strong>
+                    <small>Encontre os grupos ideais para você</small>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setAssistantOpen(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="assistant-chat-body">
+                  <div className="assistant-bubble assistant">
+                    👋 Me conta o que você gosta de comprar ou quais ofertas quer receber.
+                  </div>
+
+                  {assistantReply && (
+                    <div className="assistant-bubble assistant">
+                      {assistantReply}
+                    </div>
+                  )}
+
+                  {assistantAudiences.length > 0 && (
+                    <div className="assistant-recommendations">
+                      {assistantAudiences.map((audience) => (
+                        <a
+                          key={audience.code}
+                          href={audience.whatsappLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="assistant-group"
+                        >
+                          <span>
+                            <small>{audience.code}</small>
+                            <strong>{audience.name}</strong>
+                          </span>
+
+                          <b>Entrar →</b>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <form
+                  className="assistant-chat-form"
+                  onSubmit={askAssistant}
+                >
+                  <textarea
+                    value={assistantMessage}
+                    onChange={(event) =>
+                      setAssistantMessage(event.target.value)
+                    }
+                    placeholder="Ex.: Gosto de produtos para cabelo, maquiagem e perfumes..."
+                    rows={2}
+                    maxLength={1000}
+                  />
+
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={
+                      assistantLoading ||
+                      !assistantMessage.trim()
+                    }
+                  >
+                    {assistantLoading
+                      ? 'Pensando…'
+                      : 'Enviar'}
+                  </button>
+                </form>
+              </section>
+            )}
 
           </div>
 
