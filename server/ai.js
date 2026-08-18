@@ -269,3 +269,146 @@ Regras obrigatórias:
   }
   return finalizeGeneratedMessage(creative.message, offer, config);
 }
+
+export async function recommendWhatsappAudiences(
+  userMessage,
+  audiences,
+  config,
+  secrets
+) {
+  const activeAudiences = (Array.isArray(audiences) ? audiences : [])
+    .filter((audience) => audience.enabled !== false)
+    .map((audience) => ({
+      code: audience.code,
+      name: audience.name,
+      keywords: audience.keywords || []
+    }));
+
+  if (!activeAudiences.length) {
+    throw new Error('Nenhum público está disponível.');
+  }
+
+  const prompt = `
+Você é o assistente da PromoShop.
+
+Sua função é descobrir quais grupos de ofertas combinam com o interesse do usuário.
+
+GRUPOS DISPONÍVEIS:
+${activeAudiences
+      .map(
+        (audience) =>
+          `${audience.code} - ${audience.name} - palavras-chave: ${(audience.keywords || []).join(', ')}`
+      )
+      .join('\n')}
+
+MENSAGEM DO USUÁRIO:
+"${String(userMessage || '').slice(0, 1000)}"
+
+REGRAS:
+- Escolha apenas grupos da lista acima.
+- Escolha no máximo 3 grupos.
+- G01 é o grupo de ofertas gerais e só deve ser recomendado quando o interesse for amplo ou indefinido.
+- Não invente códigos.
+- Responda SOMENTE com JSON.
+- Formato obrigatório:
+
+{
+  "message": "resposta curta e amigável ao usuário",
+  "codes": ["G02"]
+}
+`;
+
+  const provider = config.aiProvider || 'gemini';
+
+  if (provider !== 'gemini') {
+    throw new Error(
+      'O assistente de grupos está configurado inicialmente para Gemini.'
+    );
+  }
+
+  const apiKey =
+    normalizeApiKey(secrets?.geminiApiKey) ||
+    normalizeApiKey(process.env.GEMINI_API_KEY) ||
+    normalizeApiKey(process.env.GOOGLE_API_KEY);
+
+  if (!apiKey) {
+    throw new Error('Chave do Gemini não configurada.');
+  }
+
+  const model =
+    config.aiModel ||
+    'gemini-3.5-flash-lite';
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      signal: AbortSignal.timeout(45_000),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json'
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const raw = await response.text();
+
+    throw new Error(
+      `Gemini respondeu ${response.status}: ${raw.slice(0, 200)}`
+    );
+  }
+
+  const payload = await response.json();
+
+  const text =
+    payload.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error('A IA não retornou uma recomendação.');
+  }
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('A IA retornou uma resposta inválida.');
+  }
+
+  const validCodes = new Set(
+    activeAudiences.map((audience) =>
+      String(audience.code || '').toUpperCase()
+    )
+  );
+
+  const codes = Array.isArray(parsed.codes)
+    ? parsed.codes
+      .map((code) => String(code || '').toUpperCase())
+      .filter((code) => validCodes.has(code))
+      .slice(0, 3)
+    : [];
+
+  return {
+    message:
+      String(parsed.message || 'Encontrei alguns grupos para você.').slice(
+        0,
+        300
+      ),
+    codes
+  };
+}

@@ -19,7 +19,10 @@ import {
   searchShopeeProducts
 } from './collectors.js';
 import { readSecrets, secretStatus, updateSecrets, verifyPassword } from './secrets.js';
-import { generateOfferMessage } from './ai.js';
+import {
+  generateOfferMessage,
+  recommendWhatsappAudiences
+} from './ai.js';
 import {
   beginMercadoLivreAuthorization,
   finishMercadoLivreAuthorization,
@@ -40,6 +43,9 @@ let collectionInProgress = false;
 const loginAttempts = new Map();
 const loginWindowMs = 15 * 60 * 1000;
 const loginMaxAttempts = 5;
+const assistantAttempts = new Map();
+const assistantWindowMs = 10 * 60 * 1000;
+const assistantMaxAttempts = 10;
 
 app.set('trust proxy', 1);
 
@@ -57,6 +63,43 @@ function registerFailedLogin(ip) {
   if (state.count >= loginMaxAttempts) state.blockedUntil = Date.now() + loginWindowMs;
   loginAttempts.set(ip, state);
   return state;
+}
+
+function checkAssistantLimit(ip) {
+  const now = Date.now();
+
+  const current =
+    assistantAttempts.get(ip) || {
+      count: 0,
+      resetAt: now + assistantWindowMs
+    };
+
+  if (current.resetAt <= now) {
+    current.count = 0;
+    current.resetAt = now + assistantWindowMs;
+  }
+
+  if (current.count >= assistantMaxAttempts) {
+    return {
+      allowed: false,
+      retryAfter: Math.max(
+        1,
+        Math.ceil((current.resetAt - now) / 1000)
+      )
+    };
+  }
+
+  current.count += 1;
+
+  assistantAttempts.set(ip, current);
+
+  return {
+    allowed: true,
+    remaining: Math.max(
+      0,
+      assistantMaxAttempts - current.count
+    )
+  };
 }
 
 function whatsappAutoStartEnabled(config) {
@@ -78,7 +121,13 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'");
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  if (req.path.startsWith('/api/admin') || req.path.startsWith('/api/auth')) res.setHeader('Cache-Control', 'no-store');
+  if (
+    req.path.startsWith('/api/admin') ||
+    req.path.startsWith('/api/auth') ||
+    req.path.startsWith('/api/assistant')
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
   next();
 });
 app.use(express.json({ limit: '1mb' }));
@@ -750,6 +799,103 @@ app.post('/api/worker/queue/:id/fail', requireWorker, async (req, res) => {
   await updateStore((data) => { const item = data.queue.find((entry) => entry.id === req.params.id); if (item) { item.attempts += 1; item.status = item.attempts >= 3 ? 'failed' : 'pending'; item.error = String(req.body.error || 'Falha desconhecida').slice(0, 500); } });
   await addLog(`WhatsApp: falha ao publicar (${String(req.body.error || 'erro')}).`, 'error');
   res.json({ ok: true });
+});
+
+app.post('/api/assistant/recommend', async (req, res) => {
+  try {
+    const clientIp =
+      req.ip ||
+      req.socket.remoteAddress ||
+      'unknown';
+
+    const limitState =
+      checkAssistantLimit(clientIp);
+
+    if (!limitState.allowed) {
+      res.setHeader(
+        'Retry-After',
+        String(limitState.retryAfter)
+      );
+
+      return res.status(429).json({
+        error:
+          'Você fez muitas consultas ao assistente. Aguarde alguns minutos e tente novamente.'
+      });
+    }
+
+    const message = String(
+      req.body?.message || ''
+    ).trim();
+
+    if (!message) {
+      return res.status(400).json({
+        error: 'Digite o que você está procurando.'
+      });
+    }
+
+    if (message.length > 1000) {
+      return res.status(400).json({
+        error: 'Sua mensagem está muito longa.'
+      });
+    }
+
+    const data = await readStore();
+    const secrets = await readSecrets();
+
+    const audiences = Array.isArray(
+      data.config.whatsappAudiences
+    )
+      ? data.config.whatsappAudiences
+      : [];
+
+    const recommendation =
+      await recommendWhatsappAudiences(
+        message,
+        audiences,
+        data.config,
+        secrets
+      );
+
+    const recommendedAudiences =
+      recommendation.codes
+        .map((code) =>
+          audiences.find(
+            (audience) =>
+              String(audience.code || '')
+                .trim()
+                .toUpperCase() ===
+              String(code || '')
+                .trim()
+                .toUpperCase()
+          )
+        )
+        .filter(
+          (audience) =>
+            audience &&
+            audience.enabled !== false &&
+            audience.whatsappLink
+        )
+        .map((audience) => ({
+          code: audience.code,
+          name: audience.name,
+          whatsappLink: audience.whatsappLink
+        }));
+
+    res.json({
+      message: recommendation.message,
+      audiences: recommendedAudiences
+    });
+  } catch (error) {
+    console.error(
+      'Assistente PromoShop:',
+      error.message
+    );
+
+    res.status(500).json({
+      error:
+        'Não consegui encontrar um grupo agora. Tente novamente em alguns instantes.'
+    });
+  }
 });
 
 app.use(express.static(path.join(root, 'dist')));
