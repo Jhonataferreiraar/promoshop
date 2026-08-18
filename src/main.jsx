@@ -818,7 +818,24 @@ function AdminApp() {
 
 function QueueTable({ queue, onRemove, onForce, onRetry }) {
   if (!queue.length) return <div className="empty"><strong>A fila está vazia</strong><p>Envie uma oferta pelo painel.</p></div>;
-  return <div className="queue-table">{queue.map((item) => <div key={item.id}><span><strong>{item.offerTitle}</strong><small>{item.store}{item.force && item.status === 'pending' ? ' · envio imediato' : ''}{item.error ? ` · ${item.error}` : ''}</small></span><span className={`status ${item.status}`}>{item.status === 'pending' ? (item.force ? 'Prioridade' : 'Aguardando') : item.status === 'sent' ? 'Enviada' : item.status === 'failed' ? 'Falhou' : item.status}</span><time>{new Date(item.createdAt).toLocaleString('pt-BR')}</time><div className="queue-actions">{onRetry && item.status === 'failed' && <button className="queue-force" onClick={() => onRetry(item.id)}>Tentar novamente</button>}{onForce && item.status === 'pending' && !item.force && <button className="queue-force" onClick={() => onForce(item.id)}>Publicar agora</button>}{onRemove && item.status !== 'sent' && <button className="queue-remove" onClick={() => onRemove(item.id)}>Remover</button>}</div></div>)}</div>;
+  return <div className="queue-table">{queue.map((item) => <div key={item.id}><span><strong>{item.offerTitle}</strong>
+    <small>
+      {item.store}
+
+      {Array.isArray(item.targetAudienceCodes) &&
+        item.targetAudienceCodes.length > 0
+        ? ` · ${item.targetAudienceCodes.join(', ')}`
+        : ''}
+
+      {item.force && item.status === 'pending'
+        ? ' · envio imediato'
+        : ''}
+
+      {item.error
+        ? ` · ${item.error}`
+        : ''}
+    </small>
+  </span><span className={`status ${item.status}`}>{item.status === 'pending' ? (item.force ? 'Prioridade' : 'Aguardando') : item.status === 'sent' ? 'Enviada' : item.status === 'failed' ? 'Falhou' : item.status}</span><time>{new Date(item.createdAt).toLocaleString('pt-BR')}</time><div className="queue-actions">{onRetry && item.status === 'failed' && <button className="queue-force" onClick={() => onRetry(item.id)}>Tentar novamente</button>}{onForce && item.status === 'pending' && !item.force && <button className="queue-force" onClick={() => onForce(item.id)}>Publicar agora</button>}{onRemove && item.status !== 'sent' && <button className="queue-remove" onClick={() => onRemove(item.id)}>Remover</button>}</div></div>)}</div>;
 }
 
 const isAdmin = window.location.pathname.startsWith('/admin');

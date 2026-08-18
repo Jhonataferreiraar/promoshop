@@ -102,21 +102,61 @@ async function refreshActivePage() {
 
 async function listGroups() {
   const page = await refreshActivePage();
+
   return page.evaluate(() => {
-    const collection = window.require?.('WAWebCollections')?.Chat || window.Store?.Chat;
-    const chats = collection?.getModelsArray?.() || collection?.models || [];
+    const collection =
+      window.require?.('WAWebCollections')?.Chat ||
+      window.Store?.Chat;
+
+    const chats =
+      collection?.getModelsArray?.() ||
+      collection?.models ||
+      [];
+
     return chats
-      .map((chat) => ({
-        id: chat.id?._serialized || `${chat.id?.user}@${chat.id?.server}`,
-        name: chat.name || chat.formattedTitle || chat.contact?.name || 'Grupo sem nome'
-      }))
-      .filter((chat) => chat.id.endsWith('@g.us'));
+      .map((chat) => {
+        const id =
+          chat.id?._serialized ||
+          (
+            chat.id?.user && chat.id?.server
+              ? `${chat.id.user}@${chat.id.server}`
+              : ''
+          );
+
+        const name =
+          chat.name ||
+          chat.formattedTitle ||
+          chat.title ||
+          chat.groupMetadata?.subject ||
+          chat.groupMetadata?.name ||
+          chat.contact?.pushname ||
+          chat.contact?.name ||
+          chat.contact?.shortName ||
+          '';
+
+        return {
+          id,
+          name: String(name || '').trim()
+        };
+      })
+      .filter(
+        (chat) =>
+          chat.id &&
+          chat.id.endsWith('@g.us')
+      );
   });
 }
 
 async function syncGroups(attempt = 1) {
   try {
     const groups = (await listGroups()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    console.log('Grupos encontrados pelo WhatsApp:');
+
+    for (const group of groups) {
+      console.log(
+        `- ${group.name || '[SEM NOME]'} | ${group.id}`
+      );
+    }
     await request('/api/worker/groups', { method: 'POST', body: JSON.stringify({ groups }) });
     const message = selectedGroups.length
       ? `Conectado. ${selectedGroups.length} grupo${selectedGroups.length === 1 ? '' : 's'} selecionado${selectedGroups.length === 1 ? '' : 's'} para publicação.`
@@ -154,12 +194,70 @@ async function startConnectedServices() {
   }, 30_000);
 }
 
-async function resolveDestinations() {
-  if (selectedGroups.length) return selectedGroups;
-  if (groupId) return [{ id: groupId, name: groupName }];
-  if (!groupName) return [];
+async function resolveDestinations(item) {
+  const audienceCodes = Array.isArray(item?.targetAudienceCodes)
+    ? item.targetAudienceCodes
+      .map((code) => String(code || '').trim().toUpperCase())
+      .filter(Boolean)
+    : [];
+
+  /*
+   * Nova lógica de públicos.
+   *
+   * Procura G01, G02 etc. no final do nome dos grupos.
+   */
+  if (audienceCodes.length) {
+    const groups = await listGroups();
+
+    const destinations = groups.filter((group) => {
+      const name = String(group.name || '').trim();
+
+      return audienceCodes.some((code) => {
+        const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        return new RegExp(
+          `(?:\\||\\s)${escapedCode}\\s*$`,
+          'i'
+        ).test(name);
+      });
+    });
+
+    if (destinations.length) {
+      return destinations;
+    }
+
+    console.warn(
+      `Nenhum grupo encontrado para os públicos: ${audienceCodes.join(', ')}`
+    );
+  }
+
+  /*
+   * Compatibilidade com a configuração antiga.
+   * Itens antigos continuam funcionando.
+   */
+  if (selectedGroups.length) {
+    return selectedGroups;
+  }
+
+  if (groupId) {
+    return [{
+      id: groupId,
+      name: groupName
+    }];
+  }
+
+  if (!groupName) {
+    return [];
+  }
+
   const groups = await listGroups();
-  const match = groups.find((group) => group.name.trim().toLowerCase() === groupName.trim().toLowerCase());
+
+  const match = groups.find(
+    (group) =>
+      group.name.trim().toLowerCase() ===
+      groupName.trim().toLowerCase()
+  );
+
   return match ? [match] : [];
 }
 
@@ -174,7 +272,14 @@ async function processQueue() {
     if (!item) return;
     sentTimes = sentTimes.filter((time) => Date.now() - time < 60 * 60 * 1000);
     if (!item.force && sentTimes.length >= maxPerHour) return;
-    const destinations = await resolveDestinations();
+    const destinations = await resolveDestinations(item);
+    console.log(
+      `Roteamento de "${item.offerTitle}": ${Array.isArray(item.targetAudienceCodes)
+        ? item.targetAudienceCodes.join(', ')
+        : 'modo antigo'
+      } → ${destinations.map((group) => group.name).join(' | ')
+      }`
+    );
     if (!destinations.length) throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
     for (const destination of destinations) {
       let sent = false;

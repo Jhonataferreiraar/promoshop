@@ -498,7 +498,7 @@ app.get('/api/worker/config', requireWorker, async (_req, res) => {
   res.json({ selectedGroups, groupId: config.whatsappGroupId || '', groupName: config.whatsappGroupName || '', maxPerHour: Number(config.whatsappMaxPerHour || 10) });
 });
 app.post('/api/worker/groups', requireWorker, async (req, res) => {
-  const groups = Array.isArray(req.body.groups) ? req.body.groups.slice(0, 500).map((group) => ({ id: String(group.id || '').slice(0, 120), name: String(group.name || '').slice(0, 160) })).filter((group) => group.id && group.name) : [];
+  const groups = Array.isArray(req.body.groups) ? req.body.groups.slice(0, 500).map((group) => ({ id: String(group.id || '').slice(0, 120), name: String(group.name || '').slice(0, 160) })).filter((group) => group.id) : [];
   await updateStore((data) => { data.meta.whatsapp = { ...data.meta.whatsapp, groups, lastSeenAt: new Date().toISOString() }; });
   await addLog(`WhatsApp: ${groups.length} grupos encontrados.`, 'success');
   res.json({ ok: true, count: groups.length });
