@@ -208,6 +208,15 @@ function AdminApp() {
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
   const [adminOfferStore, setAdminOfferStore] = useState('Todas');
+  const [productSearch, setProductSearch] = useState({
+    query: '',
+    stores: ['mercadolivre', 'shopee'],
+    limit: 10
+  });
+
+  const [productSearchResults, setProductSearchResults] = useState([]);
+  const [productSearchErrors, setProductSearchErrors] = useState([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
   const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
 
   async function load({ preserveConfig = false } = {}) {
@@ -427,7 +436,13 @@ function AdminApp() {
   async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await load(); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
   async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await load(); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
   async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await load(); setMessage('Item removido da fila.'); }
-  function activateOffer(offer) { setDialog({ type: 'affiliate-link', offer, value: offer.productUrl || '' }); }
+  function activateOffer(offer) {
+    setDialog({
+      type: 'affiliate-link',
+      offer,
+      value: offer.productUrl || offer.affiliateUrl || ''
+    });
+  }
   async function confirmAffiliateLink(event) {
     event.preventDefault();
     const affiliateUrl = String(dialog?.value || '').trim();
@@ -465,6 +480,83 @@ function AdminApp() {
       setMessage(error.message);
     }
   }
+  async function searchProducts(event) {
+    event.preventDefault();
+
+    const query = String(productSearch.query || '').trim();
+
+    if (!query) {
+      setMessage('Digite o nome do produto que deseja buscar.');
+      return;
+    }
+
+    if (!productSearch.stores.length) {
+      setMessage('Selecione pelo menos uma loja para pesquisar.');
+      return;
+    }
+
+    setProductSearchLoading(true);
+    setProductSearchResults([]);
+    setProductSearchErrors([]);
+    setMessage(`Buscando "${query}" nas lojas selecionadas…`);
+
+    try {
+      const result = await authApi('/admin/search-products', {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          stores: productSearch.stores,
+          limit: Number(productSearch.limit || 10)
+        })
+      });
+
+      setProductSearchResults(
+        Array.isArray(result.results)
+          ? result.results
+          : []
+      );
+
+      setProductSearchErrors(
+        Array.isArray(result.errors)
+          ? result.errors
+          : []
+      );
+
+      if (result.count > 0) {
+        setMessage(
+          `${result.count} produto${result.count === 1 ? '' : 's'} encontrado${result.count === 1 ? '' : 's'} para "${query}".`
+        );
+      } else {
+        setMessage(
+          `Nenhum produto encontrado para "${query}".`
+        );
+      }
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setProductSearchLoading(false);
+    }
+  }
+  function useSearchResult(offer) {
+    setNewOffer({
+      title: offer.title || '',
+      store: offer.store || 'Mercado Livre',
+      category: offer.category || '',
+      price: Number(offer.price || 0) || '',
+      originalPrice: Number(offer.originalPrice || 0) || '',
+      image: offer.image || '',
+      affiliateUrl: offer.affiliateUrl || offer.productUrl || '',
+      freeShipping: Boolean(offer.freeShipping),
+      featured: Boolean(offer.featured),
+      status: offer.affiliateUrl
+        ? 'active'
+        : 'pending-link'
+    });
+
+    setMessage(
+      `"${offer.title}" foi carregado no formulário. Confira os dados antes de adicionar.`
+    );
+  }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
   const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
@@ -483,7 +575,437 @@ function AdminApp() {
 
   return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i>{tabLabels[id]}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{Number(data.config.enableMercadoLivre) + Number(data.config.enableShopee) + Number(data.config.enableAliexpress)}</strong><small>Plataformas conectadas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
-    {tab === 'offers' && <div className="admin-columns"><form className="panel form-grid create-offer-panel" onSubmit={addOffer}><div className="panel-heading"><div><span className="section-step">CADASTRO MANUAL</span><h2>Adicionar oferta</h2><p>Use quando quiser incluir uma promoção específica.</p></div></div>{[['title', 'Produto'], ['category', 'Categoria'], ['price', 'Preço atual'], ['originalPrice', 'Preço anterior'], ['image', 'URL da imagem'], ['affiliateUrl', 'Link de afiliado']].map(([key, label]) => <label key={key}>{label}<input required={!['originalPrice'].includes(key)} type={key.includes('Price') || key === 'price' ? 'number' : 'text'} step="0.01" value={newOffer[key]} onChange={(event) => setNewOffer({ ...newOffer, [key]: event.target.value })} /></label>)}<label>Loja<select value={newOffer.store} onChange={(event) => setNewOffer({ ...newOffer, store: event.target.value })}><option>Mercado Livre</option><option>Shopee</option><option>AliExpress</option><option>Outra</option></select></label><label className="check"><input type="checkbox" checked={newOffer.freeShipping} onChange={(event) => setNewOffer({ ...newOffer, freeShipping: event.target.checked })} /> Frete grátis</label><button className="button primary full">Adicionar oferta</button></form><section className="panel table-panel offers-manager"><div className="panel-heading"><div><h2>Ofertas cadastradas</h2><p>{adminFilteredOffers.length} de {data.offers.length} ofertas</p></div></div><div className="admin-toolbar"><label className="admin-search"><span>⌕</span><input value={adminOfferQuery} onChange={(event) => setAdminOfferQuery(event.target.value)} placeholder="Buscar oferta" /></label><select value={adminOfferStore} onChange={(event) => setAdminOfferStore(event.target.value)} aria-label="Filtrar ofertas por loja">{adminStores.map((item) => <option key={item}>{item}</option>)}</select></div><div className="offer-admin-list">{adminFilteredOffers.map((offer) => <div key={offer.id}><img src={offer.image} alt="" /><span><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price))} · {offer.status === 'active' ? 'Publicada' : 'Aguardando link'}</small></span><div className="offer-row-actions">{offer.status === 'active' ? <><button onClick={() => queueOffer(offer.id)}>Agendar</button><button className="force" onClick={() => queueOffer(offer.id, true)}>Publicar agora</button></> : <button onClick={() => activateOffer(offer)}>Vincular</button>}<button className="danger" onClick={() => removeOffer(offer.id)}>Excluir</button></div></div>)}</div></section></div>}
+    {tab === 'offers' && (
+      <div className="offers-admin-layout">
+
+        <section className="panel product-search-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="section-step">BUSCA MANUAL</span>
+              <h2>Buscar produto nas lojas</h2>
+              <p>
+                Digite o produto que deseja encontrar no Mercado Livre ou Shopee.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="product-search-form"
+            onSubmit={searchProducts}
+          >
+            <label className="product-search-query">
+              Produto
+              <input
+                value={productSearch.query}
+                onChange={(event) =>
+                  setProductSearch({
+                    ...productSearch,
+                    query: event.target.value
+                  })
+                }
+                placeholder="Ex.: iPhone 15 128GB, Air Fryer Mondial, JBL Boombox 3"
+              />
+            </label>
+
+            <label>
+              Resultados por loja
+
+              <select
+                value={productSearch.limit}
+                onChange={(event) =>
+                  setProductSearch({
+                    ...productSearch,
+                    limit: Number(event.target.value)
+                  })
+                }
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={20}>20</option>
+              </select>
+            </label>
+
+            <div className="product-search-stores">
+              <span>Onde pesquisar</span>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={productSearch.stores.includes('mercadolivre')}
+                  onChange={(event) => {
+                    const stores = event.target.checked
+                      ? [
+                        ...new Set([
+                          ...productSearch.stores,
+                          'mercadolivre'
+                        ])
+                      ]
+                      : productSearch.stores.filter(
+                        (store) => store !== 'mercadolivre'
+                      );
+
+                    setProductSearch({
+                      ...productSearch,
+                      stores
+                    });
+                  }}
+                />
+
+                Mercado Livre
+              </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={productSearch.stores.includes('shopee')}
+                  onChange={(event) => {
+                    const stores = event.target.checked
+                      ? [
+                        ...new Set([
+                          ...productSearch.stores,
+                          'shopee'
+                        ])
+                      ]
+                      : productSearch.stores.filter(
+                        (store) => store !== 'shopee'
+                      );
+
+                    setProductSearch({
+                      ...productSearch,
+                      stores
+                    });
+                  }}
+                />
+
+                Shopee
+              </label>
+            </div>
+
+            <button
+              className="button primary"
+              type="submit"
+              disabled={productSearchLoading}
+            >
+              {productSearchLoading
+                ? 'Buscando…'
+                : 'Buscar produtos'}
+            </button>
+          </form>
+
+          {productSearchErrors.length > 0 && (
+            <div className="product-search-errors">
+              {productSearchErrors.map((error) => (
+                <p key={error}>{error}</p>
+              ))}
+            </div>
+          )}
+
+          {productSearchResults.length > 0 && (
+            <div className="product-search-results">
+
+              <div className="product-search-results-head">
+                <strong>
+                  {productSearchResults.length} resultado
+                  {productSearchResults.length === 1 ? '' : 's'}
+                </strong>
+
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setProductSearchResults([]);
+                    setProductSearchErrors([]);
+                  }}
+                >
+                  Limpar resultados
+                </button>
+              </div>
+
+              <div className="product-search-grid">
+                {productSearchResults.map((offer, index) => (
+                  <article
+                    className="product-search-card"
+                    key={`${offer.store}-${offer.id}-${index}`}
+                  >
+                    <div className="product-search-image">
+                      {offer.image ? (
+                        <img
+                          src={offer.image}
+                          alt={offer.title}
+                        />
+                      ) : (
+                        <span>Sem imagem</span>
+                      )}
+                    </div>
+
+                    <div className="product-search-card-content">
+                      <span className="product-search-store">
+                        {offer.store}
+                      </span>
+
+                      <h3>{offer.title}</h3>
+
+                      <div className="product-search-price">
+                        {Number(offer.originalPrice) >
+                          Number(offer.price) && (
+                            <s>
+                              {money.format(
+                                Number(offer.originalPrice)
+                              )}
+                            </s>
+                          )}
+
+                        <strong>
+                          {money.format(
+                            Number(offer.price || 0)
+                          )}
+                        </strong>
+
+                        {discount(offer) > 0 && (
+                          <span>
+                            {discount(offer)}% OFF
+                          </span>
+                        )}
+                      </div>
+
+                      {offer.freeShipping && (
+                        <small className="shipping">
+                          Frete grátis
+                        </small>
+                      )}
+
+                      <div className="product-search-actions">
+                        {offer.productUrl && (
+                          <a
+                            className="button subtle"
+                            href={offer.productUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver produto
+                          </a>
+                        )}
+
+                        <button
+                          className="button primary"
+                          type="button"
+                          onClick={() => useSearchResult(offer)}
+                        >
+                          Usar esta oferta
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+
+        <div className="admin-columns">
+
+          <form
+            className="panel form-grid create-offer-panel"
+            onSubmit={addOffer}
+          >
+            <div className="panel-heading">
+              <div>
+                <span className="section-step">
+                  CADASTRO MANUAL
+                </span>
+
+                <h2>Adicionar oferta</h2>
+
+                <p>
+                  Use uma oferta encontrada acima ou preencha
+                  manualmente.
+                </p>
+              </div>
+            </div>
+
+            {[
+              ['title', 'Produto'],
+              ['category', 'Categoria'],
+              ['price', 'Preço atual'],
+              ['originalPrice', 'Preço anterior'],
+              ['image', 'URL da imagem'],
+              ['affiliateUrl', 'Link de afiliado']
+            ].map(([key, label]) => (
+              <label key={key}>
+                {label}
+
+                <input
+                  required={!['originalPrice'].includes(key)}
+                  type={
+                    key.includes('Price') || key === 'price'
+                      ? 'number'
+                      : 'text'
+                  }
+                  step="0.01"
+                  value={newOffer[key]}
+                  onChange={(event) =>
+                    setNewOffer({
+                      ...newOffer,
+                      [key]: event.target.value
+                    })
+                  }
+                />
+              </label>
+            ))}
+
+            <label>
+              Loja
+
+              <select
+                value={newOffer.store}
+                onChange={(event) =>
+                  setNewOffer({
+                    ...newOffer,
+                    store: event.target.value
+                  })
+                }
+              >
+                <option>Mercado Livre</option>
+                <option>Shopee</option>
+                <option>AliExpress</option>
+                <option>Outra</option>
+              </select>
+            </label>
+
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={newOffer.freeShipping}
+                onChange={(event) =>
+                  setNewOffer({
+                    ...newOffer,
+                    freeShipping: event.target.checked
+                  })
+                }
+              />
+
+              Frete grátis
+            </label>
+
+            <button className="button primary full">
+              Adicionar oferta
+            </button>
+          </form>
+
+
+          <section className="panel table-panel offers-manager">
+            <div className="panel-heading">
+              <div>
+                <h2>Ofertas cadastradas</h2>
+
+                <p>
+                  {adminFilteredOffers.length} de {data.offers.length}{' '}
+                  ofertas
+                </p>
+              </div>
+            </div>
+
+            <div className="admin-toolbar">
+              <label className="admin-search">
+                <span>⌕</span>
+
+                <input
+                  value={adminOfferQuery}
+                  onChange={(event) =>
+                    setAdminOfferQuery(event.target.value)
+                  }
+                  placeholder="Buscar oferta"
+                />
+              </label>
+
+              <select
+                value={adminOfferStore}
+                onChange={(event) =>
+                  setAdminOfferStore(event.target.value)
+                }
+                aria-label="Filtrar ofertas por loja"
+              >
+                {adminStores.map((item) => (
+                  <option key={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="offer-admin-list">
+              {adminFilteredOffers.map((offer) => (
+                <div key={offer.id}>
+                  <img
+                    src={offer.image}
+                    alt=""
+                  />
+
+                  <span>
+                    <strong>
+                      {offer.title}
+                    </strong>
+
+                    <small>
+                      {offer.store}
+                      {' · '}
+                      {money.format(Number(offer.price))}
+                      {' · '}
+                      {offer.status === 'active'
+                        ? 'Publicada'
+                        : 'Aguardando link'}
+                    </small>
+                  </span>
+
+                  <div className="offer-row-actions">
+                    {offer.status === 'active' ? (
+                      <>
+                        <button
+                          onClick={() =>
+                            queueOffer(offer.id)
+                          }
+                        >
+                          Agendar
+                        </button>
+
+                        <button
+                          className="force"
+                          onClick={() =>
+                            queueOffer(offer.id, true)
+                          }
+                        >
+                          Publicar agora
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          activateOffer(offer)
+                        }
+                      >
+                        Vincular
+                      </button>
+                    )}
+
+                    <button
+                      className="danger"
+                      onClick={() =>
+                        removeOffer(offer.id)
+                      }
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+        </div>
+      </div>
+    )}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div></div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
