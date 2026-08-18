@@ -123,7 +123,19 @@ const audienceRules = {
             'creme facial',
             'barbeador',
             'depilador',
-            'beleza'
+            'beleza',
+            'kerastase',
+            'kérastase',
+            'wella',
+            'loreal professionnel',
+            'loreal professional',
+            'redken',
+            'truss',
+            'keune',
+            'joico',
+            'schwarzkopf',
+            'alfaparf',
+            'moroccanoil'
         ]
     },
 
