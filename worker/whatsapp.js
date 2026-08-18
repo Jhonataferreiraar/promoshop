@@ -75,6 +75,7 @@ let sentTimes = [];
 let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
+let shuttingDown = false;
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) } });
@@ -104,24 +105,41 @@ async function refreshActivePage() {
 async function listGroups() {
   const chats = await client.getChats();
 
-  return chats
-    .filter((chat) => chat.isGroup)
-    .map((chat) => ({
-      id:
+  const groups = [];
+
+  for (const chat of chats) {
+    try {
+      const id =
         chat.id?._serialized ||
         (
           chat.id?.user && chat.id?.server
             ? `${chat.id.user}@${chat.id.server}`
             : ''
-        ),
+        );
 
-      name: String(
+      if (!id || !id.endsWith('@g.us')) {
+        continue;
+      }
+
+      const name = String(
         chat.name ||
         chat.groupMetadata?.subject ||
         ''
-      ).trim()
-    }))
-    .filter((chat) => chat.id);
+      ).trim();
+
+      groups.push({
+        id,
+        name
+      });
+    } catch (error) {
+      console.warn(
+        'Não foi possível interpretar um grupo:',
+        error?.message || String(error)
+      );
+    }
+  }
+
+  return groups;
 }
 
 async function syncGroups(attempt = 1) {
@@ -141,7 +159,11 @@ async function syncGroups(attempt = 1) {
     await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'connected', message }) });
     console.log(`WhatsApp conectado. ${groups.length} grupos disponíveis.`);
   } catch (error) {
-    console.error(`Tentativa ${attempt} de carregar grupos falhou:`, error.message);
+    console.error(
+      `Tentativa ${attempt} de carregar grupos falhou:`,
+      error?.message || String(error),
+      error?.stack || ''
+    );
     await request('/api/worker/heartbeat', {
       method: 'POST',
       body: JSON.stringify({ status: 'connected', message: 'WhatsApp conectado. Carregando a lista de grupos…' })
@@ -403,6 +425,21 @@ client.on('disconnected', async (reason) => {
       message: `WhatsApp desconectado: ${String(reason)}`
     })
   }).catch(() => { });
+
+  if (
+    String(reason).toUpperCase() === 'LOGOUT' &&
+    !shuttingDown
+  ) {
+    shuttingDown = true;
+
+    console.log(
+      'Logout detectado. Encerrando o worker para reinicialização limpa.'
+    );
+
+    setTimeout(() => {
+      process.exit(0);
+    }, 1000);
+  }
 });
 await refreshConfig();
 await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => { });
