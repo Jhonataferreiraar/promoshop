@@ -9,10 +9,20 @@ import { spawn } from 'node:child_process';
 import QRCode from 'qrcode';
 import { addLog, createId, readStore, updateStore } from './store.js';
 import { createToken, requireAdmin, requireWorker } from './auth.js';
-import { collectAliexpress, collectMercadoLivre, collectShopee, makeQueueItem, runCollection } from './collectors.js';
+import {
+  collectAliexpress,
+  collectMercadoLivre,
+  collectShopee,
+  makeQueueItem,
+  runCollection,
+  searchMercadoLivreProducts,
+  searchShopeeProducts
+} from './collectors.js';
 import { readSecrets, secretStatus, updateSecrets, verifyPassword } from './secrets.js';
 import { generateOfferMessage } from './ai.js';
 import { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization, validateMercadoLivreConnection } from './mercadolivre.js';
+import { generateOfferMessage } from './ai.js';
+import { getAudienceCodesForOffer } from './audienceRouting.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -232,23 +242,156 @@ app.post('/api/admin/sources/mercadolivre/test', requireAdmin, async (_req, res)
   }
 });
 app.post('/api/admin/offers', requireAdmin, async (req, res) => {
-  const offer = { ...req.body, id: createId('offer'), price: Number(req.body.price), originalPrice: Number(req.body.originalPrice || 0), createdAt: new Date().toISOString(), source: 'manual' };
-  if (!offer.title || !offer.price || !offer.affiliateUrl) return res.status(400).json({ error: 'Produto, preço e link são obrigatórios.' });
-  await updateStore((data) => data.offers.unshift(offer));
-  await addLog(`Oferta adicionada: ${offer.title}`, 'success');
+  const offer = {
+    ...req.body,
+    id: createId('offer'),
+    price: Number(req.body.price),
+    originalPrice: Number(req.body.originalPrice || 0),
+    createdAt: new Date().toISOString(),
+    source: 'manual'
+  };
+
+  if (!offer.title || !offer.price || !offer.affiliateUrl) {
+    return res.status(400).json({
+      error: 'Produto, preço e link são obrigatórios.'
+    });
+  }
+
+  /*
+   * Define automaticamente os grupos da oferta.
+   *
+   * Ex.:
+   * iPhone       → G01 + G02
+   * Air Fryer    → G01 + G03
+   * Shampoo      → G01 + G04
+   * Ração        → G01 + G06
+   *
+   * Se tiver 40% ou mais de desconto,
+   * também poderá receber G10.
+   */
+  offer.targetAudienceCodes =
+    getAudienceCodesForOffer(offer);
+
+  await updateStore((data) => {
+    data.offers.unshift(offer);
+  });
+
+  await addLog(
+    `Oferta adicionada: ${offer.title} → ${offer.targetAudienceCodes.join(', ')}`,
+    'success'
+  );
+
   res.status(201).json(offer);
+});
+app.post('/api/admin/search-products', requireAdmin, async (req, res) => {
+  const query = String(req.body.query || '').trim();
+
+  const stores = Array.isArray(req.body.stores)
+    ? req.body.stores
+    : [];
+
+  const limit = Math.min(
+    Math.max(Number(req.body.limit) || 10, 1),
+    20
+  );
+
+  if (!query) {
+    return res.status(400).json({
+      error: 'Digite o nome do produto que deseja buscar.'
+    });
+  }
+
+  const selectedStores = stores.length
+    ? stores
+    : ['mercadolivre', 'shopee'];
+
+  const secrets = await readSecrets();
+
+  const results = [];
+  const errors = [];
+
+  if (selectedStores.includes('mercadolivre')) {
+    try {
+      const mercadoLivreResults =
+        await searchMercadoLivreProducts(query, limit);
+
+      results.push(...mercadoLivreResults);
+    } catch (error) {
+      errors.push(
+        `Mercado Livre: ${error.message}`
+      );
+    }
+  }
+
+  if (selectedStores.includes('shopee')) {
+    try {
+      const shopeeResults =
+        await searchShopeeProducts(
+          query,
+          secrets,
+          limit
+        );
+
+      results.push(...shopeeResults);
+    } catch (error) {
+      errors.push(
+        `Shopee: ${error.message}`
+      );
+    }
+  }
+
+  res.json({
+    query,
+    count: results.length,
+    results,
+    errors
+  });
 });
 app.put('/api/admin/offers/:id', requireAdmin, async (req, res) => {
   let updated;
+
   await updateStore((data) => {
-    const offer = data.offers.find((item) => item.id === req.params.id);
+    const offer = data.offers.find(
+      (item) => item.id === req.params.id
+    );
+
     if (!offer) return;
-    const allowed = ['title', 'category', 'price', 'originalPrice', 'image', 'affiliateUrl', 'freeShipping', 'featured', 'status'];
-    for (const key of allowed) if (key in req.body) offer[key] = req.body[key];
+
+    const allowed = [
+      'title',
+      'category',
+      'price',
+      'originalPrice',
+      'image',
+      'affiliateUrl',
+      'freeShipping',
+      'featured',
+      'status'
+    ];
+
+    for (const key of allowed) {
+      if (key in req.body) {
+        offer[key] = req.body[key];
+      }
+    }
+
+    offer.targetAudienceCodes =
+      getAudienceCodesForOffer(offer);
+
     updated = offer;
   });
-  if (!updated) return res.status(404).json({ error: 'Oferta não encontrada.' });
-  await addLog(`Oferta atualizada: ${updated.title}`, 'success');
+
+  if (!updated) {
+    return res.status(404).json({
+      error: 'Oferta não encontrada.'
+    });
+  }
+
+  await addLog(
+    `Oferta atualizada: ${updated.title}`,
+    'success'
+  );
+
   res.json(updated);
 });
 app.delete('/api/admin/offers/:id', requireAdmin, async (req, res) => {

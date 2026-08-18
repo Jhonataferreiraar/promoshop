@@ -479,6 +479,85 @@ export async function collectMercadoLivre(config, secrets) {
   return uniqueOffers;
 }
 
+export async function searchMercadoLivreProducts(query, limit = 10) {
+  const cleanQuery = String(query || '').trim();
+
+  if (!cleanQuery) {
+    throw new Error('Informe o produto que deseja buscar.');
+  }
+
+  const token = await getMercadoLivreAccessToken();
+
+  const headers = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+
+  const searchUrl =
+    `https://api.mercadolibre.com/products/search` +
+    `?status=active` +
+    `&site_id=MLB` +
+    `&q=${encodeURIComponent(cleanQuery)}` +
+    `&limit=${Math.min(Math.max(Number(limit) || 10, 1), 20)}`;
+
+  const search = await fetchJson(searchUrl, { headers });
+
+  const products = search.results || [];
+
+  if (!products.length) {
+    return [];
+  }
+
+  const detailResults = await Promise.allSettled(
+    products.map(async (product) => {
+      const productId = encodeURIComponent(product.id);
+
+      const detail =
+        product.buy_box_winner && product.pictures?.length
+          ? product
+          : await fetchJson(
+            `https://api.mercadolibre.com/products/${productId}`,
+            { headers }
+          );
+
+      if (detail.buy_box_winner) {
+        return detail;
+      }
+
+      try {
+        const listings = await fetchJson(
+          `https://api.mercadolibre.com/products/${productId}/items?limit=5`,
+          { headers }
+        );
+
+        const selectedListing = (listings.results || [])
+          .find((item) => Number(item.price) > 0);
+
+        return selectedListing
+          ? {
+            ...detail,
+            buy_box_winner: selectedListing
+          }
+          : detail;
+      } catch (error) {
+        if (/status 404|no winners found/i.test(error.message)) {
+          return detail;
+        }
+
+        throw error;
+      }
+    })
+  );
+
+  return detailResults
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => normalizeMercadoLivreCatalog(result.value))
+    .filter(Boolean)
+    .map((offer) => ({
+      ...offer,
+      searchSource: 'manual-search'
+    }));
+}
+
 async function shopeeGraphQL(appId, appSecret, query) {
   const body = JSON.stringify({ query });
   const timestamp = Math.floor(Date.now() / 1000);
@@ -536,6 +615,96 @@ export async function collectShopee(config, secrets) {
     sales: Number(item.sales || 0),
     createdAt: new Date().toISOString()
   }));
+}
+
+export async function searchShopeeProducts(query, secrets, limit = 10) {
+  const cleanQuery = String(query || '').trim();
+
+  if (!cleanQuery) {
+    throw new Error('Informe o produto que deseja buscar.');
+  }
+
+  const appId =
+    secrets?.shopeeAppId ||
+    process.env.SHOPEE_APP_ID;
+
+  const appSecret =
+    secrets?.shopeeAppSecret ||
+    process.env.SHOPEE_APP_SECRET;
+
+  if (!appId || !appSecret) {
+    throw new Error(
+      'Configure o App ID e o App Secret da Shopee antes de pesquisar.'
+    );
+  }
+
+  const safeLimit = Math.min(
+    Math.max(Number(limit) || 10, 1),
+    20
+  );
+
+  const graphqlQuery =
+    `{ productOfferV2(` +
+    `keyword: "${escapeGraphQL(cleanQuery)}", ` +
+    `page: 1, ` +
+    `limit: ${safeLimit}` +
+    `) { ` +
+    `nodes { ` +
+    `itemId productName productLink offerLink imageUrl ` +
+    `priceMin priceMax priceDiscountRate sales ratingStar ` +
+    `commissionRate shopId shopName periodEndTime ` +
+    `} ` +
+    `pageInfo { page limit hasNextPage } ` +
+    `} }`;
+
+  const items = await shopeeGraphQL(
+    appId,
+    appSecret,
+    graphqlQuery
+  );
+
+  return items.map((item) => {
+    const price = Number(
+      item.priceMin ||
+      item.priceMax ||
+      0
+    );
+
+    const discountRate = Number(
+      item.priceDiscountRate ||
+      0
+    );
+
+    const originalPrice =
+      discountRate > 0 && price > 0
+        ? price / (1 - discountRate / 100)
+        : Number(item.priceMax || price);
+
+    return {
+      id: item.itemId
+        ? `shopee_${item.itemId}`
+        : createId('shopee-search'),
+
+      externalId: item.itemId || null,
+      title: item.productName,
+      store: 'Shopee',
+      category: item.shopName || 'Shopee',
+      price,
+      originalPrice,
+      image: item.imageUrl || '',
+      productUrl: item.productLink || item.offerLink,
+      affiliateUrl: item.offerLink || '',
+      freeShipping: false,
+      featured: discountRate >= 30,
+      status: item.offerLink ? 'active' : 'pending-link',
+      source: 'shopee-open-api',
+      searchSource: 'manual-search',
+      score: discountRate,
+      commissionRate: Number(item.commissionRate || 0),
+      sales: Number(item.sales || 0),
+      createdAt: new Date().toISOString()
+    };
+  });
 }
 
 function chinaTimestamp() {
