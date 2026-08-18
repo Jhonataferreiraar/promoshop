@@ -74,6 +74,7 @@ const client = new Client({
 let sentTimes = [];
 let processing = false;
 let connectedServicesStarted = false;
+let whatsappReady = false;
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) } });
@@ -101,50 +102,26 @@ async function refreshActivePage() {
 }
 
 async function listGroups() {
-  const page = await refreshActivePage();
+  const chats = await client.getChats();
 
-  return page.evaluate(() => {
-    const collection =
-      window.require?.('WAWebCollections')?.Chat ||
-      window.Store?.Chat;
+  return chats
+    .filter((chat) => chat.isGroup)
+    .map((chat) => ({
+      id:
+        chat.id?._serialized ||
+        (
+          chat.id?.user && chat.id?.server
+            ? `${chat.id.user}@${chat.id.server}`
+            : ''
+        ),
 
-    const chats =
-      collection?.getModelsArray?.() ||
-      collection?.models ||
-      [];
-
-    return chats
-      .map((chat) => {
-        const id =
-          chat.id?._serialized ||
-          (
-            chat.id?.user && chat.id?.server
-              ? `${chat.id.user}@${chat.id.server}`
-              : ''
-          );
-
-        const name =
-          chat.name ||
-          chat.formattedTitle ||
-          chat.title ||
-          chat.groupMetadata?.subject ||
-          chat.groupMetadata?.name ||
-          chat.contact?.pushname ||
-          chat.contact?.name ||
-          chat.contact?.shortName ||
-          '';
-
-        return {
-          id,
-          name: String(name || '').trim()
-        };
-      })
-      .filter(
-        (chat) =>
-          chat.id &&
-          chat.id.endsWith('@g.us')
-      );
-  });
+      name: String(
+        chat.name ||
+        chat.groupMetadata?.subject ||
+        ''
+      ).trim()
+    }))
+    .filter((chat) => chat.id);
 }
 
 async function syncGroups(attempt = 1) {
@@ -186,12 +163,40 @@ async function startConnectedServices() {
   setInterval(() => {
     processQueue();
   }, 2000);
-  setInterval(() => {
-    request('/api/worker/heartbeat', {
-      method: 'POST',
-      body: JSON.stringify({ status: 'connected', message: 'WhatsApp conectado e publicador ativo.' })
-    }).catch((error) => console.error('Falha ao atualizar o estado da conexão:', error.message));
-  }, 30_000);
+  setInterval(async () => {
+    try {
+      const state = await client.getState();
+
+      const connected = state === 'CONNECTED';
+
+      whatsappReady = connected;
+
+      await request('/api/worker/heartbeat', {
+        method: 'POST',
+        body: JSON.stringify({
+          status: connected ? 'connected' : 'offline',
+          message: connected
+            ? 'WhatsApp conectado e publicador ativo.'
+            : `WhatsApp não está conectado (${state || 'estado desconhecido'}).`
+        })
+      });
+    } catch (error) {
+      whatsappReady = false;
+
+      await request('/api/worker/heartbeat', {
+        method: 'POST',
+        body: JSON.stringify({
+          status: 'offline',
+          message: 'Não foi possível confirmar a conexão com o WhatsApp.'
+        })
+      }).catch(() => { });
+
+      console.error(
+        'Falha ao verificar estado do WhatsApp:',
+        error.message
+      );
+    }
+  }, 15_000);
 }
 
 async function resolveDestinations(item) {
@@ -266,6 +271,9 @@ async function processQueue() {
   processing = true;
   let item = null;
   try {
+    if (!whatsappReady) {
+      return;
+    }
     await refreshConfig();
     if (!selectedGroups.length && !groupId && !groupName) return;
     item = await request('/api/worker/queue/next');
@@ -366,11 +374,36 @@ client.on('authenticated', async () => {
 client.on('ready', async () => {
   console.log('WhatsApp pronto. Iniciando o publicador.');
 
+  whatsappReady = true;
+
   await startConnectedServices();
 });
-client.on('auth_failure', async (message) => { console.error('Falha de autenticação:', message); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => { }); });
-client.on('disconnected', async (reason) => { console.error('WhatsApp desconectado:', reason); await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'offline', message: String(reason) }) }).catch(() => { }); });
+client.on('auth_failure', async (message) => {
+  whatsappReady = false;
 
+  console.error('Falha de autenticação:', message);
+
+  await request('/api/worker/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify({
+      status: 'error',
+      message
+    })
+  }).catch(() => { });
+});
+client.on('disconnected', async (reason) => {
+  whatsappReady = false;
+
+  console.error('WhatsApp desconectado:', reason);
+
+  await request('/api/worker/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify({
+      status: 'offline',
+      message: `WhatsApp desconectado: ${String(reason)}`
+    })
+  }).catch(() => { });
+});
 await refreshConfig();
 await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => { });
 clearStaleBrowserLocks();

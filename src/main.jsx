@@ -442,6 +442,29 @@ function AdminApp() {
   async function collect() { setMessage('Buscando novas ofertas…'); try { const result = await authApi('/admin/collect', { method: 'POST' }); await load(); setMessage(`${result.imported} novas ofertas encontradas.`); } catch (err) { setMessage(err.message); } }
   async function startWhatsapp(mode = 'qr') { try { await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) }); const result = await authApi('/admin/whatsapp/start', { method: 'POST', body: JSON.stringify({ mode, phoneNumber: mode === 'phone' ? phoneNumber : undefined }) }); setMessage(result.message); window.setTimeout(load, 1500); } catch (error) { setMessage(error.message); } }
   async function stopWhatsapp() { await authApi('/admin/whatsapp/stop', { method: 'POST', body: '{}' }); await load(); setMessage('Publicador parado.'); }
+  async function checkWhatsappConnection() {
+    setMessage('Verificando a conexão com o WhatsApp…');
+
+    try {
+      const result = await authApi(
+        '/admin/whatsapp/check',
+        {
+          method: 'POST',
+          body: '{}'
+        }
+      );
+
+      await load();
+
+      setMessage(
+        result.connected
+          ? 'WhatsApp conectado e publicador funcionando normalmente.'
+          : result.message || 'WhatsApp desconectado.'
+      );
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
   const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
@@ -796,7 +819,23 @@ function AdminApp() {
     </form>}
     {tab === 'whatsapp' && <div className="whatsapp-admin-grid">
       <section className="panel connection-panel">
-        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{data.queue.filter((item) => item.status === 'pending').length}</strong> aguardando na fila</span></div><button className="button subtle" type="button" onClick={stopWhatsapp}>Desconectar</button></div>
+        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{data.queue.filter((item) => item.status === 'pending').length}</strong> aguardando na fila</span></div><div className="connection-actions">
+          <button
+            className="button subtle"
+            type="button"
+            onClick={checkWhatsappConnection}
+          >
+            Verificar conexão
+          </button>
+
+          <button
+            className="button subtle"
+            type="button"
+            onClick={stopWhatsapp}
+          >
+            Desconectar
+          </button>
+        </div></div>
         {whatsapp.status !== 'connected' && <div className="phone-pairing"><label>Número com país e DDD<input inputMode="numeric" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, ''))} placeholder="5511999999999" /><small>Exemplo: 55 + DDD + número. Ele não será salvo.</small></label><div className="connection-actions"><button className="button primary" type="button" onClick={() => startWhatsapp('phone')}>Conectar pelo número</button><button className="button subtle" type="button" onClick={() => startWhatsapp('qr')}>Usar QR Code</button></div></div>}
         {whatsapp.pairingCode && <div className="pairing-box"><span className="pairing-code">{formattedPairingCode}</span><div><strong>Digite este código no WhatsApp</strong><p>No celular: Aparelhos conectados → Conectar aparelho → Conectar com número de telefone.</p></div></div>}
         {whatsapp.qrDataUrl && <div className="qr-box"><img src={whatsapp.qrDataUrl} alt="QR Code para conectar o WhatsApp" /><div><strong>Leia este QR Code</strong><p>No celular, abra WhatsApp → Aparelhos conectados → Conectar aparelho.</p></div></div>}
