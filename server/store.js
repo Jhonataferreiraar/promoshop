@@ -2,6 +2,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import {
+  DEFAULT_WHATSAPP_AUDIENCES
+} from './audienceRouting.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -14,6 +17,7 @@ const initialData = {
     heroText: 'Promoções selecionadas e verificadas para você economizar sem perder tempo.',
     primaryColor: '#1269f3',
     whatsappUrl: '#',
+    whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     minDiscount: 20,
     maxPostsPerDay: 10,
@@ -79,6 +83,16 @@ export async function readStore() {
   }
   if (!data) throw lastError;
   data.config = { ...initialData.config, ...(data.config || {}) };
+  if (
+    !Array.isArray(data.config.whatsappAudiences) ||
+    !data.config.whatsappAudiences.length
+  ) {
+    data.config.whatsappAudiences =
+      DEFAULT_WHATSAPP_AUDIENCES.map((audience) => ({
+        ...audience,
+        keywords: [...(audience.keywords || [])]
+      }));
+  }
   if (data.config.aiProvider === 'gemini' && data.config.aiModel === 'gemini-2.5-flash-lite') {
     data.config.aiModel = 'gemini-3.5-flash-lite';
   }
@@ -90,7 +104,7 @@ export async function readStore() {
 }
 
 export async function updateStore(mutator) {
-  writeChain = writeChain.catch(() => {}).then(async () => {
+  writeChain = writeChain.catch(() => { }).then(async () => {
     const data = await readStore();
     const result = await mutator(data);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
@@ -106,7 +120,7 @@ export async function updateStore(mutator) {
         }
       }
     } catch (error) {
-      await fs.unlink(temporaryFile).catch(() => {});
+      await fs.unlink(temporaryFile).catch(() => { });
       throw error;
     }
     return result;

@@ -80,15 +80,39 @@ function PublicSite() {
   const [sort, setSort] = useState('discount');
   const [visibleCount, setVisibleCount] = useState(24);
   const [loading, setLoading] = useState(true);
+  const [audiences, setAudiences] = useState([]);
 
   useEffect(() => {
-    Promise.all([api('/config/public'), api('/offers')])
-      .then(([configData, offerData]) => {
-        setConfig({ ...fallbackConfig, ...configData });
-        setOffers(offerData);
-      })
+    Promise.all([
+      api('/config/public'),
+      api('/offers'),
+      api('/audiences/public')
+    ])
+      .then(
+        ([
+          configData,
+          offerData,
+          audienceData
+        ]) => {
+
+          setConfig({
+            ...fallbackConfig,
+            ...configData
+          });
+
+          setOffers(offerData);
+
+          setAudiences(
+            Array.isArray(audienceData)
+              ? audienceData
+              : []
+          );
+        }
+      )
       .catch(() => { })
-      .finally(() => setLoading(false));
+      .finally(() =>
+        setLoading(false)
+      );
   }, []);
 
   useEffect(() => {
@@ -154,7 +178,72 @@ function PublicSite() {
       </section>
 
       <section className="how-section" id="como-funciona"><div className="container"><div className="section-heading centered"><div><span className="eyebrow dark">SIMPLES E TRANSPARENTE</span><h2>Economizar ficou mais fácil</h2><p>Nós reunimos as oportunidades. Você decide onde comprar.</p></div></div><div className="how-grid"><article><span>01</span><h3>Buscamos</h3><p>As ofertas são coletadas nas principais plataformas.</p></article><article><span>02</span><h3>Organizamos</h3><p>Você filtra por loja, preço ou desconto sem perder tempo.</p></article><article><span>03</span><h3>Você economiza</h3><p>Abra a oferta na loja oficial e conclua sua compra com segurança.</p></article></div></div></section>
+      {audiences.length > 0 && (
 
+        <section
+          className="audience-public-section"
+          id="grupos"
+        >
+
+          <div className="container">
+
+            <div className="section-heading centered">
+
+              <div>
+                <span className="eyebrow dark">
+                  OFERTAS DO SEU JEITO
+                </span>
+
+                <h2>
+                  Escolha os grupos que combinam com você
+                </h2>
+
+                <p>
+                  Entre apenas nos grupos dos assuntos
+                  que você quer acompanhar.
+                </p>
+              </div>
+
+            </div>
+
+
+            <div className="audience-public-grid">
+
+              {audiences.map((audience) => (
+
+                <article
+                  className="audience-public-card"
+                  key={audience.code}
+                >
+
+                  <span>
+                    {audience.code}
+                  </span>
+
+                  <h3>
+                    {audience.name}
+                  </h3>
+
+                  <a
+                    className="button primary full"
+                    href={audience.whatsappLink}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Entrar no grupo
+                  </a>
+
+                </article>
+
+              ))}
+
+            </div>
+
+          </div>
+
+        </section>
+
+      )}
       <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Quero receber ofertas</a></div></section>
     </main>
 
@@ -217,6 +306,104 @@ function AdminApp() {
   const [productSearchResults, setProductSearchResults] = useState([]);
   const [productSearchErrors, setProductSearchErrors] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  function updateAudience(index, changes) {
+    const audiences = Array.isArray(
+      data.config.whatsappAudiences
+    )
+      ? [...data.config.whatsappAudiences]
+      : [];
+
+    audiences[index] = {
+      ...audiences[index],
+      ...changes
+    };
+
+    setData({
+      ...data,
+      config: {
+        ...data.config,
+        whatsappAudiences: audiences
+      }
+    });
+  }
+
+  function addAudience() {
+    const audiences = Array.isArray(
+      data.config.whatsappAudiences
+    )
+      ? data.config.whatsappAudiences
+      : [];
+
+    const highestNumber = audiences.reduce(
+      (highest, audience) => {
+        const match = String(audience.code || '')
+          .match(/^G(\d+)$/i);
+
+        if (!match) return highest;
+
+        return Math.max(
+          highest,
+          Number(match[1])
+        );
+      },
+      0
+    );
+
+    const code =
+      `G${String(highestNumber + 1).padStart(2, '0')}`;
+
+    setData({
+      ...data,
+      config: {
+        ...data.config,
+
+        whatsappAudiences: [
+          ...audiences,
+          {
+            code,
+            name: '',
+            whatsappLink: '',
+            keywords: [],
+            enabled: true
+          }
+        ]
+      }
+    });
+  }
+
+  function removeAudience(index) {
+    const audiences = Array.isArray(
+      data.config.whatsappAudiences
+    )
+      ? data.config.whatsappAudiences
+      : [];
+
+    const audience = audiences[index];
+
+    if (
+      audience?.code === 'G01' ||
+      audience?.code === 'G10'
+    ) {
+      setMessage(
+        `${audience.code} é um grupo padrão e não pode ser removido. Você pode desativá-lo.`
+      );
+
+      return;
+    }
+
+    setData({
+      ...data,
+      config: {
+        ...data.config,
+
+        whatsappAudiences:
+          audiences.filter(
+            (_, audienceIndex) =>
+              audienceIndex !== index
+          )
+      }
+    });
+  }
   const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
 
   async function load({ preserveConfig = false } = {}) {
@@ -1376,6 +1563,205 @@ function AdminApp() {
           <section className="panel setting-section"><div className="section-title"><div><span className="section-step">AGENDA</span><h2>Horários e frequência</h2><p>Defina quando a fila automática pode publicar.</p></div></div><div className="settings-grid"><label>Começar às<input type="time" value={data.config.publishingStart ?? '08:00'} onChange={(event) => setData({ ...data, config: { ...data.config, publishingStart: event.target.value } })} /></label><label>Parar às<input type="time" value={data.config.publishingEnd ?? '23:00'} onChange={(event) => setData({ ...data, config: { ...data.config, publishingEnd: event.target.value } })} /></label><label>Intervalo<select value={data.config.whatsappIntervalMinutes ?? 15} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappIntervalMinutes: Number(event.target.value) } })}>{[5, 10, 15, 20, 25, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutos</option>)}</select><small>Não afeta “Publicar agora”.</small></label><label>Máximo por hora<input type="number" min="1" value={data.config.whatsappMaxPerHour ?? 10} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappMaxPerHour: event.target.value } })} /></label><label>Máximo por dia<input type="number" min="1" value={data.config.maxPostsPerDay ?? 10} onChange={(event) => setData({ ...data, config: { ...data.config, maxPostsPerDay: event.target.value } })} /></label><label className="toggle-card"><input type="checkbox" checked={Boolean(data.config.whatsappHeadless)} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappHeadless: event.target.checked } })} /><span><strong>Modo oculto</strong><small>Publicar sem abrir a janela do WhatsApp.</small></span></label><label className="toggle-card"><input type="checkbox" checked={data.config.whatsappAutoStart !== false} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappAutoStart: event.target.checked } })} /><span><strong>Iniciar automaticamente</strong><small>Reconectar o publicador quando o servidor reiniciar.</small></span></label></div></section>
         </div>
         <section className="panel setting-section message-section"><div className="section-title"><div><span className="section-step">INTELIGÊNCIA ARTIFICIAL</span><h2>Texto exclusivo para cada oferta</h2><p>A IA externa cria a mensagem somente quando o produto estiver prestes a ser publicado.</p></div></div><div className="ai-settings-grid"><label className="toggle-card ai-toggle"><input type="checkbox" checked={Boolean(data.config.aiEnabled)} onChange={(event) => setData({ ...data, config: { ...data.config, aiEnabled: event.target.checked } })} /><span><strong>Criar textos com IA</strong><small>Se a IA falhar, a publicação aguardará uma nova tentativa.</small></span></label><label>Provedor<select value={data.config.aiProvider ?? 'gemini'} onChange={(event) => { const models = { gemini: 'gemini-3.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' }; setData({ ...data, config: { ...data.config, aiProvider: event.target.value, aiModel: models[event.target.value] } }); }}><option value="gemini">Gemini (gratuito — recomendado)</option><option value="groq">Groq (externa)</option><option value="ollama">Ollama local</option></select><small>As chaves ficam criptografadas no servidor.</small></label><label>Modelo<input value={data.config.aiModel ?? 'gemini-3.5-flash-lite'} onChange={(event) => setData({ ...data, config: { ...data.config, aiModel: event.target.value } })} /><small>{data.config.aiProvider === 'gemini' ? 'Modelo gratuito recomendado: gemini-3.5-flash-lite.' : data.config.aiProvider === 'groq' ? 'Modelo recomendado: openai/gpt-oss-20b.' : 'Modelo local instalado no Ollama.'}</small></label>{data.config.aiProvider === 'gemini' && <label>Chave do Gemini<input type="password" value={secretForm.geminiApiKey} onChange={(event) => setSecretForm({ ...secretForm, geminiApiKey: event.target.value })} placeholder={data.secrets?.geminiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave do Google AI Studio'} autoComplete="new-password" /><small>{data.secrets?.geminiApiKeyConfigured ? `Chave salva com final ${data.secrets.geminiApiKeyEnding || '----'}${data.secrets.geminiApiKeyFormatValid === false ? ' — parece incompleta' : ''}.` : 'Use Copiar chave de API no AI Studio; não copie o nome nem o número do projeto.'}</small></label>}{data.config.aiProvider === 'groq' && <label>Chave da Groq<input type="password" value={secretForm.aiApiKey} onChange={(event) => setSecretForm({ ...secretForm, aiApiKey: event.target.value })} placeholder={data.secrets?.aiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave da API'} autoComplete="new-password" /><small>{data.secrets?.aiApiKeyConfigured ? `Chave salva com final ${data.secrets.aiApiKeyEnding || '----'}${data.secrets.aiApiKeyFormatValid === false ? ' — formato inválido' : ''}.` : 'Cole o valor secreto completo, começando com gsk_.'}</small></label>}<label>Estilo do texto<select value={data.config.aiTone ?? 'varied'} onChange={(event) => setData({ ...data, config: { ...data.config, aiTone: event.target.value } })}><option value="varied">Variado automaticamente</option><option value="seller">Vendedor e confiável</option><option value="direct">Direto e objetivo</option><option value="friendly">Amigável e natural</option><option value="urgent">Urgência responsável</option><option value="premium">Elegante e premium</option><option value="playful">Divertido e descontraído</option><option value="story">Mini-história cotidiana</option><option value="minimal">Minimalista</option></select></label><label className="ai-instructions">Instruções para a IA<textarea value={data.config.aiInstructions ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, aiInstructions: event.target.value } })} placeholder="Ex.: Use poucos emojis e destaque a economia." /></label>{data.config.aiProvider === 'ollama' && <details className="advanced-ai"><summary>Configuração avançada</summary><label>Endereço do Ollama<input value={data.config.aiOllamaUrl ?? 'http://127.0.0.1:11434'} onChange={(event) => setData({ ...data, config: { ...data.config, aiOllamaUrl: event.target.value } })} /></label></details>}<button className="button subtle" type="button" onClick={testAi}>Salvar e testar IA</button></div>{aiPreview && <div className="ai-preview"><span>PRÉVIA DA MENSAGEM</span><pre>{aiPreview}</pre></div>}<div className="fallback-template"><div><strong>Estrutura preferida da mensagem</strong><small>Serve como texto de segurança e referência visual.</small></div><label>Modelo da mensagem<textarea value={data.config.messageTemplate ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, messageTemplate: event.target.value } })} /><small>Campos disponíveis: {'{title}'}, {'{benefit}'}, {'{originalPrice}'}, {'{price}'}, {'{discount}'}, {'{shipping}'} e {'{link}'}.</small></label></div></section>
+        <section className="panel setting-section audience-manager">
+
+          <div className="section-title">
+            <div>
+              <span className="section-step">
+                PÚBLICOS
+              </span>
+
+              <h2>
+                Públicos e grupos
+              </h2>
+
+              <p>
+                Configure quais produtos pertencem a cada grupo
+                e informe o link para entrada.
+              </p>
+            </div>
+
+            <button
+              className="button subtle"
+              type="button"
+              onClick={addAudience}
+            >
+              + Adicionar público
+            </button>
+          </div>
+
+
+          <div className="audience-list">
+
+            {(data.config.whatsappAudiences || [])
+              .map((audience, index) => (
+
+                <article
+                  className="audience-card"
+                  key={`${audience.code}-${index}`}
+                >
+
+                  <div className="audience-card-head">
+
+                    <span className="audience-code">
+                      {audience.code}
+                    </span>
+
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={audience.enabled !== false}
+                        onChange={(event) =>
+                          updateAudience(index, {
+                            enabled: event.target.checked
+                          })
+                        }
+                      />
+
+                      <span></span>
+                    </label>
+
+                  </div>
+
+
+                  <label>
+                    Código do público
+
+                    <input
+                      value={audience.code || ''}
+                      disabled={
+                        audience.code === 'G01' ||
+                        audience.code === 'G10'
+                      }
+                      onChange={(event) =>
+                        updateAudience(index, {
+                          code: event.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9]/g, '')
+                        })
+                      }
+                    />
+
+                    <small>
+                      O grupo do WhatsApp deve terminar com este
+                      código. Ex.: | {audience.code}
+                    </small>
+                  </label>
+
+
+                  <label>
+                    Nome
+
+                    <input
+                      value={audience.name || ''}
+                      onChange={(event) =>
+                        updateAudience(index, {
+                          name: event.target.value
+                        })
+                      }
+                      placeholder="Ex.: Tecnologia & Games"
+                    />
+                  </label>
+
+
+                  <label>
+                    Link para entrar no grupo
+
+                    <input
+                      type="url"
+                      value={audience.whatsappLink || ''}
+                      onChange={(event) =>
+                        updateAudience(index, {
+                          whatsappLink:
+                            event.target.value.trim()
+                        })
+                      }
+                      placeholder="https://chat.whatsapp.com/..."
+                    />
+                  </label>
+
+
+                  {audience.code !== 'G01' &&
+                    audience.code !== 'G10' && (
+
+                      <label>
+                        Palavras-chave
+
+                        <textarea
+                          value={
+                            Array.isArray(audience.keywords)
+                              ? audience.keywords.join(', ')
+                              : ''
+                          }
+                          onChange={(event) =>
+                            updateAudience(index, {
+                              keywords:
+                                event.target.value
+                                  .split(',')
+                                  .map((word) => word.trim())
+                                  .filter(Boolean)
+                            })
+                          }
+                          placeholder="iphone, smartphone, celular, notebook..."
+                        />
+
+                        <small>
+                          Separe cada palavra ou produto por vírgula.
+                        </small>
+                      </label>
+
+                    )}
+
+
+                  {audience.code === 'G10' && (
+
+                    <label>
+                      Desconto mínimo para entrar neste grupo
+
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={audience.minDiscount || 40}
+                        onChange={(event) =>
+                          updateAudience(index, {
+                            minDiscount:
+                              Number(event.target.value)
+                          })
+                        }
+                      />
+
+                      <small>
+                        Atualmente: ofertas com pelo menos{' '}
+                        {audience.minDiscount || 40}% OFF.
+                      </small>
+                    </label>
+
+                  )}
+
+
+                  {audience.code !== 'G01' &&
+                    audience.code !== 'G10' && (
+
+                      <button
+                        className="button danger-button"
+                        type="button"
+                        onClick={() =>
+                          removeAudience(index)
+                        }
+                      >
+                        Excluir público
+                      </button>
+
+                    )}
+
+                </article>
+
+              ))}
+
+          </div>
+
+        </section>
         <div className="form-footer"><span>As alterações entram em vigor após salvar.</span><button className="button primary">Salvar grupos e regras</button></div>
       </form>
     </div>}

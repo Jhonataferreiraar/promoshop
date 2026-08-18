@@ -894,27 +894,79 @@ export async function runCollection() {
     for (const offer of candidates.sort((a, b) => b.score - a.score)) {
       const savedOffer = existing.get(offer.id);
       if (savedOffer) {
-        if (offer.affiliateUrl && savedOffer.affiliateUrl !== offer.affiliateUrl) {
+        /*
+         * Recalcula os públicos da oferta existente.
+         * Isso é importante caso você tenha alterado
+         * palavras-chave ou criado novos públicos no painel.
+         */
+        savedOffer.targetAudienceCodes =
+          getAudienceCodesForOffer(
+            savedOffer,
+            data.config.whatsappAudiences
+          );
+
+        if (
+          offer.affiliateUrl &&
+          savedOffer.affiliateUrl !== offer.affiliateUrl
+        ) {
           savedOffer.affiliateUrl = offer.affiliateUrl;
           savedOffer.productUrl = offer.productUrl;
-          for (const queueItem of data.queue.filter((item) => item.offerId === offer.id && item.status === 'pending')) {
-            const refreshedQueueItem = makeQueueItem(savedOffer, data.config);
-            queueItem.message = refreshedQueueItem.message;
-            queueItem.messageSource = refreshedQueueItem.messageSource;
-            queueItem.offerSnapshot = refreshedQueueItem.offerSnapshot;
-            queueItem.targetAudienceCodes = refreshedQueueItem.targetAudienceCodes;
+
+          for (
+            const queueItem of data.queue.filter(
+              (item) =>
+                item.offerId === offer.id &&
+                item.status === 'pending'
+            )
+          ) {
+            const refreshedQueueItem =
+              makeQueueItem(
+                savedOffer,
+                data.config
+              );
+
+            queueItem.message =
+              refreshedQueueItem.message;
+
+            queueItem.messageSource =
+              refreshedQueueItem.messageSource;
+
+            queueItem.offerSnapshot =
+              refreshedQueueItem.offerSnapshot;
+
+            queueItem.targetAudienceCodes =
+              refreshedQueueItem.targetAudienceCodes;
+
             delete queueItem.aiStatus;
             delete queueItem.aiError;
             delete queueItem.aiRetryAt;
             delete queueItem.aiGeneratedAt;
             delete queueItem.aiGenerationVersion;
           }
+
           refreshedLinks += 1;
         }
+
         continue;
       }
+
+      /*
+       * Define os públicos antes de salvar
+       * uma oferta nova.
+       */
+      offer.targetAudienceCodes =
+        getAudienceCodesForOffer(
+          offer,
+          data.config.whatsappAudiences
+        );
+
       data.offers.unshift(offer);
-      existing.set(offer.id, offer);
+
+      existing.set(
+        offer.id,
+        offer
+      );
+
       imported += 1;
       if (data.config.autoQueue && offer.status === 'active') {
         data.queue.push(makeQueueItem(offer, data.config));
@@ -938,7 +990,10 @@ export function makeQueueItem(offer, config) {
     shipping: offer.freeShipping ? '🚚 Frete grátis' : '',
     link: offer.affiliateUrl
   };
-  const targetAudienceCodes = getAudienceCodesForOffer(offer);
+  const targetAudienceCodes = getAudienceCodesForOffer(
+    offer,
+    config.whatsappAudiences
+  );
   const aiRequired = config.aiEnabled !== false;
   const message = aiRequired
     ? ''
@@ -947,11 +1002,17 @@ export function makeQueueItem(offer, config) {
     id: offer.id,
     title: offer.title,
     store: offer.store,
+    category: offer.category || '',
     price: Number(offer.price),
-    originalPrice: Number(offer.originalPrice || offer.price),
+    originalPrice: Number(
+      offer.originalPrice || offer.price
+    ),
     affiliateUrl: offer.affiliateUrl,
     image: offer.image || '',
-    freeShipping: Boolean(offer.freeShipping)
+    freeShipping: Boolean(
+      offer.freeShipping
+    ),
+    targetAudienceCodes
   };
   return {
     id: createId('queue'),
