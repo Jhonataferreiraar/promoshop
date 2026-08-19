@@ -435,7 +435,8 @@ function AdminApp() {
     aliexpressAppSignature: '',
 
     aiApiKey: '',
-    geminiApiKey: ''
+    geminiApiKey: '',
+    openaiApiKey: ''
   });
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [message, setMessage] = useState('');
@@ -623,9 +624,29 @@ function AdminApp() {
       await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) });
     }
     if (secretForm.geminiApiKey.trim()) {
-      await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ geminiApiKey: secretForm.geminiApiKey }) });
+      await authApi('/admin/secrets', {
+        method: 'PUT',
+        body: JSON.stringify({
+          geminiApiKey: secretForm.geminiApiKey
+        })
+      });
     }
-    setSecretForm((current) => ({ ...current, aiApiKey: '', geminiApiKey: '' }));
+
+    if (secretForm.openaiApiKey.trim()) {
+      await authApi('/admin/secrets', {
+        method: 'PUT',
+        body: JSON.stringify({
+          openaiApiKey: secretForm.openaiApiKey
+        })
+      });
+    }
+
+    setSecretForm((current) => ({
+      ...current,
+      aiApiKey: '',
+      geminiApiKey: '',
+      openaiApiKey: ''
+    }));
     await load();
     setMessage('Configurações salvas.');
     setTimeout(() => setMessage(''), 2500);
@@ -737,6 +758,14 @@ function AdminApp() {
       }
       if (secretForm.geminiApiKey.trim()) {
         await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ geminiApiKey: secretForm.geminiApiKey }) });
+      }
+      if (secretForm.openaiApiKey.trim()) {
+        await authApi('/admin/secrets', {
+          method: 'PUT',
+          body: JSON.stringify({
+            openaiApiKey: secretForm.openaiApiKey
+          })
+        });
       }
       const result = await authApi('/admin/ai/test', { method: 'POST', body: '{}' });
       setSecretForm((current) => ({ ...current, aiApiKey: '', geminiApiKey: '' }));
@@ -1708,7 +1737,64 @@ function AdminApp() {
           <section className="panel setting-section groups-section"><div className="section-title"><div><span className="section-step">DESTINOS</span><h2>Grupos de publicação</h2><p>Marque todos os grupos que receberão cada oferta.</p></div></div>{whatsapp.status !== 'connected' && !(whatsapp.groups || []).length && <div className="setup-hint"><strong>Conecte o WhatsApp primeiro</strong><p>Depois da conexão, seus grupos aparecerão aqui.</p></div>}<div className="group-selector"><div className="group-options">{(whatsapp.groups || []).map((group) => { const configured = Array.isArray(data.config.whatsappGroups) && data.config.whatsappGroups.length ? data.config.whatsappGroups : (data.config.whatsappGroupId ? [{ id: data.config.whatsappGroupId, name: data.config.whatsappGroupName }] : []); const checked = configured.some((selected) => selected.id === group.id); return <label className="group-option" key={group.id}><input type="checkbox" checked={checked} onChange={(event) => { const current = configured.filter((selected) => selected.id !== group.id); const next = event.target.checked ? [...current, group] : current; setData({ ...data, config: { ...data.config, whatsappGroups: next, whatsappGroupId: next[0]?.id || '', whatsappGroupName: next[0]?.name || '' } }); }} /><span>{group.name}</span></label>; })}{!(whatsapp.groups || []).length && <small>Os grupos serão carregados após a conexão.</small>}</div><small>{(() => { const count = (Array.isArray(data.config.whatsappGroups) && data.config.whatsappGroups.length ? data.config.whatsappGroups : (data.config.whatsappGroupId ? [{ id: data.config.whatsappGroupId }] : [])).length; return `${count} de ${(whatsapp.groups || []).length} grupo${(whatsapp.groups || []).length === 1 ? '' : 's'} selecionado${count === 1 ? '' : 's'}`; })()}</small></div><label className="field-separator">Link público do grupo<input type="url" value={data.config.whatsappUrl === '#' ? '' : data.config.whatsappUrl ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappUrl: event.target.value } })} placeholder="https://chat.whatsapp.com/..." /><small>Usado somente no botão do site público.</small></label></section>
           <section className="panel setting-section"><div className="section-title"><div><span className="section-step">AGENDA</span><h2>Horários e frequência</h2><p>Defina quando a fila automática pode publicar.</p></div></div><div className="settings-grid"><label>Começar às<input type="time" value={data.config.publishingStart ?? '08:00'} onChange={(event) => setData({ ...data, config: { ...data.config, publishingStart: event.target.value } })} /></label><label>Parar às<input type="time" value={data.config.publishingEnd ?? '23:00'} onChange={(event) => setData({ ...data, config: { ...data.config, publishingEnd: event.target.value } })} /></label><label>Intervalo<select value={data.config.whatsappIntervalMinutes ?? 15} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappIntervalMinutes: Number(event.target.value) } })}>{[5, 10, 15, 20, 25, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutos</option>)}</select><small>Não afeta “Publicar agora”.</small></label><label>Máximo por hora<input type="number" min="1" value={data.config.whatsappMaxPerHour ?? 10} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappMaxPerHour: event.target.value } })} /></label><label>Máximo por dia<input type="number" min="1" value={data.config.maxPostsPerDay ?? 10} onChange={(event) => setData({ ...data, config: { ...data.config, maxPostsPerDay: event.target.value } })} /></label><label className="toggle-card"><input type="checkbox" checked={Boolean(data.config.whatsappHeadless)} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappHeadless: event.target.checked } })} /><span><strong>Modo oculto</strong><small>Publicar sem abrir a janela do WhatsApp.</small></span></label><label className="toggle-card"><input type="checkbox" checked={data.config.whatsappAutoStart !== false} onChange={(event) => setData({ ...data, config: { ...data.config, whatsappAutoStart: event.target.checked } })} /><span><strong>Iniciar automaticamente</strong><small>Reconectar o publicador quando o servidor reiniciar.</small></span></label></div></section>
         </div>
-        <section className="panel setting-section message-section"><div className="section-title"><div><span className="section-step">INTELIGÊNCIA ARTIFICIAL</span><h2>Texto exclusivo para cada oferta</h2><p>A IA externa cria a mensagem somente quando o produto estiver prestes a ser publicado.</p></div></div><div className="ai-settings-grid"><label className="toggle-card ai-toggle"><input type="checkbox" checked={Boolean(data.config.aiEnabled)} onChange={(event) => setData({ ...data, config: { ...data.config, aiEnabled: event.target.checked } })} /><span><strong>Criar textos com IA</strong><small>Se a IA falhar, a publicação aguardará uma nova tentativa.</small></span></label><label>Provedor<select value={data.config.aiProvider ?? 'gemini'} onChange={(event) => { const models = { gemini: 'gemini-3.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' }; setData({ ...data, config: { ...data.config, aiProvider: event.target.value, aiModel: models[event.target.value] } }); }}><option value="gemini">Gemini (gratuito — recomendado)</option><option value="groq">Groq (externa)</option><option value="ollama">Ollama local</option></select><small>As chaves ficam criptografadas no servidor.</small></label><label>Modelo<input value={data.config.aiModel ?? 'gemini-3.5-flash-lite'} onChange={(event) => setData({ ...data, config: { ...data.config, aiModel: event.target.value } })} /><small>{data.config.aiProvider === 'gemini' ? 'Modelo gratuito recomendado: gemini-3.5-flash-lite.' : data.config.aiProvider === 'groq' ? 'Modelo recomendado: openai/gpt-oss-20b.' : 'Modelo local instalado no Ollama.'}</small></label>{data.config.aiProvider === 'gemini' && <label>Chave do Gemini<input type="password" value={secretForm.geminiApiKey} onChange={(event) => setSecretForm({ ...secretForm, geminiApiKey: event.target.value })} placeholder={data.secrets?.geminiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave do Google AI Studio'} autoComplete="new-password" /><small>{data.secrets?.geminiApiKeyConfigured ? `Chave salva com final ${data.secrets.geminiApiKeyEnding || '----'}${data.secrets.geminiApiKeyFormatValid === false ? ' — parece incompleta' : ''}.` : 'Use Copiar chave de API no AI Studio; não copie o nome nem o número do projeto.'}</small></label>}{data.config.aiProvider === 'groq' && <label>Chave da Groq<input type="password" value={secretForm.aiApiKey} onChange={(event) => setSecretForm({ ...secretForm, aiApiKey: event.target.value })} placeholder={data.secrets?.aiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave da API'} autoComplete="new-password" /><small>{data.secrets?.aiApiKeyConfigured ? `Chave salva com final ${data.secrets.aiApiKeyEnding || '----'}${data.secrets.aiApiKeyFormatValid === false ? ' — formato inválido' : ''}.` : 'Cole o valor secreto completo, começando com gsk_.'}</small></label>}<label>Estilo do texto<select value={data.config.aiTone ?? 'varied'} onChange={(event) => setData({ ...data, config: { ...data.config, aiTone: event.target.value } })}><option value="varied">Variado automaticamente</option><option value="seller">Vendedor e confiável</option><option value="direct">Direto e objetivo</option><option value="friendly">Amigável e natural</option><option value="urgent">Urgência responsável</option><option value="premium">Elegante e premium</option><option value="playful">Divertido e descontraído</option><option value="story">Mini-história cotidiana</option><option value="minimal">Minimalista</option></select></label><label className="ai-instructions">Instruções para a IA<textarea value={data.config.aiInstructions ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, aiInstructions: event.target.value } })} placeholder="Ex.: Use poucos emojis e destaque a economia." /></label>{data.config.aiProvider === 'ollama' && <details className="advanced-ai"><summary>Configuração avançada</summary><label>Endereço do Ollama<input value={data.config.aiOllamaUrl ?? 'http://127.0.0.1:11434'} onChange={(event) => setData({ ...data, config: { ...data.config, aiOllamaUrl: event.target.value } })} /></label></details>}<button className="button subtle" type="button" onClick={testAi}>Salvar e testar IA</button></div>{aiPreview && <div className="ai-preview"><span>PRÉVIA DA MENSAGEM</span><pre>{aiPreview}</pre></div>}<div className="fallback-template"><div><strong>Estrutura preferida da mensagem</strong><small>Serve como texto de segurança e referência visual.</small></div><label>Modelo da mensagem<textarea value={data.config.messageTemplate ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, messageTemplate: event.target.value } })} /><small>Campos disponíveis: {'{title}'}, {'{benefit}'}, {'{originalPrice}'}, {'{price}'}, {'{discount}'}, {'{shipping}'} e {'{link}'}.</small></label></div></section>
+        <section className="panel setting-section message-section"><div className="section-title"><div><span className="section-step">INTELIGÊNCIA ARTIFICIAL</span><h2>Texto exclusivo para cada oferta</h2><p>A IA externa cria a mensagem somente quando o produto estiver prestes a ser publicado.</p></div></div><div className="ai-settings-grid"><label className="toggle-card ai-toggle"><input type="checkbox" checked={Boolean(data.config.aiEnabled)} onChange={(event) => setData({ ...data, config: { ...data.config, aiEnabled: event.target.checked } })} /><span><strong>Criar textos com IA</strong><small>Se a IA falhar, a publicação aguardará uma nova tentativa.</small></span></label><label>Provedor<select value={data.config.aiProvider ?? 'gemini'} onChange={(event) => { const models = { gemini: 'gemini-3.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' }; setData({ ...data, config: { ...data.config, aiProvider: event.target.value, aiModel: models[event.target.value] } }); }}><option value="gemini">Gemini (gratuito — recomendado)</option><option value="groq">Groq (externa)</option><option value="ollama">Ollama local</option></select><small>As chaves ficam criptografadas no servidor.</small></label><label>Modelo<input value={data.config.aiModel ?? 'gemini-3.5-flash-lite'} onChange={(event) => setData({ ...data, config: { ...data.config, aiModel: event.target.value } })} /><small>{data.config.aiProvider === 'gemini' ? 'Modelo gratuito recomendado: gemini-3.5-flash-lite.' : data.config.aiProvider === 'groq' ? 'Modelo recomendado: openai/gpt-oss-20b.' : 'Modelo local instalado no Ollama.'}</small></label>{data.config.aiProvider === 'gemini' && <label>Chave do Gemini<input type="password" value={secretForm.geminiApiKey} onChange={(event) => setSecretForm({ ...secretForm, geminiApiKey: event.target.value })} placeholder={data.secrets?.geminiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave do Google AI Studio'} autoComplete="new-password" /><small>{data.secrets?.geminiApiKeyConfigured ? `Chave salva com final ${data.secrets.geminiApiKeyEnding || '----'}${data.secrets.geminiApiKeyFormatValid === false ? ' — parece incompleta' : ''}.` : 'Use Copiar chave de API no AI Studio; não copie o nome nem o número do projeto.'}</small></label>}<label>
+          Chave da OpenAI
+
+          <input
+            type="password"
+            value={secretForm.openaiApiKey}
+            onChange={(event) =>
+              setSecretForm({
+                ...secretForm,
+                openaiApiKey: event.target.value
+              })
+            }
+            placeholder={
+              data.secrets?.openaiApiKeyConfigured
+                ? 'Chave configurada — digite para substituir'
+                : 'Cole a chave da OpenAI'
+            }
+            autoComplete="new-password"
+          />
+
+          <small>
+            {data.secrets?.openaiApiKeyConfigured
+              ? `Chave salva com final ${data.secrets.openaiApiKeyEnding || '----'
+              }${data.secrets.openaiApiKeyFormatValid === false
+                ? ' — parece inválida'
+                : ''
+              }.`
+              : 'Cole sua chave secreta da API da OpenAI.'}
+          </small>
+        </label>
+          <label>
+            Modelo OpenAI
+
+            <input
+              value={
+                data.config.aiModels?.openai ?? ''
+              }
+              onChange={(event) =>
+                setData({
+                  ...data,
+                  config: {
+                    ...data.config,
+
+                    aiModels: {
+                      ...(data.config.aiModels || {}),
+                      openai: event.target.value
+                    }
+                  }
+                })
+              }
+              placeholder="gpt-5-mini"
+            />
+
+            <small>
+              Modelo usado quando o Gemini falhar e o sistema chamar a OpenAI.
+            </small>
+          </label>
+          {data.config.aiProvider === 'groq' && <label>Chave da Groq<input type="password" value={secretForm.aiApiKey} onChange={(event) => setSecretForm({ ...secretForm, aiApiKey: event.target.value })} placeholder={data.secrets?.aiApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave da API'} autoComplete="new-password" /><small>{data.secrets?.aiApiKeyConfigured ? `Chave salva com final ${data.secrets.aiApiKeyEnding || '----'}${data.secrets.aiApiKeyFormatValid === false ? ' — formato inválido' : ''}.` : 'Cole o valor secreto completo, começando com gsk_.'}</small></label>}<label>Estilo do texto<select value={data.config.aiTone ?? 'varied'} onChange={(event) => setData({ ...data, config: { ...data.config, aiTone: event.target.value } })}><option value="varied">Variado automaticamente</option><option value="seller">Vendedor e confiável</option><option value="direct">Direto e objetivo</option><option value="friendly">Amigável e natural</option><option value="urgent">Urgência responsável</option><option value="premium">Elegante e premium</option><option value="playful">Divertido e descontraído</option><option value="story">Mini-história cotidiana</option><option value="minimal">Minimalista</option></select></label><label className="ai-instructions">Instruções para a IA<textarea value={data.config.aiInstructions ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, aiInstructions: event.target.value } })} placeholder="Ex.: Use poucos emojis e destaque a economia." /></label>{data.config.aiProvider === 'ollama' && <details className="advanced-ai"><summary>Configuração avançada</summary><label>Endereço do Ollama<input value={data.config.aiOllamaUrl ?? 'http://127.0.0.1:11434'} onChange={(event) => setData({ ...data, config: { ...data.config, aiOllamaUrl: event.target.value } })} /></label></details>}<button className="button subtle" type="button" onClick={testAi}>Salvar e testar IA</button></div>{aiPreview && <div className="ai-preview"><span>PRÉVIA DA MENSAGEM</span><pre>{aiPreview}</pre></div>}<div className="fallback-template"><div><strong>Estrutura preferida da mensagem</strong><small>Serve como texto de segurança e referência visual.</small></div><label>Modelo da mensagem<textarea value={data.config.messageTemplate ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, messageTemplate: event.target.value } })} /><small>Campos disponíveis: {'{title}'}, {'{benefit}'}, {'{originalPrice}'}, {'{price}'}, {'{discount}'}, {'{shipping}'} e {'{link}'}.</small></label></div></section>
         <section className="panel setting-section audience-manager">
 
           <div className="section-title">

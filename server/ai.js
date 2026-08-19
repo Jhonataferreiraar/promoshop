@@ -1,4 +1,9 @@
 import { normalizeApiKey, readSecrets } from './secrets.js';
+import {
+  calculateOfferDiscount,
+  getAudienceCodesForOffer,
+  getAudienceRoutingCatalog
+} from './audienceRouting.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -115,13 +120,629 @@ function finalizeGeneratedMessage(generated, offer, config) {
   return fillLocalPlaceholders(message, offer);
 }
 
+function getProviderOrder(config) {
+  const configured = Array.isArray(config.aiProviderOrder)
+    ? config.aiProviderOrder
+    : [];
+
+  const order = configured.length
+    ? configured
+    : ['gemini', 'openai', 'groq'];
+
+  return [...new Set(
+    order
+      .map((provider) =>
+        String(provider || '')
+          .trim()
+          .toLowerCase()
+      )
+      .filter((provider) =>
+        ['gemini', 'openai', 'groq'].includes(provider)
+      )
+  )];
+}
+
+function getProviderModel(provider, config) {
+  const configuredModels =
+    config.aiModels &&
+      typeof config.aiModels === 'object'
+      ? config.aiModels
+      : {};
+
+  if (provider === 'gemini') {
+    return String(
+      configuredModels.gemini ||
+      config.aiModel ||
+      'gemini-3.5-flash-lite'
+    ).trim();
+  }
+
+  if (provider === 'openai') {
+    return String(
+      process.env.OPENAI_MODEL ||
+      configuredModels.openai ||
+      ''
+    ).trim();
+  }
+
+  if (provider === 'groq') {
+    return String(
+      configuredModels.groq ||
+      'openai/gpt-oss-20b'
+    ).trim();
+  }
+
+  return '';
+}
+
+async function callJsonProvider({
+  provider,
+  model,
+  messages,
+  temperature = 0.2
+}) {
+  const secrets = await readSecrets();
+
+  if (provider === 'gemini') {
+    const apiKey =
+      normalizeApiKey(secrets.geminiApiKey) ||
+      normalizeApiKey(process.env.GEMINI_API_KEY) ||
+      normalizeApiKey(process.env.GOOGLE_API_KEY);
+
+    if (!apiKey) {
+      throw new Error(
+        'Gemini: chave não configurada.'
+      );
+    }
+
+    if (!model) {
+      throw new Error(
+        'Gemini: modelo não configurado.'
+      );
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(45_000),
+
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+
+        body: JSON.stringify({
+          systemInstruction: messages[0]
+            ? {
+              parts: [
+                {
+                  text: messages[0].content
+                }
+              ]
+            }
+            : undefined,
+
+          contents: messages
+            .filter(
+              (message) =>
+                message.role !== 'system'
+            )
+            .map((message) => ({
+              role:
+                message.role === 'assistant'
+                  ? 'model'
+                  : 'user',
+
+              parts: [
+                {
+                  text: message.content
+                }
+              ]
+            })),
+
+          generationConfig: {
+            temperature,
+            maxOutputTokens: 700,
+            responseMimeType:
+              'application/json'
+          }
+        })
+      }
+    );
+
+    const raw =
+      await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `Gemini respondeu ${response.status}: ${raw.slice(0, 250)}`
+      );
+    }
+
+    const payload =
+      raw ? JSON.parse(raw) : {};
+
+    const content =
+      payload.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('');
+
+    if (!content) {
+      throw new Error(
+        'Gemini retornou resposta vazia.'
+      );
+    }
+
+    return JSON.parse(
+      String(content)
+        .replace(
+          /^```(?:json)?\s*/i,
+          ''
+        )
+        .replace(
+          /\s*```$/i,
+          ''
+        )
+        .trim()
+    );
+  }
+
+  if (provider === 'openai') {
+    const apiKey =
+      normalizeApiKey(secrets.openaiApiKey) ||
+      normalizeApiKey(
+        process.env.OPENAI_API_KEY
+      );
+
+    if (!apiKey) {
+      throw new Error(
+        'OpenAI: chave não configurada.'
+      );
+    }
+
+    if (!model) {
+      throw new Error(
+        'OpenAI: defina OPENAI_MODEL no Render.'
+      );
+    }
+
+    const response = await fetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        signal:
+          AbortSignal.timeout(45_000),
+
+        headers: {
+          'Content-Type':
+            'application/json',
+
+          Authorization:
+            `Bearer ${apiKey}`
+        },
+
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          response_format: {
+            type: 'json_object'
+          }
+        })
+      }
+    );
+
+    const raw =
+      await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `OpenAI respondeu ${response.status}: ${raw.slice(0, 250)}`
+      );
+    }
+
+    const payload =
+      raw ? JSON.parse(raw) : {};
+
+    const content =
+      payload.choices?.[0]
+        ?.message?.content;
+
+    if (!content) {
+      throw new Error(
+        'OpenAI retornou resposta vazia.'
+      );
+    }
+
+    return JSON.parse(
+      String(content)
+        .replace(
+          /^```(?:json)?\s*/i,
+          ''
+        )
+        .replace(
+          /\s*```$/i,
+          ''
+        )
+        .trim()
+    );
+  }
+
+  if (provider === 'groq') {
+    const apiKey =
+      normalizeApiKey(secrets.aiApiKey) ||
+      normalizeApiKey(
+        process.env.AI_API_KEY
+      );
+
+    if (!apiKey) {
+      throw new Error(
+        'Groq: chave não configurada.'
+      );
+    }
+
+    if (!model) {
+      throw new Error(
+        'Groq: modelo não configurado.'
+      );
+    }
+
+    const response = await fetch(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        signal:
+          AbortSignal.timeout(45_000),
+
+        headers: {
+          'Content-Type':
+            'application/json',
+
+          Authorization:
+            `Bearer ${apiKey}`
+        },
+
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+
+          max_completion_tokens: 700,
+
+          reasoning_effort:
+            model.startsWith(
+              'openai/gpt-oss-'
+            )
+              ? 'low'
+              : undefined,
+
+          response_format: {
+            type: 'json_object'
+          }
+        })
+      }
+    );
+
+    const raw =
+      await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `Groq respondeu ${response.status}: ${raw.slice(0, 250)}`
+      );
+    }
+
+    const payload =
+      raw ? JSON.parse(raw) : {};
+
+    const content =
+      payload.choices?.[0]
+        ?.message?.content;
+
+    if (!content) {
+      throw new Error(
+        'Groq retornou resposta vazia.'
+      );
+    }
+
+    return JSON.parse(
+      String(content)
+        .replace(
+          /^```(?:json)?\s*/i,
+          ''
+        )
+        .replace(
+          /\s*```$/i,
+          ''
+        )
+        .trim()
+    );
+  }
+
+  throw new Error(
+    `Provedor desconhecido: ${provider}`
+  );
+}
+
+async function callJsonWithFallback(
+  messages,
+  config,
+  {
+    temperature = 0.2
+  } = {}
+) {
+  const providers =
+    getProviderOrder(config);
+
+  const errors = [];
+
+  for (const provider of providers) {
+    const model =
+      getProviderModel(
+        provider,
+        config
+      );
+
+    try {
+      const result =
+        await callJsonProvider({
+          provider,
+          model,
+          messages,
+          temperature
+        });
+
+      console.log(
+        `[IA] ${provider} respondeu com sucesso usando ${model || 'modelo não informado'}.`
+      );
+
+      return {
+        provider,
+        model,
+        result
+      };
+    } catch (error) {
+      const message =
+        String(
+          error?.message ||
+          error
+        );
+
+      errors.push(
+        `${provider}: ${message}`
+      );
+
+      console.warn(
+        `[IA] ${provider} falhou. Tentando próximo provedor: ${message}`
+      );
+    }
+  }
+
+  throw new Error(
+    `Todas as IAs falharam: ${errors.join(' | ')}`
+  );
+}
+
+export async function classifyOfferAudience(
+  offer,
+  config
+) {
+  const audiences =
+    getAudienceRoutingCatalog(
+      config.whatsappAudiences
+    );
+
+  const thematicAudiences =
+    audiences.filter(
+      (audience) =>
+        !audience.general &&
+        !audience.deals
+    );
+
+  if (!thematicAudiences.length) {
+    return getAudienceCodesForOffer(
+      offer,
+      config.whatsappAudiences
+    );
+  }
+
+  const discount =
+    calculateOfferDiscount(offer);
+
+  const catalog =
+    thematicAudiences
+      .map(
+        (audience) =>
+          `${audience.code} - ${audience.name}`
+      )
+      .join('\n');
+
+  const prompt = `
+Classifique este produto para UM grupo de WhatsApp da PromoShop.
+
+PRODUTO:
+Título: ${String(offer.title || '').slice(0, 600)}
+Categoria informada: ${String(offer.category || '').slice(0, 300)}
+Loja: ${String(offer.store || '').slice(0, 100)}
+Desconto: ${discount}%
+
+GRUPOS TEMÁTICOS DISPONÍVEIS:
+${catalog}
+
+REGRAS IMPORTANTES:
+
+- Escolha SOMENTE UM grupo temático.
+- Não escolha baseado apenas em uma palavra isolada quando ela puder ter outro significado.
+- Analise o produto como um todo.
+- Não use G01 nesta classificação.
+- Não use G10 nesta classificação.
+- Não invente códigos.
+- Se nenhum grupo temático combinar claramente, responda null.
+- Priorize o propósito principal do produto.
+
+Exemplos:
+
+iPhone → G02
+Notebook → G02
+Air Fryer → G03
+Panela → G03
+Shampoo → G04
+Tênis casual → G05
+Ração para cachorro → G06
+Brinquedo infantil → G07
+Isca de pesca → G08
+Corda de escalada → G08
+Furadeira → G09
+Peça automotiva → G09
+
+RESPONDA APENAS JSON:
+
+{
+  "code": "G02",
+  "confidence": 0.95
+}
+`;
+
+  try {
+    const { result, provider } =
+      await callJsonWithFallback(
+        [
+          {
+            role: 'system',
+            content:
+              'Você é um classificador rigoroso de produtos para grupos de promoções. Sua prioridade é impedir produtos em grupos errados.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        config,
+        {
+          temperature: 0
+        }
+      );
+
+    const requestedCode =
+      result?.code
+        ? String(result.code)
+          .trim()
+          .toUpperCase()
+        : '';
+
+    const confidence =
+      Number(
+        result?.confidence || 0
+      );
+
+    const validCodes =
+      new Set(
+        thematicAudiences.map(
+          (audience) =>
+            audience.code
+        )
+      );
+
+    const codes = [];
+
+    if (
+      requestedCode &&
+      validCodes.has(
+        requestedCode
+      ) &&
+      confidence >= 0.6
+    ) {
+      codes.push(
+        requestedCode
+      );
+    }
+
+    /*
+     * Se a IA não tiver confiança,
+     * usa o roteador local.
+     */
+    if (!codes.length) {
+      const localCodes =
+        getAudienceCodesForOffer(
+          offer,
+          config.whatsappAudiences
+        );
+
+      const localThematic =
+        localCodes.find(
+          (code) =>
+            code !== 'G01' &&
+            code !== 'G10'
+        );
+
+      if (localThematic) {
+        codes.push(
+          localThematic
+        );
+      } else if (
+        config.aiAudienceRoutingRequireMatch !== true
+      ) {
+        codes.push(
+          String(
+            config.aiGeneralAudienceCode ||
+            'G01'
+          ).toUpperCase()
+        );
+      }
+    }
+
+    /*
+     * G10 é especial.
+     * Pode acompanhar qualquer categoria.
+     */
+    const dealsAudience =
+      audiences.find(
+        (audience) =>
+          audience.code ===
+          String(
+            config.aiDealsAudienceCode ||
+            'G10'
+          ).toUpperCase()
+      );
+
+    if (
+      dealsAudience &&
+      Number(
+        dealsAudience.minDiscount ||
+        40
+      ) > 0 &&
+      discount >=
+      Number(
+        dealsAudience.minDiscount ||
+        40
+      )
+    ) {
+      codes.push(
+        dealsAudience.code
+      );
+    }
+
+    console.log(
+      `[ROTEAMENTO IA] "${offer.title}" → ${codes.join(', ') || 'nenhum'} (${provider})`
+    );
+
+    return [
+      ...new Set(codes)
+    ];
+  } catch (error) {
+    console.warn(
+      `[ROTEAMENTO IA] Falha ao classificar "${offer.title}". Usando roteador local: ${error.message}`
+    );
+
+    return getAudienceCodesForOffer(
+      offer,
+      config.whatsappAudiences
+    );
+  }
+}
+
 export async function generateOfferMessage(offer, config) {
-  const provider = String(config.aiProvider || 'groq').trim().toLowerCase();
-  if (!['gemini', 'groq', 'ollama'].includes(provider)) throw new Error('Escolha Gemini, Groq ou Ollama como provedor da IA.');
-  const defaultModels = { gemini: 'gemini-3.5-flash-lite', groq: 'openai/gpt-oss-20b', ollama: 'qwen2.5:3b' };
-  const configuredModel = String(process.env.AI_MODEL || config.aiModel || defaultModels[provider]).trim();
-  const model = provider === 'gemini' && configuredModel === 'gemini-2.5-flash-lite' ? defaultModels.gemini : configuredModel;
-  if (!model) throw new Error('Informe o modelo da IA no painel.');
   const discount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
   const selectedTone = resolveTone(config.aiTone || 'seller', offer);
   const tone = toneProfiles[selectedTone];
@@ -172,102 +793,33 @@ Regras obrigatórias:
     { role: 'system', content: 'Você é um redator brasileiro criativo especializado em ofertas legítimas para WhatsApp. Crie cada mensagem do zero, com personalidade e estruturas variadas. Seja claro, útil e nunca invente informações.' },
     { role: 'user', content: prompt }
   ];
-  let response;
-  let apiKeySource = 'configuração';
-  let apiKeyEnding = '';
-  if (provider === 'gemini') {
-    const secrets = await readSecrets();
-    const savedApiKey = normalizeApiKey(secrets.geminiApiKey);
-    const environmentApiKey = normalizeApiKey(process.env.GEMINI_API_KEY);
-    const apiKey = savedApiKey || environmentApiKey;
-    apiKeyEnding = apiKey.slice(-4);
-    apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
-    if (!apiKey) throw new Error('Informe a chave do Gemini no painel.');
-    if (apiKey.length < 20) {
-      throw new Error(`A chave salva no ${apiKeySource} parece incompleta. No Google AI Studio, use o botão Copiar chave de API — não copie o nome nem o número do projeto.`);
-    }
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(45_000),
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: messages[0].content }] },
-        contents: [{ role: 'user', parts: [{ text: messages[1].content }] }],
-        generationConfig: {
-          temperature: selectedTone === 'minimal' ? 0.7 : 1.05,
-          maxOutputTokens: 700,
-          responseMimeType: 'application/json'
-        }
-      })
-    });
-  } else if (provider === 'groq') {
-    const secrets = await readSecrets();
-    const savedApiKey = normalizeApiKey(secrets.aiApiKey);
-    const environmentApiKey = normalizeApiKey(process.env.AI_API_KEY);
-    const apiKey = savedApiKey || environmentApiKey;
-    apiKeyEnding = apiKey.slice(-4);
-    apiKeySource = savedApiKey ? 'painel' : 'Environment do Render';
-    if (!apiKey) throw new Error('Informe a chave da Groq no painel.');
-    if (!apiKey.startsWith('gsk_') || apiKey.length < 20) {
-      throw new Error(`A chave salva no ${apiKeySource} não tem o formato de uma chave Groq. Copie a chave secreta completa, que começa com gsk_, sem aspas.`);
-    }
-    response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      signal: AbortSignal.timeout(45_000),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: selectedTone === 'minimal' ? 0.7 : 1.05,
-        max_completion_tokens: 700,
-        reasoning_effort: model.startsWith('openai/gpt-oss-') ? 'low' : undefined,
-        response_format: { type: 'json_object' }
-      })
-    });
-  } else {
-    const endpoint = String(config.aiOllamaUrl || 'http://127.0.0.1:11434').replace(/\/$/, '');
-    response = await fetch(`${endpoint}/api/chat`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(90_000),
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, stream: false, format: 'json', messages, options: { temperature: selectedTone === 'minimal' ? 0.65 : 0.9, num_predict: 480 } })
-    });
+  const { result, provider } =
+    await callJsonWithFallback(
+      messages,
+      config,
+      {
+        temperature:
+          selectedTone === 'minimal'
+            ? 0.7
+            : 1.05
+      }
+    );
+
+  if (
+    !result ||
+    typeof result.message !==
+    'string'
+  ) {
+    throw new Error(
+      `${provider} não retornou o texto da publicação.`
+    );
   }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    if (provider === 'groq' && response.status === 401) {
-      let reason = '';
-      try {
-        const parsed = JSON.parse(detail);
-        reason = parsed.error?.message || parsed.error_description || parsed.message || parsed.error || '';
-      } catch { reason = detail; }
-      const safeReason = String(reason || '').replace(/gsk_[A-Za-z0-9_-]+/g, '[chave protegida]').slice(0, 180);
-      throw new Error(`A Groq recusou a autenticação do ${apiKeySource} (chave salva com final ${apiKeyEnding})${safeReason ? `: ${safeReason}` : ''}. O estilo selecionado não altera a chave.`);
-    }
-    if (provider === 'gemini' && [400, 401, 403].includes(response.status)) {
-      let reason = '';
-      try { reason = JSON.parse(detail)?.error?.message || ''; } catch { reason = detail; }
-      const safeReason = String(reason || '').replace(/AIza[A-Za-z0-9_-]+/g, '[chave protegida]').slice(0, 180);
-      throw new Error(`O Gemini recusou a chave do ${apiKeySource} (final ${apiKeyEnding})${safeReason ? `: ${safeReason}` : ''}.`);
-    }
-    const providerName = provider === 'gemini' ? 'Gemini' : provider === 'groq' ? 'Groq' : 'IA local';
-    throw new Error(`${providerName} respondeu ${response.status}${detail ? `: ${detail.slice(0, 220)}` : ''}`);
-  }
-  const payload = await response.json();
-  let creative;
-  try {
-    const content = provider === 'gemini'
-      ? payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('')
-      : provider === 'groq' ? payload.choices?.[0]?.message?.content : (payload.message?.content || payload.response);
-    const jsonText = String(content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    creative = JSON.parse(jsonText || '');
-  } catch {
-    throw new Error('A IA retornou uma resposta incompleta ou inválida. A publicação aguardará uma nova tentativa.');
-  }
-  if (!creative || typeof creative.message !== 'string') {
-    throw new Error('A IA não retornou o texto da publicação. A publicação aguardará uma nova tentativa.');
-  }
-  return finalizeGeneratedMessage(creative.message, offer, config);
+
+  return finalizeGeneratedMessage(
+    result.message,
+    offer,
+    config
+  );
 }
 
 export async function recommendWhatsappAudiences(
@@ -318,76 +870,34 @@ REGRAS:
 }
 `;
 
-  const provider = config.aiProvider || 'gemini';
-
-  if (provider !== 'gemini') {
-    throw new Error(
-      'O assistente de grupos está configurado inicialmente para Gemini.'
-    );
-  }
-
-  const apiKey =
-    normalizeApiKey(secrets?.geminiApiKey) ||
-    normalizeApiKey(process.env.GEMINI_API_KEY) ||
-    normalizeApiKey(process.env.GOOGLE_API_KEY);
-
-  if (!apiKey) {
-    throw new Error('Chave do Gemini não configurada.');
-  }
-
-  const model =
-    config.aiModel ||
-    'gemini-3.5-flash-lite';
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: 'POST',
-      signal: AbortSignal.timeout(45_000),
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json'
+  const { result } =
+    await callJsonWithFallback(
+      [
+        {
+          role: 'system',
+          content:
+            'Você recomenda grupos da PromoShop e responde somente JSON válido.'
+        },
+        {
+          role: 'user',
+          content: prompt
         }
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const raw = await response.text();
-
-    throw new Error(
-      `Gemini respondeu ${response.status}: ${raw.slice(0, 200)}`
+      ],
+      config,
+      {
+        temperature: 0.2
+      }
     );
-  }
 
-  const payload = await response.json();
+  const parsed = result;
 
-  const text =
-    payload.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    throw new Error('A IA não retornou uma recomendação.');
-  }
-
-  let parsed;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('A IA retornou uma resposta inválida.');
+  if (
+    !parsed ||
+    typeof parsed !== 'object'
+  ) {
+    throw new Error(
+      'A IA não retornou uma recomendação válida.'
+    );
   }
 
   const validCodes = new Set(

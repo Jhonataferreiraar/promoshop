@@ -88,6 +88,7 @@ async function defaults() {
     aliexpressAppSignature: '',
     aiApiKey: '',
     geminiApiKey: '',
+    openaiApiKey: '',
     workerToken: crypto.randomBytes(32).toString('hex')
   };
 }
@@ -166,10 +167,44 @@ async function updateSecretsUnlocked(changes) {
   if (typeof changes.aliexpressAppSecret === 'string' && changes.aliexpressAppSecret.trim()) next.aliexpressAppSecret = changes.aliexpressAppSecret.trim();
   if (typeof changes.aliexpressAppSignature === 'string' && changes.aliexpressAppSignature.trim()) next.aliexpressAppSignature = changes.aliexpressAppSignature.trim();
   if (changes.clearAliexpressCredentials) { next.aliexpressAppKey = ''; next.aliexpressAppSecret = ''; next.aliexpressAppSignature = ''; }
-  if (typeof changes.aiApiKey === 'string' && normalizeApiKey(changes.aiApiKey)) next.aiApiKey = normalizeApiKey(changes.aiApiKey);
-  if (changes.clearAiApiKey) next.aiApiKey = '';
-  if (typeof changes.geminiApiKey === 'string' && normalizeApiKey(changes.geminiApiKey)) next.geminiApiKey = normalizeApiKey(changes.geminiApiKey);
-  if (changes.clearGeminiApiKey) next.geminiApiKey = '';
+  if (
+    typeof changes.aiApiKey === 'string' &&
+    normalizeApiKey(changes.aiApiKey)
+  ) {
+    next.aiApiKey = normalizeApiKey(
+      changes.aiApiKey
+    );
+  }
+
+  if (changes.clearAiApiKey) {
+    next.aiApiKey = '';
+  }
+
+  if (
+    typeof changes.geminiApiKey === 'string' &&
+    normalizeApiKey(changes.geminiApiKey)
+  ) {
+    next.geminiApiKey = normalizeApiKey(
+      changes.geminiApiKey
+    );
+  }
+
+  if (changes.clearGeminiApiKey) {
+    next.geminiApiKey = '';
+  }
+
+  if (
+    typeof changes.openaiApiKey === 'string' &&
+    normalizeApiKey(changes.openaiApiKey)
+  ) {
+    next.openaiApiKey = normalizeApiKey(
+      changes.openaiApiKey
+    );
+  }
+
+  if (changes.clearOpenaiApiKey) {
+    next.openaiApiKey = '';
+  }
   await writeSecrets(next);
   return next;
 }
@@ -184,8 +219,14 @@ export function updateSecrets(changes) {
 }
 
 export function secretStatus(secrets) {
-  const aiApiKey = normalizeApiKey(secrets.aiApiKey);
-  const geminiApiKey = normalizeApiKey(secrets.geminiApiKey);
+  const aiApiKey =
+    normalizeApiKey(secrets.aiApiKey);
+
+  const geminiApiKey =
+    normalizeApiKey(secrets.geminiApiKey);
+
+  const openaiApiKey =
+    normalizeApiKey(secrets.openaiApiKey);
   return {
     adminUser: secrets.adminUser,
     adminSetupRequired: !secrets.adminPasswordHash && !process.env.ADMIN_PASSWORD,
@@ -219,8 +260,28 @@ export function secretStatus(secrets) {
     aiApiKeyConfigured: Boolean(aiApiKey),
     aiApiKeyFormatValid: !aiApiKey || (aiApiKey.startsWith('gsk_') && aiApiKey.length >= 20),
     aiApiKeyEnding: aiApiKey ? aiApiKey.slice(-4) : '',
-    geminiApiKeyConfigured: Boolean(geminiApiKey),
-    geminiApiKeyFormatValid: !geminiApiKey || geminiApiKey.length >= 20,
-    geminiApiKeyEnding: geminiApiKey ? geminiApiKey.slice(-4) : ''
+    geminiApiKeyConfigured:
+      Boolean(geminiApiKey),
+
+    geminiApiKeyFormatValid:
+      !geminiApiKey ||
+      geminiApiKey.length >= 20,
+
+    geminiApiKeyEnding:
+      geminiApiKey
+        ? geminiApiKey.slice(-4)
+        : '',
+
+    openaiApiKeyConfigured:
+      Boolean(openaiApiKey),
+
+    openaiApiKeyFormatValid:
+      !openaiApiKey ||
+      openaiApiKey.length >= 20,
+
+    openaiApiKeyEnding:
+      openaiApiKey
+        ? openaiApiKey.slice(-4)
+        : ''
   };
 }
