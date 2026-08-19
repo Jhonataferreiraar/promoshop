@@ -59,31 +59,29 @@ import {
 
 const app = express();
 
-app.disable(
-  'x-powered-by'
+app.disable('x-powered-by');
+
+const port = Number(
+  process.env.PORT || 3001
 );
 
-const port =
-  Number(
-    process.env.PORT ||
-    3001
-  );
-
-const root =
-  path.resolve(
-    path.dirname(
-      fileURLToPath(
-        import.meta.url
-      )
-    ),
-    '..'
-  );
+const root = path.resolve(
+  path.dirname(
+    fileURLToPath(import.meta.url)
+  ),
+  '..'
+);
 
 /*
- * Versão 6:
- * IA + fallback automático local.
+ * Versão 7:
+ *
+ * - IA com fallback local.
+ * - Roteamento local caso IA falhe.
+ * - Rodada por público.
+ * - 1 produto diferente para cada público.
+ * - Intervalo configurado no painel entre rodadas.
  */
-const aiGenerationVersion = 6;
+const aiGenerationVersion = 7;
 
 let whatsappProcess = null;
 let whatsappRestartTimer = null;
@@ -91,60 +89,51 @@ let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let collectionInProgress = false;
 
-const loginAttempts =
-  new Map();
+const loginAttempts = new Map();
 
 const loginWindowMs =
   15 * 60 * 1000;
 
 const loginMaxAttempts = 5;
 
-const assistantAttempts =
-  new Map();
+const assistantAttempts = new Map();
 
 const assistantWindowMs =
   10 * 60 * 1000;
 
-const assistantMaxAttempts =
-  10;
+const assistantMaxAttempts = 10;
 
-app.set(
-  'trust proxy',
-  1
-);
+app.set('trust proxy', 1);
+
+/*
+ * ==========================================================
+ * SEGURANÇA / LIMITES
+ * ==========================================================
+ */
 
 function loginAttemptState(ip) {
   const now = Date.now();
 
-  for (
-    const [key, value]
-    of loginAttempts
-  ) {
+  for (const [key, value] of loginAttempts) {
     if (
       value.resetAt <= now &&
       value.blockedUntil <= now
     ) {
-      loginAttempts.delete(
-        key
-      );
+      loginAttempts.delete(key);
     }
   }
 
   return (
-    loginAttempts.get(ip) ||
-    {
+    loginAttempts.get(ip) || {
       count: 0,
       resetAt:
-        now +
-        loginWindowMs,
+        now + loginWindowMs,
       blockedUntil: 0
     }
   );
 }
 
-function registerFailedLogin(
-  ip
-) {
+function registerFailedLogin(ip) {
   const state =
     loginAttemptState(ip);
 
@@ -167,19 +156,14 @@ function registerFailedLogin(
   return state;
 }
 
-function checkAssistantLimit(
-  ip
-) {
-  const now =
-    Date.now();
+function checkAssistantLimit(ip) {
+  const now = Date.now();
 
   const current =
-    assistantAttempts.get(ip) ||
-    {
+    assistantAttempts.get(ip) || {
       count: 0,
       resetAt:
-        now +
-        assistantWindowMs
+        now + assistantWindowMs
     };
 
   if (
@@ -258,20 +242,321 @@ function whatsappAutoStartEnabled(
   );
 }
 
+/*
+ * ==========================================================
+ * RODADAS DE PUBLICAÇÃO
+ * ==========================================================
+ */
+
+function normalizeAudienceCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase();
+}
+
+function getRoundAudienceCodes(data) {
+  const audiences =
+    Array.isArray(
+      data.config
+        ?.whatsappAudiences
+    )
+      ? data.config
+          .whatsappAudiences
+      : [];
+
+  const whatsappGroups =
+    Array.isArray(
+      data.meta
+        ?.whatsapp
+        ?.groups
+    )
+      ? data.meta
+          .whatsapp
+          .groups
+      : [];
+
+  const availableGroupCodes =
+    new Set();
+
+  for (
+    const group
+    of whatsappGroups
+  ) {
+    const name =
+      String(
+        group.name || ''
+      ).trim();
+
+    const match =
+      name.match(
+        /(?:\||\s)(G\d+)\s*$/i
+      );
+
+    if (match?.[1]) {
+      availableGroupCodes.add(
+        normalizeAudienceCode(
+          match[1]
+        )
+      );
+    }
+  }
+
+  return audiences
+    .filter(
+      (audience) =>
+        audience.enabled !==
+        false
+    )
+    .map(
+      (audience) =>
+        normalizeAudienceCode(
+          audience.code
+        )
+    )
+    .filter(
+      (code) =>
+        /^G\d+$/.test(code)
+    )
+    .filter(
+      (code) =>
+        !availableGroupCodes.size ||
+        availableGroupCodes.has(
+          code
+        )
+    );
+}
+
+function getLocalCodesForQueueItem(
+  item,
+  offers,
+  config
+) {
+  const offer =
+    offers.find(
+      (entry) =>
+        entry.id ===
+        item.offerId
+    ) ||
+    item.offerSnapshot;
+
+  if (!offer) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      getAudienceCodesForOffer(
+        offer,
+        config.whatsappAudiences
+      )
+        .map(
+          (code) =>
+            normalizeAudienceCode(
+              code
+            )
+        )
+        .filter(Boolean)
+    )
+  ];
+}
+
+async function getPublicationRound(
+  createIfMissing = true
+) {
+  let result = null;
+
+  await updateStore(
+    (data) => {
+      data.meta =
+        data.meta || {};
+
+      const audienceCodes =
+        getRoundAudienceCodes(
+          data
+        );
+
+      if (
+        !audienceCodes.length
+      ) {
+        data.meta.publicationRound =
+          null;
+
+        return;
+      }
+
+      let round =
+        data.meta
+          .publicationRound;
+
+      const validRound =
+        round &&
+        Array.isArray(
+          round
+            .pendingAudienceCodes
+        ) &&
+        round
+          .pendingAudienceCodes
+          .length;
+
+      if (!validRound) {
+        if (!createIfMissing) {
+          data.meta
+            .publicationRound =
+            null;
+
+          return;
+        }
+
+        round = {
+          id:
+            createId(
+              'round'
+            ),
+
+          startedAt:
+            new Date()
+              .toISOString(),
+
+          pendingAudienceCodes:
+            [...audienceCodes],
+
+          usedOfferIds: []
+        };
+
+        data.meta
+          .publicationRound =
+          round;
+      } else {
+        round
+          .pendingAudienceCodes =
+          round
+            .pendingAudienceCodes
+            .map(
+              (code) =>
+                normalizeAudienceCode(
+                  code
+                )
+            )
+            .filter(
+              (code) =>
+                audienceCodes.includes(
+                  code
+                )
+            );
+
+        round.usedOfferIds =
+          Array.isArray(
+            round.usedOfferIds
+          )
+            ? round.usedOfferIds
+            : [];
+
+        if (
+          !round
+            .pendingAudienceCodes
+            .length
+        ) {
+          data.meta
+            .publicationRound =
+            null;
+
+          return;
+        }
+      }
+
+      result = {
+        id:
+          round.id,
+
+        pendingAudienceCodes:
+          [
+            ...round
+              .pendingAudienceCodes
+          ],
+
+        usedOfferIds:
+          [
+            ...round
+              .usedOfferIds
+          ]
+      };
+    }
+  );
+
+  return result;
+}
+
+async function skipRoundAudience(
+  roundId,
+  audienceCode
+) {
+  await updateStore(
+    (data) => {
+      const round =
+        data.meta
+          ?.publicationRound;
+
+      if (
+        !round ||
+        round.id !==
+        roundId
+      ) {
+        return;
+      }
+
+      round.pendingAudienceCodes =
+        (
+          round
+            .pendingAudienceCodes ||
+          []
+        ).filter(
+          (code) =>
+            normalizeAudienceCode(
+              code
+            ) !==
+            normalizeAudienceCode(
+              audienceCode
+            )
+        );
+
+      if (
+        !round
+          .pendingAudienceCodes
+          .length
+      ) {
+        round.completedAt =
+          new Date()
+            .toISOString();
+
+        data.meta
+          .lastPublicationRound = {
+          ...round
+        };
+
+        data.meta
+          .publicationRound =
+          null;
+      }
+    }
+  );
+}
+
+/*
+ * ==========================================================
+ * CORS / HEADERS
+ * ==========================================================
+ */
+
 const allowedOrigins =
   String(
-    process.env.SITE_URL ||
-    ''
+    process.env.SITE_URL || ''
   )
     .split(',')
     .map(
       (value) =>
         value
           .trim()
-          .replace(
-            /\/$/,
-            ''
-          )
+          .replace(/\/$/, '')
     )
     .filter(Boolean);
 
@@ -374,6 +659,12 @@ app.use(
   })
 );
 
+/*
+ * ==========================================================
+ * WHATSAPP WORKER
+ * ==========================================================
+ */
+
 async function startWhatsappWorker({
   mode = 'qr',
   phoneNumber = '',
@@ -382,7 +673,7 @@ async function startWhatsappWorker({
   if (
     whatsappProcess &&
     whatsappProcess.exitCode ===
-      null
+    null
   ) {
     return {
       started: false,
@@ -457,21 +748,20 @@ async function startWhatsappWorker({
             return;
           }
 
-          store.meta.whatsapp =
-            {
-              ...store.meta
-                .whatsapp,
+          store.meta.whatsapp = {
+            ...store.meta
+              .whatsapp,
 
-              status:
-                'offline',
+            status:
+              'offline',
 
-              lastSeenAt:
-                new Date()
-                  .toISOString(),
+            lastSeenAt:
+              new Date()
+                .toISOString(),
 
-              message:
-                `Publicador encerrado (${code ?? 'sem código'}).`
-            };
+            message:
+              `Publicador encerrado (${code ?? 'sem código'}).`
+          };
         }
       );
 
@@ -497,14 +787,14 @@ async function startWhatsappWorker({
           300_000,
 
           10_000 *
-            (
-              2 **
-              Math.min(
-                whatsappRestartAttempts -
-                  1,
-                5
-              )
+          (
+            2 **
+            Math.min(
+              whatsappRestartAttempts -
+              1,
+              5
             )
+          )
         );
 
       await addLog(
@@ -532,27 +822,24 @@ async function startWhatsappWorker({
 
   await updateStore(
     (store) => {
-      store.meta.whatsapp =
-        {
-          ...store.meta
-            .whatsapp,
+      store.meta.whatsapp = {
+        ...store.meta
+          .whatsapp,
 
-          status:
-            'starting',
+        status:
+          'starting',
 
-          qrDataUrl: null,
+        qrDataUrl: null,
+        pairingCode: null,
 
-          pairingCode:
-            null,
-
-          message:
-            automatic
-              ? 'Restaurando a conexão do WhatsApp…'
-              : mode ===
-                  'phone'
-                ? 'Gerando código de pareamento…'
-                : 'Gerando QR Code…'
-        };
+        message:
+          automatic
+            ? 'Restaurando a conexão do WhatsApp…'
+            : mode ===
+              'phone'
+              ? 'Gerando código de pareamento…'
+              : 'Gerando QR Code…'
+      };
     }
   );
 
@@ -579,10 +866,13 @@ app.get(
   (_req, res) =>
     res.json({
       ok: true,
+
       time:
         new Date()
           .toISOString(),
+
       aiGenerationVersion,
+
       aiTextMode:
         'ai-with-local-fallback'
     })
@@ -663,9 +953,11 @@ app.get(
 
     const audiences =
       Array.isArray(
-        config.whatsappAudiences
+        config
+          .whatsappAudiences
       )
-        ? config.whatsappAudiences
+        ? config
+            .whatsappAudiences
         : [];
 
     res.json(
@@ -673,7 +965,7 @@ app.get(
         .filter(
           (audience) =>
             audience.enabled !==
-              false &&
+            false &&
             audience.whatsappLink
         )
         .map(
@@ -692,7 +984,8 @@ app.get(
 
             whatsappLink:
               String(
-                audience.whatsappLink ||
+                audience
+                  .whatsappLink ||
                 ''
               )
           })
@@ -839,15 +1132,17 @@ app.post(
             secrets
               .adminPasswordHash
           )
-        : environmentPassword &&
-          password.length ===
+        : (
+            environmentPassword &&
+            password.length ===
             environmentPassword.length &&
-          crypto.timingSafeEqual(
-            Buffer.from(
-              password
-            ),
-            Buffer.from(
-              environmentPassword
+            crypto.timingSafeEqual(
+              Buffer.from(
+                password
+              ),
+              Buffer.from(
+                environmentPassword
+              )
             )
           );
 
@@ -884,7 +1179,7 @@ app.post(
 
 /*
  * ==========================================================
- * DASHBOARD
+ * DASHBOARD / CONFIG
  * ==========================================================
  */
 
@@ -913,19 +1208,22 @@ app.get(
 
     if (
       Date.now() -
-        lastSeen >
-        90_000 &&
+      lastSeen >
+      90_000 &&
       data.meta
         .whatsapp
         ?.status ===
-        'connected'
+      'connected'
     ) {
-      data.meta.whatsapp.status =
+      data.meta
+        .whatsapp
+        .status =
         'offline';
     }
 
     res.json({
       ...data,
+
       secrets:
         secretStatus(
           secrets
@@ -946,25 +1244,25 @@ app.put(
         const writingStyleChanged =
           (
             'aiTone' in
-              req.body &&
+            req.body &&
             req.body.aiTone !==
-              data.config.aiTone
+            data.config.aiTone
           ) ||
           (
             'aiInstructions' in
-              req.body &&
+            req.body &&
             req.body
               .aiInstructions !==
-              data.config
-                .aiInstructions
+            data.config
+              .aiInstructions
           ) ||
           (
             'messageTemplate' in
-              req.body &&
+            req.body &&
             req.body
               .messageTemplate !==
-              data.config
-                .messageTemplate
+            data.config
+              .messageTemplate
           );
 
         data.config = {
@@ -1110,9 +1408,9 @@ app.post(
       if (
         !parsed ||
         parsed.protocol !==
-          'https:' ||
+        'https:' ||
         parsed.pathname !==
-          '/api/mercadolivre/callback' ||
+        '/api/mercadolivre/callback' ||
         parsed.search ||
         parsed.hash
       ) {
@@ -1220,6 +1518,7 @@ app.post(
         await collectMercadoLivre(
           {
             ...config,
+
             enableMercadoLivre:
               true
           },
@@ -1444,8 +1743,10 @@ app.post(
 
     res.json({
       query,
+
       count:
         results.length,
+
       results,
       errors
     });
@@ -1667,6 +1968,7 @@ app.post(
         await collectShopee(
           {
             ...config,
+
             enableShopee:
               true
           },
@@ -1675,8 +1977,10 @@ app.post(
 
       res.json({
         ok: true,
+
         count:
           offers.length,
+
         sample:
           offers[0]
             ?.title ||
@@ -1713,6 +2017,7 @@ app.post(
         await collectAliexpress(
           {
             ...config,
+
             enableAliexpress:
               true
           },
@@ -1721,8 +2026,10 @@ app.post(
 
       res.json({
         ok: true,
+
         count:
           offers.length,
+
         sample:
           offers[0]
             ?.title ||
@@ -1740,12 +2047,12 @@ app.post(
 );
 
 /*
- * Esse botão continua testando
- * as IAs de verdade.
+ * Testa as IAs de verdade.
  *
- * Ele NÃO usa fallback local,
- * pois queremos saber se uma IA
- * está realmente disponível.
+ * Não usa fallback local aqui,
+ * porque o objetivo do botão
+ * é verificar se alguma IA
+ * realmente está disponível.
  */
 app.post(
   '/api/admin/ai/test',
@@ -1761,7 +2068,7 @@ app.post(
       data.offers.find(
         (item) =>
           item.status ===
-            'active' &&
+          'active' &&
           item.affiliateUrl
       );
 
@@ -1784,6 +2091,7 @@ app.post(
       res.json({
         ok: true,
         message,
+
         offerTitle:
           offer.title
       });
@@ -1800,7 +2108,7 @@ app.post(
 
 /*
  * ==========================================================
- * FILA
+ * FILA - ADMIN
  * ==========================================================
  */
 
@@ -1817,9 +2125,9 @@ app.delete(
           data.queue.filter(
             (item) =>
               item.id !==
-                req.params.id ||
+              req.params.id ||
               item.status ===
-                'sent'
+              'sent'
           );
       }
     );
@@ -1849,9 +2157,9 @@ app.post(
           data.queue.find(
             (entry) =>
               entry.id ===
-                req.params.id &&
+              req.params.id &&
               entry.status ===
-                'pending'
+              'pending'
           );
 
         if (item) {
@@ -1896,9 +2204,9 @@ app.post(
           data.queue.find(
             (entry) =>
               entry.id ===
-                req.params.id &&
+              req.params.id &&
               entry.status ===
-                'failed'
+              'failed'
           );
 
         if (item) {
@@ -1973,9 +2281,9 @@ app.post(
       mode === 'phone' &&
       (
         phoneNumber.length <
-          10 ||
+        10 ||
         phoneNumber.length >
-          15
+        15
       )
     ) {
       return res
@@ -1994,6 +2302,7 @@ app.post(
 
     res.json({
       ok: true,
+
       message:
         result.message
     });
@@ -2034,23 +2343,22 @@ app.post(
 
     await updateStore(
       (store) => {
-        store.meta.whatsapp =
-          {
-            ...store.meta
-              .whatsapp,
+        store.meta.whatsapp = {
+          ...store.meta
+            .whatsapp,
 
-            status:
-              'offline',
+          status:
+            'offline',
 
-            qrDataUrl:
-              null,
+          qrDataUrl:
+            null,
 
-            pairingCode:
-              null,
+          pairingCode:
+            null,
 
-            message:
-              'Publicador parado pelo painel.'
-          };
+          message:
+            'Publicador parado pelo painel.'
+        };
       }
     );
 
@@ -2102,7 +2410,7 @@ app.post(
       processRunning &&
       heartbeatFresh &&
       whatsapp.status ===
-        'connected';
+      'connected';
 
     res.json({
       ok: true,
@@ -2159,7 +2467,7 @@ app.get(
       queue.find(
         (item) =>
           item.status ===
-            'pending' &&
+          'pending' &&
           item.force
       );
 
@@ -2170,14 +2478,22 @@ app.get(
      *
      * Fluxo:
      *
-     * 1. tenta classificar por IA;
-     * 2. se IA falhar, classifyOfferAudience usa filtro local;
-     * 3. tenta gerar texto por IA;
-     * 4. se TODAS falharem, usa mensagem local;
-     * 5. continua publicando normalmente.
+     * 1. tenta classificar com IA;
+     * 2. se a IA falhar, usa o filtro local;
+     * 3. tenta gerar o texto com IA;
+     * 4. se todas as IAs falharem, usa texto local;
+     * 5. publica normalmente.
+     *
+     * Durante uma rodada:
+     *
+     * G01 recebe somente G01;
+     * G02 recebe somente G02;
+     * G03 recebe somente G03;
+     * etc.
      */
     async function prepareWithAi(
-      item
+      item,
+      roundAudienceCode = ''
     ) {
       if (!item) {
         return null;
@@ -2193,13 +2509,11 @@ app.get(
           item.offerSnapshot;
 
         /*
-         * Verifica dados ANTES
-         * de qualquer chamada.
+         * Dados mínimos necessários.
          */
         if (
           !offer?.title ||
-          !offer
-            ?.affiliateUrl ||
+          !offer?.affiliateUrl ||
           !Number(
             offer?.price
           )
@@ -2208,6 +2522,12 @@ app.get(
             'Os dados completos do produto não estão mais disponíveis para publicação.'
           );
         }
+
+        /*
+         * ==================================================
+         * ROTEAMENTO
+         * ==================================================
+         */
 
         let targetAudienceCodes =
           Array.isArray(
@@ -2220,11 +2540,6 @@ app.get(
               ]
             : [];
 
-        /*
-         * ==================================
-         * ROTEAMENTO
-         * ==================================
-         */
         if (
           config.aiEnabled !==
             false &&
@@ -2233,11 +2548,8 @@ app.get(
             false
         ) {
           /*
-           * Tenta IA.
-           *
-           * Se todas falharem,
-           * classifyOfferAudience()
-           * usa o filtro local.
+           * A função classifyOfferAudience()
+           * já possui fallback local.
            */
           targetAudienceCodes =
             await classifyOfferAudience(
@@ -2245,10 +2557,6 @@ app.get(
               config
             );
         } else {
-          /*
-           * IA desativada:
-           * vai direto para filtro local.
-           */
           targetAudienceCodes =
             getAudienceCodesForOffer(
               offer,
@@ -2265,21 +2573,14 @@ app.get(
             )
               .map(
                 (code) =>
-                  String(
-                    code ||
-                    ''
+                  normalizeAudienceCode(
+                    code
                   )
-                    .trim()
-                    .toUpperCase()
               )
               .filter(Boolean)
           )
         ];
 
-        /*
-         * Segurança:
-         * não publica sem destino.
-         */
         if (
           !targetAudienceCodes
             .length
@@ -2289,16 +2590,98 @@ app.get(
           );
         }
 
+        /*
+         * Público que a rodada está
+         * tentando alimentar agora.
+         */
+        const normalizedRoundAudienceCode =
+          normalizeAudienceCode(
+            roundAudienceCode
+          );
+
+        /*
+         * Na rodada, validamos também
+         * com o roteador local.
+         *
+         * Isso evita que uma IA mande
+         * produto para categoria errada.
+         */
+        if (
+          normalizedRoundAudienceCode
+        ) {
+          const localCodes =
+            getAudienceCodesForOffer(
+              offer,
+              config
+                .whatsappAudiences
+            )
+              .map(
+                (code) =>
+                  normalizeAudienceCode(
+                    code
+                  )
+              )
+              .filter(Boolean);
+
+          if (
+            !localCodes.includes(
+              normalizedRoundAudienceCode
+            )
+          ) {
+            return {
+              skippedForAudience:
+                true
+            };
+          }
+        }
+
+        /*
+         * ==================================================
+         * DESTINO REAL DESTA PUBLICAÇÃO
+         * ==================================================
+         *
+         * Fora de rodada:
+         * usa os grupos normais do produto.
+         *
+         * Dentro da rodada:
+         * envia APENAS para o grupo atual.
+         *
+         * Exemplo:
+         *
+         * Produto classificado:
+         * G01 + G02
+         *
+         * Rodada atual:
+         * G02
+         *
+         * Envio real:
+         * somente G02.
+         */
+        const deliveryAudienceCodes =
+          normalizedRoundAudienceCode
+            ? [
+                normalizedRoundAudienceCode
+              ]
+            : [
+                ...targetAudienceCodes
+              ];
+
+        /*
+         * Mantemos no objeto local
+         * exatamente os destinos que
+         * o worker deverá usar.
+         */
         offer.targetAudienceCodes =
           [
-            ...targetAudienceCodes
+            ...deliveryAudienceCodes
           ];
 
         /*
-         * ==================================
+         * ==================================================
          * TEXTO
-         * ==================================
+         * ==================================================
          */
+
         let message;
         let messageSource;
         let aiStatus;
@@ -2309,8 +2692,7 @@ app.get(
           false
         ) {
           /*
-           * IA manualmente
-           * desativada.
+           * IA desligada manualmente.
            */
           message =
             generateFallbackOfferMessage(
@@ -2330,7 +2712,7 @@ app.get(
         } else {
           try {
             /*
-             * Tenta:
+             * Ordem configurada no ai.js:
              *
              * Gemini
              * ↓
@@ -2342,6 +2724,7 @@ app.get(
               await generateOfferMessage(
                 {
                   ...offer,
+
                   publicationId:
                     item.id
                 },
@@ -2359,13 +2742,9 @@ app.get(
             );
           } catch (error) {
             /*
-             * TODAS AS IAS FALHARAM.
+             * Todas as IAs falharam.
              *
-             * NÃO trava.
-             * NÃO espera 1 minuto.
-             * NÃO perde a oferta.
-             *
-             * Usa texto local imediatamente.
+             * Não para a publicação.
              */
             aiError =
               String(
@@ -2400,7 +2779,7 @@ app.get(
         }
 
         /*
-         * Segurança final.
+         * Segurança final da mensagem.
          */
         if (
           !String(
@@ -2413,8 +2792,11 @@ app.get(
         }
 
         /*
-         * Salva o resultado na fila.
+         * ==================================================
+         * SALVA PREPARAÇÃO
+         * ==================================================
          */
+
         await updateStore(
           (data) => {
             const saved =
@@ -2430,12 +2812,29 @@ app.get(
               return;
             }
 
+            /*
+             * Se estiver dentro da rodada,
+             * registra qual público receberá.
+             */
+            if (
+              normalizedRoundAudienceCode
+            ) {
+              saved.roundAudienceCode =
+                normalizedRoundAudienceCode;
+            }
+
             saved.message =
               message;
 
+            /*
+             * MUITO IMPORTANTE:
+             *
+             * salva SOMENTE o destino
+             * desta publicação.
+             */
             saved.targetAudienceCodes =
               [
-                ...targetAudienceCodes
+                ...deliveryAudienceCodes
               ];
 
             if (
@@ -2445,7 +2844,7 @@ app.get(
                 .offerSnapshot
                 .targetAudienceCodes =
                 [
-                  ...targetAudienceCodes
+                  ...deliveryAudienceCodes
                 ];
             }
 
@@ -2467,6 +2866,8 @@ app.get(
                   .toISOString();
 
               delete saved.aiError;
+              delete saved
+                .fallbackGeneratedAt;
             } else {
               saved.fallbackGeneratedAt =
                 new Date()
@@ -2490,12 +2891,12 @@ app.get(
           'ai'
         ) {
           await addLog(
-            `IA criou o texto da oferta: ${item.offerTitle}`,
+            `IA criou o texto da oferta: ${item.offerTitle}. Destino: ${deliveryAudienceCodes.join(', ')}.`,
             'success'
           );
         } else {
           await addLog(
-            `Texto local criado para ${item.offerTitle}. Destino: ${targetAudienceCodes.join(', ')}.`,
+            `Texto local criado para ${item.offerTitle}. Destino: ${deliveryAudienceCodes.join(', ')}.`,
             'info'
           );
         }
@@ -2503,17 +2904,22 @@ app.get(
         return {
           ...item,
 
+          /*
+           * O worker do WhatsApp
+           * recebe somente estes grupos.
+           */
           targetAudienceCodes:
             [
-              ...targetAudienceCodes
+              ...deliveryAudienceCodes
             ],
 
+          roundAudienceCode:
+            normalizedRoundAudienceCode ||
+            null,
+
           message,
-
           messageSource,
-
           aiStatus,
-
           aiGenerationVersion
         };
       } catch (error) {
@@ -2524,7 +2930,7 @@ app.get(
           );
 
         /*
-         * Produto sem dados básicos.
+         * Produto perdeu dados essenciais.
          */
         if (
           errorMessage.includes(
@@ -2586,7 +2992,7 @@ app.get(
         }
 
         /*
-         * Nenhum grupo seguro.
+         * Produto sem grupo seguro.
          */
         if (
           errorMessage.includes(
@@ -2648,10 +3054,9 @@ app.get(
         }
 
         /*
-         * Erro inesperado que NÃO é
-         * simplesmente falta de IA.
+         * Erro inesperado.
          *
-         * Aqui ainda vale tentar depois.
+         * Aqui vale tentar novamente.
          */
         const retryAt =
           new Date(
@@ -2698,7 +3103,12 @@ app.get(
     }
 
     /*
-     * Publicar agora.
+     * ======================================================
+     * PUBLICAR AGORA
+     * ======================================================
+     *
+     * Publicação forçada continua
+     * funcionando fora da lógica de rodada.
      */
     if (
       req.query.forced ===
@@ -2713,7 +3123,9 @@ app.get(
 
       if (
         prepared &&
-        !prepared.skipped
+        !prepared.skipped &&
+        !prepared
+          .skippedForAudience
       ) {
         return res.json(
           prepared
@@ -2726,7 +3138,8 @@ app.get(
     }
 
     /*
-     * Prioridade.
+     * Se existe uma oferta marcada
+     * com force=true, ela tem prioridade.
      */
     if (forced) {
       const prepared =
@@ -2736,7 +3149,9 @@ app.get(
 
       if (
         prepared &&
-        !prepared.skipped
+        !prepared.skipped &&
+        !prepared
+          .skippedForAudience
       ) {
         return res.json(
           prepared
@@ -2751,10 +3166,11 @@ app.get(
     }
 
     /*
-     * ==================================
+     * ======================================================
      * HORÁRIO DE PUBLICAÇÃO
-     * ==================================
+     * ======================================================
      */
+
     const hourMinute =
       now.toLocaleTimeString(
         'pt-BR',
@@ -2789,14 +3205,18 @@ app.get(
       (
         publishingStart <
         publishingEnd
-          ? hourMinute >=
-              publishingStart &&
-            hourMinute <
-              publishingEnd
-          : hourMinute >=
-              publishingStart ||
-            hourMinute <
-              publishingEnd
+          ? (
+              hourMinute >=
+                publishingStart &&
+              hourMinute <
+                publishingEnd
+            )
+          : (
+              hourMinute >=
+                publishingStart ||
+              hourMinute <
+                publishingEnd
+            )
       );
 
     if (
@@ -2808,10 +3228,11 @@ app.get(
     }
 
     /*
-     * ==================================
+     * ======================================================
      * LIMITE DIÁRIO
-     * ==================================
+     * ======================================================
      */
+
     const today =
       now
         .toISOString()
@@ -2845,10 +3266,27 @@ app.get(
     }
 
     /*
-     * ==================================
-     * INTERVALO
-     * ==================================
+     * ======================================================
+     * INTERVALO CONFIGURADO NO PAINEL
+     * ======================================================
+     *
+     * Este intervalo vale ENTRE RODADAS.
+     *
+     * Exemplo:
+     *
+     * Painel = 15 minutos
+     *
+     * 10:00:
+     * G01
+     * G02
+     * G03
+     * ...
+     * G10
+     *
+     * Próxima rodada:
+     * aproximadamente 10:15.
      */
+
     const allowedIntervals =
       [
         5,
@@ -2894,22 +3332,72 @@ app.get(
           0
         );
 
-    if (
-      lastSentAt &&
-      now.getTime() -
-        lastSentAt <
+    /*
+     * ======================================================
+     * RODADA POR PÚBLICO
+     * ======================================================
+     *
+     * Exemplo:
+     *
+     * G01 → produto A
+     * G02 → produto B
+     * G03 → produto C
+     * G04 → produto D
+     * ...
+     *
+     * Um produto não pode atender dois
+     * grupos na mesma rodada.
+     */
+
+    /*
+     * Verifica se já existe
+     * uma rodada em andamento.
+     */
+    let round =
+      await getPublicationRound(
+        false
+      );
+
+    /*
+     * Se NÃO existe rodada,
+     * significa que estamos prestes
+     * a começar uma nova.
+     *
+     * Aqui aplicamos o intervalo
+     * configurado no painel.
+     */
+    if (!round) {
+      if (
+        lastSentAt &&
+        now.getTime() -
+          lastSentAt <
         intervalMinutes *
-        60_000
-    ) {
+          60_000
+      ) {
+        return res
+          .status(204)
+          .end();
+      }
+
+      /*
+       * Intervalo cumprido.
+       * Agora começa a nova rodada.
+       */
+      round =
+        await getPublicationRound(
+          true
+        );
+    }
+
+    if (!round) {
       return res
         .status(204)
         .end();
     }
 
     /*
-     * ==================================
-     * FILA NORMAL
-     * ==================================
+     * Ofertas disponíveis
+     * para a rodada.
      */
     const pendingItems =
       queue.filter(
@@ -2919,30 +3407,230 @@ app.get(
           !item.force
       );
 
-    for (
-      const item
-      of pendingItems
+    /*
+     * Enquanto existirem públicos
+     * pendentes na rodada...
+     */
+    while (
+      round &&
+      round
+        .pendingAudienceCodes
+        .length
     ) {
-      const prepared =
-        await prepareWithAi(
-          item
+      const audienceCode =
+        normalizeAudienceCode(
+          round
+            .pendingAudienceCodes[
+              0
+            ]
         );
 
+      /*
+       * ====================================================
+       * PROCURA PRODUTO PARA O PÚBLICO ATUAL
+       * ====================================================
+       */
+
+      const candidates =
+        pendingItems.filter(
+          (item) => {
+            /*
+             * Não reutiliza produto
+             * já usado nesta rodada.
+             */
+            if (
+              round
+                .usedOfferIds
+                .includes(
+                  item.offerId
+                )
+            ) {
+              return false;
+            }
+
+            const localCodes =
+              getLocalCodesForQueueItem(
+                item,
+                offers,
+                config
+              );
+
+            return localCodes.includes(
+              audienceCode
+            );
+          }
+        );
+
+      /*
+       * Nenhuma promoção disponível
+       * para esse grupo.
+       *
+       * Pulamos o grupo SOMENTE nesta rodada.
+       */
       if (
-        prepared?.skipped
+        !candidates.length
       ) {
+        await addLog(
+          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}. Grupo ignorado nesta rodada.`,
+          'info'
+        );
+
+        await skipRoundAudience(
+          round.id,
+          audienceCode
+        );
+
+        round =
+          await getPublicationRound(
+            false
+          );
+
+        /*
+         * Acabou a rodada.
+         *
+         * Não cria outra agora.
+         * A próxima esperará o intervalo.
+         */
+        if (!round) {
+          return res
+            .status(204)
+            .end();
+        }
+
         continue;
       }
 
-      if (prepared) {
-        return res.json(
+      let productPrepared =
+        false;
+
+      /*
+       * Testa candidatos até
+       * encontrar um produto válido.
+       */
+      for (
+        const item
+        of candidates
+      ) {
+        const prepared =
+          await prepareWithAi(
+            item,
+            audienceCode
+          );
+
+        if (
+          prepared?.skipped
+        ) {
+          continue;
+        }
+
+        if (
           prepared
-        );
+            ?.skippedForAudience
+        ) {
+          continue;
+        }
+
+        if (prepared) {
+          /*
+           * Registra oficialmente que
+           * este item pertence à rodada.
+           */
+          await updateStore(
+            (data) => {
+              const saved =
+                data.queue.find(
+                  (entry) =>
+                    entry.id ===
+                      item.id &&
+                    entry.status ===
+                      'pending'
+                );
+
+              if (!saved) {
+                return;
+              }
+
+              saved.roundId =
+                round.id;
+
+              saved.roundAudienceCode =
+                audienceCode;
+
+              /*
+               * Segurança extra:
+               * somente este público.
+               */
+              saved.targetAudienceCodes =
+                [
+                  audienceCode
+                ];
+
+              if (
+                saved.offerSnapshot
+              ) {
+                saved
+                  .offerSnapshot
+                  .targetAudienceCodes =
+                  [
+                    audienceCode
+                  ];
+              }
+            }
+          );
+
+          await addLog(
+            `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}.`,
+            'success'
+          );
+
+          productPrepared =
+            true;
+
+          return res.json({
+            ...prepared,
+
+            targetAudienceCodes:
+              [
+                audienceCode
+              ],
+
+            roundId:
+              round.id,
+
+            roundAudienceCode:
+              audienceCode
+          });
+        }
       }
 
-      return res
-        .status(204)
-        .end();
+      /*
+       * Havia candidatos,
+       * porém nenhum era válido.
+       */
+      if (
+        !productPrepared
+      ) {
+        await addLog(
+          `Rodada ${round.id}: nenhum produto válido pôde ser preparado para ${audienceCode}.`,
+          'info'
+        );
+
+        await skipRoundAudience(
+          round.id,
+          audienceCode
+        );
+
+        round =
+          await getPublicationRound(
+            false
+          );
+
+        if (!round) {
+          return res
+            .status(204)
+            .end();
+        }
+      }
     }
 
     return res
@@ -2953,7 +3641,7 @@ app.get(
 
 /*
  * ==========================================================
- * CONFIG DO WORKER
+ * CONFIGURAÇÃO DO WORKER
  * ==========================================================
  */
 
@@ -2973,7 +3661,8 @@ app.get(
       Array.isArray(
         config.whatsappGroups
       )
-        ? config.whatsappGroups
+        ? config
+            .whatsappGroups
             .slice(
               0,
               100
@@ -3011,10 +3700,12 @@ app.get(
     ) {
       selectedGroups.push({
         id:
-          config.whatsappGroupId,
+          config
+            .whatsappGroupId,
 
         name:
-          config.whatsappGroupName ||
+          config
+            .whatsappGroupName ||
           ''
       });
     }
@@ -3032,12 +3723,19 @@ app.get(
 
       maxPerHour:
         Number(
-          config.whatsappMaxPerHour ||
+          config
+            .whatsappMaxPerHour ||
           100
         )
     });
   }
 );
+
+/*
+ * ==========================================================
+ * SINCRONIZA GRUPOS
+ * ==========================================================
+ */
 
 app.post(
   '/api/worker/groups',
@@ -3084,17 +3782,19 @@ app.post(
 
     await updateStore(
       (data) => {
-        data.meta.whatsapp =
-          {
-            ...data.meta
-              .whatsapp,
+        data.meta =
+          data.meta || {};
 
-            groups,
+        data.meta.whatsapp = {
+          ...data.meta
+            .whatsapp,
 
-            lastSeenAt:
-              new Date()
-                .toISOString()
-          };
+          groups,
+
+          lastSeenAt:
+            new Date()
+              .toISOString()
+        };
       }
     );
 
@@ -3105,11 +3805,18 @@ app.post(
 
     res.json({
       ok: true,
+
       count:
         groups.length
     });
   }
 );
+
+/*
+ * ==========================================================
+ * QR CODE
+ * ==========================================================
+ */
 
 app.post(
   '/api/worker/qr',
@@ -3140,26 +3847,28 @@ app.post(
 
     await updateStore(
       (data) => {
-        data.meta.whatsapp =
-          {
-            ...data.meta
-              .whatsapp,
+        data.meta =
+          data.meta || {};
 
-            status:
-              'qr',
+        data.meta.whatsapp = {
+          ...data.meta
+            .whatsapp,
 
-            lastSeenAt:
-              new Date()
-                .toISOString(),
+          status:
+            'qr',
 
-            qrDataUrl,
+          lastSeenAt:
+            new Date()
+              .toISOString(),
 
-            pairingCode:
-              null,
+          qrDataUrl,
 
-            message:
-              'Leia o QR Code com o WhatsApp.'
-          };
+          pairingCode:
+            null,
+
+          message:
+            'Leia o QR Code com o WhatsApp.'
+        };
       }
     );
 
@@ -3168,6 +3877,12 @@ app.post(
     });
   }
 );
+
+/*
+ * ==========================================================
+ * CÓDIGO DE PAREAMENTO
+ * ==========================================================
+ */
 
 app.post(
   '/api/worker/pairing-code',
@@ -3202,26 +3917,28 @@ app.post(
 
     await updateStore(
       (data) => {
-        data.meta.whatsapp =
-          {
-            ...data.meta
-              .whatsapp,
+        data.meta =
+          data.meta || {};
 
-            status:
-              'pairing',
+        data.meta.whatsapp = {
+          ...data.meta
+            .whatsapp,
 
-            lastSeenAt:
-              new Date()
-                .toISOString(),
+          status:
+            'pairing',
 
-            qrDataUrl:
-              null,
+          lastSeenAt:
+            new Date()
+              .toISOString(),
 
-            pairingCode,
+          qrDataUrl:
+            null,
 
-            message:
-              'Digite este código no WhatsApp do celular.'
-          };
+          pairingCode,
+
+          message:
+            'Digite este código no WhatsApp do celular.'
+        };
       }
     );
 
@@ -3231,6 +3948,12 @@ app.post(
   }
 );
 
+/*
+ * ==========================================================
+ * HEARTBEAT
+ * ==========================================================
+ */
+
 app.post(
   '/api/worker/heartbeat',
   requireWorker,
@@ -3238,16 +3961,15 @@ app.post(
     req,
     res
   ) => {
-    const allowedStatuses =
-      [
-        'starting',
-        'qr',
-        'pairing',
-        'authenticated',
-        'connected',
-        'offline',
-        'error'
-      ];
+    const allowedStatuses = [
+      'starting',
+      'qr',
+      'pairing',
+      'authenticated',
+      'connected',
+      'offline',
+      'error'
+    ];
 
     const status =
       allowedStatuses.includes(
@@ -3266,47 +3988,49 @@ app.post(
 
     await updateStore(
       (data) => {
-        data.meta.whatsapp =
-          {
-            ...data.meta
-              .whatsapp,
+        data.meta =
+          data.meta || {};
 
-            status,
+        data.meta.whatsapp = {
+          ...data.meta
+            .whatsapp,
 
-            lastSeenAt:
-              new Date()
-                .toISOString(),
+          status,
 
-            qrDataUrl:
-              [
-                'authenticated',
-                'connected'
-              ].includes(
-                status
-              )
-                ? null
-                : data.meta
-                    .whatsapp
-                    .qrDataUrl,
+          lastSeenAt:
+            new Date()
+              .toISOString(),
 
-            pairingCode:
-              status ===
+          qrDataUrl:
+            [
+              'authenticated',
               'connected'
-                ? null
-                : data.meta
-                    .whatsapp
-                    .pairingCode,
+            ].includes(
+              status
+            )
+              ? null
+              : data.meta
+                  .whatsapp
+                  ?.qrDataUrl,
 
-            message:
-              String(
-                req.body
-                  .message ||
-                ''
-              ).slice(
-                0,
-                200
-              )
-          };
+          pairingCode:
+            status ===
+            'connected'
+              ? null
+              : data.meta
+                  .whatsapp
+                  ?.pairingCode,
+
+          message:
+            String(
+              req.body
+                .message ||
+              ''
+            ).slice(
+              0,
+              200
+            )
+        };
       }
     );
 
@@ -3316,6 +4040,12 @@ app.post(
   }
 );
 
+/*
+ * ==========================================================
+ * PUBLICAÇÃO CONCLUÍDA
+ * ==========================================================
+ */
+
 app.post(
   '/api/worker/queue/:id/complete',
   requireWorker,
@@ -3323,6 +4053,8 @@ app.post(
     req,
     res
   ) => {
+    let completedItem = null;
+
     await updateStore(
       (data) => {
         const item =
@@ -3345,19 +4077,136 @@ app.post(
 
         item.error =
           null;
+
+        completedItem = {
+          id:
+            item.id,
+
+          offerId:
+            item.offerId,
+
+          offerTitle:
+            item.offerTitle,
+
+          roundId:
+            item.roundId,
+
+          roundAudienceCode:
+            item.roundAudienceCode
+        };
+
+        /*
+         * ==================================================
+         * ATUALIZA A RODADA
+         * ==================================================
+         */
+
+        const round =
+          data.meta
+            ?.publicationRound;
+
+        if (
+          round &&
+          item.roundId &&
+          round.id ===
+            item.roundId &&
+          item.roundAudienceCode
+        ) {
+          const audienceCode =
+            normalizeAudienceCode(
+              item
+                .roundAudienceCode
+            );
+
+          /*
+           * Grupo foi atendido.
+           */
+          round.pendingAudienceCodes =
+            (
+              round
+                .pendingAudienceCodes ||
+              []
+            ).filter(
+              (code) =>
+                normalizeAudienceCode(
+                  code
+                ) !==
+                audienceCode
+            );
+
+          /*
+           * Produto não poderá ser
+           * usado novamente nesta rodada.
+           */
+          if (item.offerId) {
+            round.usedOfferIds = [
+              ...new Set([
+                ...(
+                  round
+                    .usedOfferIds ||
+                  []
+                ),
+
+                item.offerId
+              ])
+            ];
+          }
+
+          /*
+           * Todos os públicos foram atendidos.
+           *
+           * Fecha a rodada.
+           */
+          if (
+            !round
+              .pendingAudienceCodes
+              .length
+          ) {
+            round.completedAt =
+              new Date()
+                .toISOString();
+
+            data.meta
+              .lastPublicationRound = {
+              ...round
+            };
+
+            data.meta
+              .publicationRound =
+              null;
+          }
+        }
       }
     );
 
-    await addLog(
-      `WhatsApp: publicação enviada (${req.params.id}).`,
-      'success'
-    );
+    if (completedItem) {
+      if (
+        completedItem
+          .roundAudienceCode
+      ) {
+        await addLog(
+          `WhatsApp: ${completedItem.offerTitle} enviado para ${completedItem.roundAudienceCode}.`,
+          'success'
+        );
+      } else {
+        await addLog(
+          `WhatsApp: publicação enviada (${req.params.id}).`,
+          'success'
+        );
+      }
+    }
 
     res.json({
       ok: true
     });
   }
 );
+
+/*
+ * ==========================================================
+ * FALHA NO ENVIO
+ * ==========================================================
+ */
 
 app.post(
   '/api/worker/queue/:id/fail',
@@ -3366,6 +4215,8 @@ app.post(
     req,
     res
   ) => {
+    let failedItem = null;
+
     await updateStore(
       (data) => {
         const item =
@@ -3379,8 +4230,11 @@ app.post(
           return;
         }
 
-        item.attempts +=
-          1;
+        item.attempts =
+          Number(
+            item.attempts ||
+            0
+          ) + 1;
 
         item.status =
           item.attempts >= 3
@@ -3395,11 +4249,84 @@ app.post(
             0,
             500
           );
+
+        /*
+         * Se falhou definitivamente,
+         * libera esse público da rodada.
+         *
+         * Assim a rodada não fica
+         * presa para sempre.
+         */
+        if (
+          item.status ===
+            'failed' &&
+          item.roundId &&
+          item.roundAudienceCode
+        ) {
+          const round =
+            data.meta
+              ?.publicationRound;
+
+          if (
+            round &&
+            round.id ===
+              item.roundId
+          ) {
+            const audienceCode =
+              normalizeAudienceCode(
+                item
+                  .roundAudienceCode
+              );
+
+            round.pendingAudienceCodes =
+              (
+                round
+                  .pendingAudienceCodes ||
+                []
+              ).filter(
+                (code) =>
+                  normalizeAudienceCode(
+                    code
+                  ) !==
+                  audienceCode
+              );
+
+            if (
+              !round
+                .pendingAudienceCodes
+                .length
+            ) {
+              round.completedAt =
+                new Date()
+                  .toISOString();
+
+              data.meta
+                .lastPublicationRound = {
+                ...round
+              };
+
+              data.meta
+                .publicationRound =
+                null;
+            }
+          }
+        }
+
+        failedItem = {
+          title:
+            item.offerTitle,
+
+          status:
+            item.status,
+
+          attempts:
+            item.attempts
+        };
       }
     );
 
     await addLog(
-      `WhatsApp: falha ao publicar (${String(req.body.error || 'erro')}).`,
+      `WhatsApp: falha ao publicar${failedItem?.title ? ` ${failedItem.title}` : ''} (${String(req.body.error || 'erro')}).`,
       'error'
     );
 
@@ -3508,18 +4435,12 @@ app.post(
             (code) =>
               audiences.find(
                 (audience) =>
-                  String(
-                    audience.code ||
-                    ''
+                  normalizeAudienceCode(
+                    audience.code
+                  ) ===
+                  normalizeAudienceCode(
+                    code
                   )
-                    .trim()
-                    .toUpperCase() ===
-                  String(
-                    code ||
-                    ''
-                  )
-                    .trim()
-                    .toUpperCase()
               )
           )
           .filter(
@@ -3539,7 +4460,8 @@ app.post(
                 audience.name,
 
               whatsappLink:
-                audience.whatsappLink
+                audience
+                  .whatsappLink
             })
           );
 
@@ -3644,9 +4566,9 @@ cron.schedule(
 
     if (
       Date.now() -
-        last <
+      last <
       interval *
-        60_000
+      60_000
     ) {
       return;
     }
@@ -3695,7 +4617,8 @@ app.listen(
             )
           ) {
             await startWhatsappWorker({
-              automatic: true
+              automatic:
+                true
             });
           }
         } catch (error) {
