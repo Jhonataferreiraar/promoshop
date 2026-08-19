@@ -127,6 +127,14 @@ function PublicSite() {
     document.title = `${config.brandName} — Ofertas de verdade`;
   }, [config]);
 
+  useEffect(() => {
+    if (!config.assistantAvailable) {
+      setAssistantOpen(false);
+      setAssistantReply('');
+      setAssistantAudiences([]);
+    }
+  }, [config.assistantAvailable]);
+
   const stores = ['Todas', ...new Set(offers.map((offer) => offer.store))];
   const filtered = useMemo(() => offers.filter((offer) => {
     const text = `${offer.title} ${offer.store} ${offer.category}`.toLowerCase();
@@ -308,87 +316,99 @@ function PublicSite() {
 
                 {assistantOpen && (
                   <section className="assistant-chat">
-                    {/* mantenha aqui todo o conteúdo atual do seu assistant-chat */}
+                    <div className="assistant-chat-head">
+                      <div>
+                        <strong>
+                          Assistente PromoShop
+                        </strong>
+
+                        <small>
+                          Encontre os grupos ideais para você
+                        </small>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAssistantOpen(false)
+                        }
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="assistant-chat-body">
+                      <div className="assistant-bubble assistant">
+                        👋 Me conta o que você gosta de comprar ou quais ofertas quer receber.
+                      </div>
+
+                      {assistantReply && (
+                        <div className="assistant-bubble assistant">
+                          {assistantReply}
+                        </div>
+                      )}
+
+                      {assistantAudiences.length > 0 && (
+                        <div className="assistant-recommendations">
+                          {assistantAudiences.map(
+                            (audience) => (
+                              <a
+                                key={audience.code}
+                                href={audience.whatsappLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="assistant-group"
+                              >
+                                <span>
+                                  <small>
+                                    {audience.code}
+                                  </small>
+
+                                  <strong>
+                                    {audience.name}
+                                  </strong>
+                                </span>
+
+                                <b>Entrar →</b>
+                              </a>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <form
+                      className="assistant-chat-form"
+                      onSubmit={askAssistant}
+                    >
+                      <textarea
+                        value={assistantMessage}
+                        onChange={(event) =>
+                          setAssistantMessage(
+                            event.target.value
+                          )
+                        }
+                        placeholder="Ex.: Gosto de produtos para cabelo, maquiagem e perfumes..."
+                        rows={2}
+                        maxLength={1000}
+                      />
+
+                      <button
+                        className="button primary"
+                        type="submit"
+                        disabled={
+                          assistantLoading ||
+                          !assistantMessage.trim()
+                        }
+                      >
+                        {assistantLoading
+                          ? 'Pensando…'
+                          : 'Enviar'}
+                      </button>
+                    </form>
                   </section>
                 )}
               </>
-            )}
-            <section className="assistant-chat">
-              <div className="assistant-chat-head">
-                <div>
-                  <strong>Assistente PromoShop</strong>
-                  <small>Encontre os grupos ideais para você</small>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setAssistantOpen(false)}
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="assistant-chat-body">
-                <div className="assistant-bubble assistant">
-                  👋 Me conta o que você gosta de comprar ou quais ofertas quer receber.
-                </div>
-
-                {assistantReply && (
-                  <div className="assistant-bubble assistant">
-                    {assistantReply}
-                  </div>
-                )}
-
-                {assistantAudiences.length > 0 && (
-                  <div className="assistant-recommendations">
-                    {assistantAudiences.map((audience) => (
-                      <a
-                        key={audience.code}
-                        href={audience.whatsappLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="assistant-group"
-                      >
-                        <span>
-                          <small>{audience.code}</small>
-                          <strong>{audience.name}</strong>
-                        </span>
-
-                        <b>Entrar →</b>
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <form
-                className="assistant-chat-form"
-                onSubmit={askAssistant}
-              >
-                <textarea
-                  value={assistantMessage}
-                  onChange={(event) =>
-                    setAssistantMessage(event.target.value)
-                  }
-                  placeholder="Ex.: Gosto de produtos para cabelo, maquiagem e perfumes..."
-                  rows={2}
-                  maxLength={1000}
-                />
-
-                <button
-                  className="button primary"
-                  type="submit"
-                  disabled={
-                    assistantLoading ||
-                    !assistantMessage.trim()
-                  }
-                >
-                  {assistantLoading
-                    ? 'Pensando…'
-                    : 'Enviar'}
-                </button>
-              </form>
-            </section>
             )}
 
           </div>
