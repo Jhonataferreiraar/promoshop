@@ -223,57 +223,74 @@ async function startConnectedServices() {
 }
 
 async function resolveDestinations(item) {
-  const audienceCodes = Array.isArray(item?.targetAudienceCodes)
-    ? item.targetAudienceCodes
-      .map((code) => String(code || '').trim().toUpperCase())
-      .filter(Boolean)
-    : [];
+  let audienceCodes = [];
 
   /*
-   * Nova lógica de públicos.
-   *
-   * Procura G01, G02 etc. no final do nome dos grupos.
+   * Quando o servidor estiver executando
+   * uma rodada por público, ele informa
+   * exatamente qual grupo deve receber
+   * esta publicação.
    */
-  if (audienceCodes.length) {
-    const groups = await listGroups();
+  if (item?.roundAudienceCode) {
+    audienceCodes = [
+      String(item.roundAudienceCode)
+        .trim()
+        .toUpperCase()
+    ];
+  } else {
+    audienceCodes =
+      Array.isArray(item?.targetAudienceCodes)
+        ? item.targetAudienceCodes
+          .map((code) =>
+            String(code || '')
+              .trim()
+              .toUpperCase()
+          )
+          .filter(Boolean)
+        : [];
+  }
 
-    const destinations = groups.filter((group) => {
-      const name = String(group.name || '').trim();
-
-      return audienceCodes.some((code) => {
-        const escapedCode = code.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          '\\$&'
-        );
-
-        return new RegExp(
-          `(?:\\||\\s)${escapedCode}\\s*$`,
-          'i'
-        ).test(name);
-      });
-    });
-
-    if (destinations.length) {
-      return destinations;
-    }
-
+  if (!audienceCodes.length) {
     console.warn(
-      `Nenhum grupo encontrado para os públicos: ${audienceCodes.join(', ')}`
+      `Oferta "${item?.offerTitle || 'sem título'}" não possui público definido. Envio cancelado.`
     );
 
     return [];
   }
 
-  /*
- * Segurança:
- * nenhuma oferta deve ser enviada para todos os grupos
- * quando não possuir classificação de público.
- */
-  console.warn(
-    `Oferta "${item?.offerTitle || 'sem título'}" não possui targetAudienceCodes. Envio cancelado para evitar publicação em todos os grupos.`
-  );
+  const groups = await listGroups();
 
-  return [];
+  const destinations =
+    groups.filter((group) => {
+      const name =
+        String(group.name || '')
+          .trim();
+
+      return audienceCodes.some(
+        (code) => {
+          const escapedCode =
+            code.replace(
+              /[.*+?^${}()|[\]\\]/g,
+              '\\$&'
+            );
+
+          return new RegExp(
+            `(?:\\||\\s)${escapedCode}\\s*$`,
+            'i'
+          ).test(name);
+        }
+      );
+    });
+
+  if (!destinations.length) {
+    console.warn(
+      `Nenhum grupo encontrado para: ${audienceCodes.join(', ')}`
+    );
+
+    return [];
+  }
+
+  return destinations;
 }
 
 async function processQueue() {
