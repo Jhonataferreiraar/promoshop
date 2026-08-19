@@ -44,6 +44,7 @@ import {
   classifyOfferAudience,
   generateFallbackOfferMessage,
   generateOfferMessage,
+  getAiAvailability,
   recommendWhatsappAudiences
 } from './ai.js';
 
@@ -855,6 +856,8 @@ async function startWhatsappWorker({
   };
 }
 
+
+
 /*
  * ==========================================================
  * ROTAS PÚBLICAS
@@ -863,7 +866,10 @@ async function startWhatsappWorker({
 
 app.get(
   '/api/health',
-  (_req, res) =>
+  (_req, res) => {
+    const aiStatus =
+      getAiAvailability();
+
     res.json({
       ok: true,
 
@@ -874,8 +880,26 @@ app.get(
       aiGenerationVersion,
 
       aiTextMode:
-        'ai-with-local-fallback'
-    })
+        'ai-with-local-fallback',
+
+      ai: {
+        available:
+          aiStatus.available,
+
+        provider:
+          aiStatus.provider,
+
+        model:
+          aiStatus.model,
+
+        lastSuccessAt:
+          aiStatus.lastSuccessAt,
+
+        lastFailureAt:
+          aiStatus.lastFailureAt
+      }
+    });
+  }
 );
 
 app.get(
@@ -898,13 +922,28 @@ app.get(
       disclosure
     } = config;
 
+    /*
+     * Apenas consulta o estado.
+     *
+     * NÃO faz chamada para Gemini,
+     * OpenAI ou Groq.
+     */
+    const aiStatus =
+      getAiAvailability();
+
     res.json({
       brandName,
       heroTitle,
       heroText,
       primaryColor,
       whatsappUrl,
-      disclosure
+      disclosure,
+
+      assistantAvailable:
+        Boolean(
+          config.aiEnabled !== false &&
+          aiStatus.available
+        )
     });
   }
 );
