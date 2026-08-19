@@ -990,10 +990,14 @@ export function makeQueueItem(offer, config) {
     shipping: offer.freeShipping ? '🚚 Frete grátis' : '',
     link: offer.affiliateUrl
   };
-  const targetAudienceCodes = getAudienceCodesForOffer(
-    offer,
-    config.whatsappAudiences
-  );
+  const targetAudienceCodes =
+    Array.isArray(offer.targetAudienceCodes) &&
+      offer.targetAudienceCodes.length
+      ? [...offer.targetAudienceCodes]
+      : getAudienceCodesForOffer(
+        offer,
+        config.whatsappAudiences
+      );
   const aiRequired = config.aiEnabled !== false;
   const message = aiRequired
     ? ''

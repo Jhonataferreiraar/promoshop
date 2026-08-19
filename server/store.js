@@ -20,36 +20,100 @@ const initialData = {
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     minDiscount: 20,
-    maxPostsPerDay: 10,
+
+    maxPostsPerDay: 100,
+    maxPostsPerAudiencePerDay: 10,
+
     quietStart: '22:00',
     quietEnd: '08:00',
+
     publishingStart: '08:00',
     publishingEnd: '23:00',
+
     collectionIntervalMinutes: 15,
-    mercadoLivreQueries: 'smartphone, fone bluetooth, notebook, casa e decoração',
-    mercadoLivreRedirectUri: 'https://promoshop.onrender.com/api/mercadolivre/callback',
-    shopeeQueries: 'eletrônicos, casa, beleza, moda, ferramentas',
-    aliexpressQueries: 'eletrônicos, ferramentas, casa, acessórios',
+
+    mercadoLivreQueries:
+      'smartphone, fone bluetooth, notebook, casa e decoração',
+
+    mercadoLivreRedirectUri:
+      'https://promoshop.onrender.com/api/mercadolivre/callback',
+
+    shopeeQueries:
+      'eletrônicos, casa, beleza, moda, ferramentas',
+
+    aliexpressQueries:
+      'eletrônicos, ferramentas, casa, acessórios',
+
     aliexpressTrackingId: 'promoshop',
+
     whatsappGroupId: '',
     whatsappGroupName: '',
     whatsappGroups: [],
-    whatsappMaxPerHour: 10,
+
+    whatsappMaxPerHour: 100,
     whatsappIntervalMinutes: 15,
+
     whatsappMinDelaySeconds: 12,
     whatsappMaxDelaySeconds: 30,
+
+    whatsappAudienceRoundEnabled: true,
+
+    whatsappOneOfferPerAudiencePerRound: true,
+
+    whatsappAudienceDelaySeconds: 15,
+
+    whatsappUniqueOfferPerRound: true,
+
+    whatsappAudienceCooldownHours: 24,
+
     whatsappHeadless: true,
     whatsappAutoStart: true,
+
     aiEnabled: true,
+
     aiProvider: 'gemini',
+
     aiModel: 'gemini-3.5-flash-lite',
-    aiBaseUrl: 'https://api.groq.com/openai/v1',
-    aiOllamaUrl: 'http://127.0.0.1:11434',
+
+    aiBaseUrl:
+      'https://api.groq.com/openai/v1',
+
+    aiOllamaUrl:
+      'http://127.0.0.1:11434',
+
+    aiFallbackEnabled: true,
+
+    aiProviderOrder: [
+      'gemini',
+      'openai',
+      'groq'
+    ],
+
+    aiModels: {
+      gemini: 'gemini-3.5-flash-lite',
+      openai: '',
+      groq: 'openai/gpt-oss-20b'
+    },
+
     aiTone: 'varied',
-    aiInstructions: 'Destaque o principal benefício do produto, seja convincente sem exagerar e use uma chamada para ação curta.',
+
+    aiInstructions:
+      'Destaque o principal benefício do produto, seja convincente sem exagerar e use uma chamada para ação curta.',
+
+    aiAudienceRoutingEnabled: true,
+
+    aiAudienceRoutingMaxGroups: 1,
+
+    aiAudienceRoutingRequireMatch: true,
+
+    aiGeneralAudienceCode: 'G01',
+
+    aiDealsAudienceCode: 'G10',
+
     enableMercadoLivre: true,
     enableShopee: false,
     enableAliexpress: false,
+
     autoQueue: false,
     messageTemplate: '🔥 *{title}*\n\n✨ {benefit}\n\nDe: ~{originalPrice}~\nPor: *{price}* 🔥\n💸 {discount}% OFF\n\n{shipping}\n\n👉 Confira a oferta:\n🛒 {link}\n\n⚠️ Preço, promoção e estoque podem mudar a qualquer momento.'
   },
@@ -82,7 +146,16 @@ export async function readStore() {
     }
   }
   if (!data) throw lastError;
-  data.config = { ...initialData.config, ...(data.config || {}) };
+  data.config = {
+    ...initialData.config,
+    ...(data.config || {})
+  };
+
+  data.config.aiModels = {
+    ...initialData.config.aiModels,
+    ...(data.config.aiModels || {})
+  };
+
   if (
     !Array.isArray(data.config.whatsappAudiences) ||
     !data.config.whatsappAudiences.length
@@ -93,7 +166,11 @@ export async function readStore() {
         keywords: [...(audience.keywords || [])]
       }));
   }
-  if (data.config.aiProvider === 'gemini' && data.config.aiModel === 'gemini-2.5-flash-lite') {
+
+  if (
+    data.config.aiProvider === 'gemini' &&
+    data.config.aiModel === 'gemini-2.5-flash-lite'
+  ) {
     data.config.aiModel = 'gemini-3.5-flash-lite';
   }
   data.meta = { ...initialData.meta, ...(data.meta || {}), whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) } };

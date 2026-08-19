@@ -20,6 +20,7 @@ import {
 } from './collectors.js';
 import { readSecrets, secretStatus, updateSecrets, verifyPassword } from './secrets.js';
 import {
+  classifyOfferAudience,
   generateOfferMessage,
   recommendWhatsappAudiences
 } from './ai.js';
@@ -34,7 +35,7 @@ const app = express();
 app.disable('x-powered-by');
 const port = Number(process.env.PORT || 3001);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const aiGenerationVersion = 4;
+const aiGenerationVersion = 5;
 let whatsappProcess = null;
 let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
@@ -639,33 +640,89 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
     if (item.aiStatus === 'waiting' && new Date(item.aiRetryAt || 0).getTime() > Date.now()) return null;
     try {
       const offer = offers.find((entry) => entry.id === item.offerId) || item.offerSnapshot;
+      let targetAudienceCodes =
+        Array.isArray(
+          item.targetAudienceCodes
+        )
+          ? item.targetAudienceCodes
+          : [];
+
+      if (
+        config.aiAudienceRoutingEnabled !== false
+      ) {
+        targetAudienceCodes =
+          await classifyOfferAudience(
+            offer,
+            config
+          );
+      }
+
+      if (
+        !targetAudienceCodes.length &&
+        config.aiAudienceRoutingRequireMatch === true
+      ) {
+        throw new Error(
+          'A IA não encontrou um grupo adequado para este produto.'
+        );
+      }
+
+      offer.targetAudienceCodes =
+        targetAudienceCodes;
       if (!offer?.title || !offer?.affiliateUrl || !Number(offer?.price)) {
         throw new Error('Os dados completos do produto não estão mais disponíveis para a IA.');
       }
       const message = await generateOfferMessage({ ...offer, publicationId: item.id }, config);
       await updateStore((data) => {
         const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
-        if (saved) { saved.message = message; saved.messageSource = 'ai'; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt; }
+        if (saved) {
+          saved.message = message; saved.targetAudienceCodes =
+            [...targetAudienceCodes];
+
+          if (saved.offerSnapshot) {
+            saved.offerSnapshot.targetAudienceCodes =
+              [...targetAudienceCodes];
+          } saved.messageSource = 'ai'; saved.aiStatus = 'generated'; saved.aiGenerationVersion = aiGenerationVersion; saved.aiGeneratedAt = new Date().toISOString(); delete saved.aiError; delete saved.aiRetryAt;
+        }
       });
       await addLog(`IA criou o texto da oferta: ${item.offerTitle}`, 'success');
-      return { ...item, message, messageSource: 'ai', aiStatus: 'generated', aiGenerationVersion };
+      return {
+        ...item,
+        targetAudienceCodes: [...targetAudienceCodes],
+        message,
+        messageSource: 'ai',
+        aiStatus: 'generated',
+        aiGenerationVersion
+      };
     } catch (error) {
-      const errorMessage = String(error.message || 'Erro desconhecido');
+      const errorMessage = String(
+        error.message ||
+        'Erro desconhecido'
+      );
 
-      if (errorMessage === 'Os dados completos do produto não estão mais disponíveis para a IA.') {
+      if (
+        errorMessage ===
+        'Os dados completos do produto não estão mais disponíveis para a IA.'
+      ) {
         await updateStore((data) => {
-          const saved = data.queue.find(
-            (entry) => entry.id === item.id && entry.status === 'pending'
-          );
+          const saved =
+            data.queue.find(
+              (entry) =>
+                entry.id === item.id &&
+                entry.status === 'pending'
+            );
 
           if (saved) {
             saved.status = 'failed';
             saved.force = false;
             saved.message = '';
-            saved.messageSource = 'awaiting-ai';
+            saved.messageSource =
+              'awaiting-ai';
             saved.aiStatus = 'failed';
-            saved.aiError = errorMessage.slice(0, 300);
-            saved.failedAt = new Date().toISOString();
+            saved.aiError =
+              errorMessage.slice(0, 300);
+            saved.failedAt =
+              new Date().toISOString();
+
             delete saved.aiRetryAt;
           }
         });
@@ -675,10 +732,60 @@ app.get('/api/worker/queue/next', requireWorker, async (req, res) => {
           'error'
         );
 
-        return { skipped: true };
+        return {
+          skipped: true
+        };
       }
 
-      const retryAt = new Date(Date.now() + 60_000).toISOString();
+      // COLOQUE AQUI
+      if (
+        errorMessage.includes(
+          'A IA não encontrou um grupo adequado'
+        )
+      ) {
+        await updateStore((data) => {
+          const saved =
+            data.queue.find(
+              (entry) =>
+                entry.id === item.id &&
+                entry.status === 'pending'
+            );
+
+          if (saved) {
+            saved.status = 'failed';
+            saved.force = false;
+
+            saved.aiStatus =
+              'routing-failed';
+
+            saved.aiError =
+              errorMessage.slice(
+                0,
+                300
+              );
+
+            saved.failedAt =
+              new Date().toISOString();
+
+            delete saved.aiRetryAt;
+          }
+        });
+
+        await addLog(
+          `Produto ignorado por segurança: ${item.offerTitle}. Nenhum grupo adequado foi encontrado.`,
+          'error'
+        );
+
+        return {
+          skipped: true
+        };
+      }
+
+      // SÓ DEPOIS VEM O RETRY
+      const retryAt =
+        new Date(
+          Date.now() + 60_000
+        ).toISOString();
 
       await updateStore((data) => {
         const saved = data.queue.find(

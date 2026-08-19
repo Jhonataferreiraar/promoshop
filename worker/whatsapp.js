@@ -269,11 +269,11 @@ async function resolveDestinations(item) {
  * nenhuma oferta deve ser enviada para todos os grupos
  * quando não possuir classificação de público.
  */
-console.warn(
-  `Oferta "${item?.offerTitle || 'sem título'}" não possui targetAudienceCodes. Envio cancelado para evitar publicação em todos os grupos.`
-);
+  console.warn(
+    `Oferta "${item?.offerTitle || 'sem título'}" não possui targetAudienceCodes. Envio cancelado para evitar publicação em todos os grupos.`
+  );
 
-return [];
+  return [];
 }
 
 async function processQueue() {
@@ -349,7 +349,26 @@ async function processQueue() {
         }
       }
       if (!sent) throw lastSendError || new Error(`O WhatsApp não confirmou o envio para ${destination.name || 'um dos grupos'}.`);
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      const store =
+        await readStore();
+
+      const audienceDelaySeconds =
+        Math.max(
+          5,
+          Number(
+            store.config
+              .whatsappAudienceDelaySeconds ||
+            15
+          )
+        );
+
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            audienceDelaySeconds * 1000
+          )
+      );
     }
     sentTimes.push(Date.now());
     await request(`/api/worker/queue/${item.id}/complete`, { method: 'POST', body: '{}' });
