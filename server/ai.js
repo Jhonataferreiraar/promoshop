@@ -5,6 +5,58 @@ import {
   getAudienceRoutingCatalog
 } from './audienceRouting.js';
 
+/*
+ * ==========================================================
+ * ESTADO DE DISPONIBILIDADE DA IA
+ * ==========================================================
+ *
+ * Não faz nenhuma chamada extra.
+ *
+ * O estado é atualizado automaticamente quando
+ * o sistema já tenta usar Gemini, OpenAI ou Groq.
+ */
+
+const aiAvailability = {
+  available: false,
+  provider: null,
+  model: null,
+  lastSuccessAt: null,
+  lastFailureAt: null
+};
+
+export function getAiAvailability() {
+  return {
+    ...aiAvailability
+  };
+}
+
+function markAiAvailable(
+  provider,
+  model
+) {
+  aiAvailability.available = true;
+
+  aiAvailability.provider =
+    provider || null;
+
+  aiAvailability.model =
+    model || null;
+
+  aiAvailability.lastSuccessAt =
+    new Date().toISOString();
+}
+
+function markAiUnavailable() {
+  aiAvailability.available = false;
+
+  aiAvailability.provider = null;
+
+  aiAvailability.model = null;
+
+  aiAvailability.lastFailureAt =
+    new Date().toISOString();
+}
+
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
 
@@ -875,6 +927,17 @@ async function callJsonWithFallback(
           temperature
         });
 
+      /*
+       * Uma IA respondeu.
+       *
+       * A partir daqui o assistente
+       * pode aparecer no site.
+       */
+      markAiAvailable(
+        provider,
+        model
+      );
+
       console.log(
         `[IA] ${provider} respondeu com sucesso usando ${model || 'modelo não informado'}.`
       );
@@ -900,6 +963,16 @@ async function callJsonWithFallback(
       );
     }
   }
+
+  /*
+   * Gemini, OpenAI e Groq
+   * falharam.
+   *
+   * O assistente desaparece do site,
+   * mas o publicador continua usando
+   * o fallback local.
+   */
+  markAiUnavailable();
 
   throw new Error(
     `Todas as IAs falharam: ${errors.join(' | ')}`
