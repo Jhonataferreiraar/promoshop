@@ -876,7 +876,11 @@ function AdminApp() {
       return;
     }
     try {
-      await authApi('/admin/coupons', { method: 'POST', body: JSON.stringify(couponForm) });
+      const payload = {
+        ...couponForm,
+        expiresAt: couponForm.expiresAt ? new Date(couponForm.expiresAt).toISOString() : ''
+      };
+      await authApi('/admin/coupons', { method: 'POST', body: JSON.stringify(payload) });
       setCouponForm(defaultCoupon);
       await load();
       setMessage('Cupom cadastrado e visível no site.');
