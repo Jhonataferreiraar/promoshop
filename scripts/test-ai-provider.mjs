@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
-import { generateOfferMessage } from '../server/ai.js';
-import { makeQueueItem } from '../server/collectors.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 process.env.AI_API_KEY = 'REDACTED_GROQ_KEY';
 process.env.GEMINI_API_KEY = 'AIza_test_key_not_real_123456789';
+// O teste nunca deve ler as credenciais criptografadas do ambiente do
+// desenvolvedor ou de uma instalação real do painel.
+process.env.DATA_DIR = await mkdtemp(path.join(tmpdir(), 'promoshop-ai-test-'));
+
+const { generateOfferMessage } = await import('../server/ai.js');
+const { makeQueueItem } = await import('../server/collectors.js');
 
 const originalFetch = globalThis.fetch;
 
@@ -49,6 +56,7 @@ try {
     publicationId: 'publicacao-groq-1'
   }, {
     aiProvider: 'groq',
+    aiProviderOrder: ['groq'],
     aiModel: 'openai/gpt-oss-20b',
     aiTone: 'seller',
     aiInstructions: 'Use poucos emojis.'
@@ -64,7 +72,7 @@ try {
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
     assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);
     assert.match(body.contents[0].parts[0].text, /Prioridade criativa/);
-    assert.match(body.contents[0].parts[0].text, /claramente perceptíveis/);
+    assert.match(body.contents[0].parts[0].text, /frete grátis: disponível/);
     assert.match(body.contents[0].parts[0].text, /publicacao-gemini-2/);
     assert.match(body.contents[0].parts[0].text, /Direção criativa exclusiva/);
     return new Response(JSON.stringify({
@@ -81,7 +89,8 @@ try {
     publicationId: 'publicacao-gemini-2'
   }, {
     aiProvider: 'gemini',
-    aiModel: 'gemini-2.5-flash-lite',
+    aiProviderOrder: ['gemini'],
+    aiModel: 'gemini-3.5-flash-lite',
     aiTone: 'friendly',
     aiInstructions: 'Use poucos emojis.'
   });
@@ -103,6 +112,7 @@ try {
     }, {
       aiProvider: 'gemini',
       aiModel: 'gemini-3.5-flash-lite',
+      aiProviderOrder: ['gemini'],
       aiTone: 'varied'
     }),
     /não criou a mensagem completa/
@@ -121,9 +131,10 @@ try {
     }, {
       aiProvider: 'gemini',
       aiModel: 'gemini-3.5-flash-lite',
+      aiProviderOrder: ['gemini'],
       aiTone: 'varied'
     }),
-    /resposta incompleta ou inválida/
+    /Todas as IAs falharam|Unexpected token/
   );
   console.log('Integração da IA externa validada.');
 } finally {

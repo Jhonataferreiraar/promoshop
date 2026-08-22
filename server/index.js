@@ -1304,10 +1304,36 @@ app.put(
               .messageTemplate
           );
 
+        const audienceRoutingChanged =
+          'whatsappAudiences' in req.body;
+
         data.config = {
           ...data.config,
           ...req.body
         };
+
+        if (audienceRoutingChanged) {
+          for (const offer of data.offers) {
+            offer.targetAudienceCodes = getAudienceCodesForOffer(
+              offer,
+              data.config.whatsappAudiences
+            );
+          }
+
+          for (const item of data.queue) {
+            if (item.status !== 'pending') continue;
+            const offer = data.offers.find((entry) => entry.id === item.offerId) || item.offerSnapshot;
+            const targetAudienceCodes = offer
+              ? getAudienceCodesForOffer(offer, data.config.whatsappAudiences)
+              : [];
+            item.targetAudienceCodes = targetAudienceCodes;
+            if (item.offerSnapshot) item.offerSnapshot.targetAudienceCodes = targetAudienceCodes;
+            delete item.roundId;
+            delete item.roundAudienceCode;
+          }
+
+          data.meta.publicationRound = null;
+        }
 
         if (
           writingStyleChanged
@@ -3765,7 +3791,16 @@ app.get(
           config
             .whatsappMaxPerHour ||
           100
-        )
+        ),
+
+      communityEnabled:
+        config.whatsappCommunityEnabled !== false,
+
+      communityName:
+        String(
+          config.whatsappCommunityName ||
+          'PromoShop - Ofertas'
+        ).slice(0, 160)
     });
   }
 );

@@ -28,11 +28,24 @@ function containsKeyword(text, keyword) {
    * "casa" dentro de "casaco",
    * etc.
    */
-  const pattern = new RegExp(
-    `(^|\\s)${escapeRegExp(normalizedKeyword)}(?=\\s|$)`,
-    'i'
-  );
+  const keywordWords = normalizedKeyword.split(' ');
+  const textWords = normalizedText.split(' ');
 
+  if (keywordWords.length > 1) {
+    // Permite conectivos curtos entre os termos: "tênis de corrida" deve
+    // continuar sendo reconhecido como o termo configurado "tênis corrida".
+    return textWords.some((_, start) => {
+      let cursor = start;
+      for (const word of keywordWords) {
+        const foundAt = textWords.indexOf(word, cursor);
+        if (foundAt < 0 || foundAt - cursor > 2) return false;
+        cursor = foundAt + 1;
+      }
+      return true;
+    });
+  }
+
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedKeyword)}(?=\\s|$)`, 'i');
   return pattern.test(normalizedText);
 }
 
@@ -345,6 +358,15 @@ function getOfferSearchText(offer) {
     .join(' '));
 }
 
+function getOfferSearchParts(offer) {
+  return {
+    title: normalizeText(offer?.title),
+    category: normalizeText(offer?.category),
+    store: normalizeText(offer?.store),
+    all: getOfferSearchText(offer)
+  };
+}
+
 function getKeywordMatchScore(
   text,
   audience
@@ -414,8 +436,7 @@ export function getAudienceCodesForOffer(
       ? configuredAudiences
       : DEFAULT_WHATSAPP_AUDIENCES;
 
-  const text =
-    getOfferSearchText(offer);
+  const searchParts = getOfferSearchParts(offer);
 
   const discount =
     calculateOfferDiscount(offer);
@@ -453,11 +474,22 @@ export function getAudienceCodesForOffer(
   const candidates =
     thematicAudiences
       .map((audience) => {
-        const result =
-          getKeywordMatchScore(
-            text,
-            audience
-          );
+        // O título representa o propósito principal do produto. Categoria e
+        // loja servem como confirmação, mas não podem dominar a decisão.
+        const titleResult = getKeywordMatchScore(searchParts.title, audience);
+        const contextResult = getKeywordMatchScore(
+          `${searchParts.category} ${searchParts.store}`,
+          audience
+        );
+        const result = {
+          score: titleResult.score * 3 + contextResult.score,
+          matchedKeywords: [
+            ...new Set([
+              ...titleResult.matchedKeywords,
+              ...contextResult.matchedKeywords
+            ])
+          ]
+        };
 
         return {
           audience,

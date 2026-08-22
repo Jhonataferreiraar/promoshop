@@ -86,6 +86,10 @@ async function defaults() {
     aliexpressAppKey: '',
     aliexpressAppSecret: '',
     aliexpressAppSignature: '',
+    magaluAffiliateId: '',
+    magaluApiKey: '',
+    netshoesAffiliateId: '',
+    netshoesApiKey: '',
     aiApiKey: '',
     geminiApiKey: '',
     openaiApiKey: '',
@@ -167,6 +171,12 @@ async function updateSecretsUnlocked(changes) {
   if (typeof changes.aliexpressAppSecret === 'string' && changes.aliexpressAppSecret.trim()) next.aliexpressAppSecret = changes.aliexpressAppSecret.trim();
   if (typeof changes.aliexpressAppSignature === 'string' && changes.aliexpressAppSignature.trim()) next.aliexpressAppSignature = changes.aliexpressAppSignature.trim();
   if (changes.clearAliexpressCredentials) { next.aliexpressAppKey = ''; next.aliexpressAppSecret = ''; next.aliexpressAppSignature = ''; }
+  if (typeof changes.magaluAffiliateId === 'string' && changes.magaluAffiliateId.trim()) next.magaluAffiliateId = changes.magaluAffiliateId.trim();
+  if (typeof changes.magaluApiKey === 'string' && changes.magaluApiKey.trim()) next.magaluApiKey = changes.magaluApiKey.trim();
+  if (typeof changes.netshoesAffiliateId === 'string' && changes.netshoesAffiliateId.trim()) next.netshoesAffiliateId = changes.netshoesAffiliateId.trim();
+  if (typeof changes.netshoesApiKey === 'string' && changes.netshoesApiKey.trim()) next.netshoesApiKey = changes.netshoesApiKey.trim();
+  if (changes.clearMagaluCredentials) { next.magaluAffiliateId = ''; next.magaluApiKey = ''; }
+  if (changes.clearNetshoesCredentials) { next.netshoesAffiliateId = ''; next.netshoesApiKey = ''; }
   if (
     typeof changes.aiApiKey === 'string' &&
     normalizeApiKey(changes.aiApiKey)
@@ -257,6 +267,12 @@ export function secretStatus(secrets) {
     aliexpressAppSecretConfigured: Boolean(secrets.aliexpressAppSecret),
     aliexpressAppSignatureConfigured: Boolean(secrets.aliexpressAppSignature),
     aliexpressAppKey: secrets.aliexpressAppKey || '',
+    magaluAffiliateIdConfigured: Boolean(secrets.magaluAffiliateId),
+    magaluApiKeyConfigured: Boolean(secrets.magaluApiKey),
+    magaluAffiliateId: secrets.magaluAffiliateId || '',
+    netshoesAffiliateIdConfigured: Boolean(secrets.netshoesAffiliateId),
+    netshoesApiKeyConfigured: Boolean(secrets.netshoesApiKey),
+    netshoesAffiliateId: secrets.netshoesAffiliateId || '',
     aiApiKeyConfigured: Boolean(aiApiKey),
     aiApiKeyFormatValid: !aiApiKey || (aiApiKey.startsWith('gsk_') && aiApiKey.length >= 20),
     aiApiKeyEnding: aiApiKey ? aiApiKey.slice(-4) : '',

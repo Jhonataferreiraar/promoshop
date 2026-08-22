@@ -50,6 +50,11 @@ const initialData = {
     whatsappGroupName: '',
     whatsappGroups: [],
 
+    // Destino geral opcional. O nome é comparado sem acentos, emojis e pontuação
+    // para reconhecer variações como "PromoShop - Ofertas ⚡".
+    whatsappCommunityEnabled: true,
+    whatsappCommunityName: 'PromoShop - Ofertas',
+
     whatsappMaxPerHour: 100,
     whatsappIntervalMinutes: 15,
 
@@ -113,6 +118,8 @@ const initialData = {
     enableMercadoLivre: true,
     enableShopee: false,
     enableAliexpress: false,
+    enableMagalu: false,
+    enableNetshoes: false,
 
     autoQueue: false,
     messageTemplate: '🔥 *{title}*\n\n✨ {benefit}\n\nDe: ~{originalPrice}~\nPor: *{price}* 🔥\n💸 {discount}% OFF\n\n{shipping}\n\n👉 Confira a oferta:\n🛒 {link}\n\n⚠️ Preço, promoção e estoque podem mudar a qualquer momento.'
