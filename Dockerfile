@@ -26,6 +26,7 @@ RUN mkdir -p /var/data \
     && chmod 0755 /app/docker-entrypoint.sh
 
 ENV NODE_ENV=production
+ENV WEB_CONCURRENCY=1
 
 EXPOSE 10000
 

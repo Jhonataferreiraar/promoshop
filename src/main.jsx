@@ -663,37 +663,42 @@ function AdminApp() {
 
   async function saveConfig(event) {
     event.preventDefault();
-    await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
-    if (secretForm.aiApiKey.trim()) {
-      await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) });
-    }
-    if (secretForm.geminiApiKey.trim()) {
-      await authApi('/admin/secrets', {
-        method: 'PUT',
-        body: JSON.stringify({
-          geminiApiKey: secretForm.geminiApiKey
-        })
-      });
-    }
+    setMessage('Salvando alterações…');
 
-    if (secretForm.openaiApiKey.trim()) {
-      await authApi('/admin/secrets', {
-        method: 'PUT',
-        body: JSON.stringify({
-          openaiApiKey: secretForm.openaiApiKey
-        })
-      });
-    }
+    try {
+      await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
+      if (secretForm.aiApiKey.trim()) {
+        await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ aiApiKey: secretForm.aiApiKey }) });
+      }
+      if (secretForm.geminiApiKey.trim()) {
+        await authApi('/admin/secrets', {
+          method: 'PUT',
+          body: JSON.stringify({
+            geminiApiKey: secretForm.geminiApiKey
+          })
+        });
+      }
 
-    setSecretForm((current) => ({
-      ...current,
-      aiApiKey: '',
-      geminiApiKey: '',
-      openaiApiKey: ''
-    }));
-    await load();
-    setMessage('Configurações salvas.');
-    setTimeout(() => setMessage(''), 2500);
+      if (secretForm.openaiApiKey.trim()) {
+        await authApi('/admin/secrets', {
+          method: 'PUT',
+          body: JSON.stringify({
+            openaiApiKey: secretForm.openaiApiKey
+          })
+        });
+      }
+
+      setSecretForm((current) => ({
+        ...current,
+        aiApiKey: '',
+        geminiApiKey: '',
+        openaiApiKey: ''
+      }));
+      await load();
+      setMessage('Configurações salvas.');
+    } catch (error) {
+      setMessage(`Não foi possível salvar: ${error.message}`);
+    }
   }
   async function saveSources(event) {
     event.preventDefault();
@@ -861,8 +866,38 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
   async function collect() { setMessage('Buscando novas ofertas…'); try { const result = await authApi('/admin/collect', { method: 'POST' }); await load(); setMessage(`${result.imported} novas ofertas encontradas.`); } catch (err) { setMessage(err.message); } }
-  async function startWhatsapp(mode = 'qr') { try { await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) }); const result = await authApi('/admin/whatsapp/start', { method: 'POST', body: JSON.stringify({ mode, phoneNumber: mode === 'phone' ? phoneNumber : undefined }) }); setMessage(result.message); window.setTimeout(load, 1500); } catch (error) { setMessage(error.message); } }
-  async function stopWhatsapp() { await authApi('/admin/whatsapp/stop', { method: 'POST', body: '{}' }); await load(); setMessage('Publicador parado.'); }
+  async function startWhatsapp(mode = 'qr') {
+    setMessage('Iniciando o publicador do WhatsApp…');
+
+    try {
+      // A conexão não depende do salvamento do formulário. Isso permite
+      // reconectar mesmo quando existe uma configuração antiga pendente.
+      const result = await authApi('/admin/whatsapp/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          mode,
+          phoneNumber: mode === 'phone' ? phoneNumber : undefined
+        })
+      });
+      setMessage(result.message);
+      window.setTimeout(load, 1500);
+    } catch (error) {
+      setMessage(`Não foi possível iniciar o WhatsApp: ${error.message}`);
+    }
+  }
+
+  async function stopWhatsapp() {
+    try {
+      await authApi('/admin/whatsapp/stop', {
+        method: 'POST',
+        body: '{}'
+      });
+      await load();
+      setMessage('Publicador parado.');
+    } catch (error) {
+      setMessage(`Não foi possível desconectar: ${error.message}`);
+    }
+  }
   async function checkWhatsappConnection() {
     setMessage('Verificando a conexão com o WhatsApp…');
 

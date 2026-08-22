@@ -21,6 +21,10 @@ services:
         value: "true"
       - key: WHATSAPP_AUTOSTART
         value: "true"
+      # O WhatsApp usa uma sessão única no disco persistente.
+      # Mais de um processo causa disputa pelo Chromium e pela sessão.
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: NODE_OPTIONS
         value: --max-old-space-size=192
       - key: AUTH_SECRET
