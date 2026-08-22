@@ -13,7 +13,7 @@ const fallbackConfig = {
   whatsappAudiences: [],
   assistantAvailable: false,
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
-  contactEmail: ''
+  contactEmail: 'contatopromoshop.site@gmail.com'
 }
 
 const mercadoLivreCategories = [
@@ -581,7 +581,7 @@ const publicInfoPages = {
     intro: 'Encontrou um problema, quer sugerir uma loja ou tem uma dúvida sobre uma oferta? Escolha o canal mais conveniente.',
     sections: [
       { title: 'Dúvidas sobre ofertas', paragraphs: ['Como os preços e as regras pertencem à loja de origem, confirme sempre as condições diretamente no site antes de finalizar a compra. Se você encontrar um link quebrado ou uma informação desatualizada, avise-nos para que possamos revisar.'] },
-      { title: 'Contato direto', paragraphs: ['Você pode falar com a equipe pelo canal abaixo. Para agilizar o atendimento, informe o nome da oferta e a loja relacionada.'], contact: true },
+      { title: 'Contato direto', paragraphs: ['Você pode falar com a equipe pelo formulário abaixo. Para agilizar o atendimento, informe o nome da oferta e a loja relacionada.'], contactForm: true },
       { title: 'Parcerias e sugestões', paragraphs: ['Também recebemos sugestões de novas lojas, cupons e categorias para acompanhar. O envio de uma sugestão não garante publicação, mas toda contribuição é bem-vinda.'] }
     ]
   },
@@ -609,6 +609,43 @@ const publicInfoPages = {
     ]
   }
 };
+
+function ContactForm({ contactEmail, whatsappUrl }) {
+  const [form, setForm] = useState({ name: '', email: '', message: '', website: '' });
+  const [status, setStatus] = useState({ type: '', text: '' });
+  const [sending, setSending] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setSending(true);
+    setStatus({ type: '', text: '' });
+
+    try {
+      await api('/contact', {
+        method: 'POST',
+        body: JSON.stringify(form)
+      });
+      setForm({ name: '', email: '', message: '', website: '' });
+      setStatus({ type: 'success', text: 'Mensagem enviada. Obrigado por entrar em contato!' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message || 'Não foi possível enviar agora. Tente novamente.' });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return <form className="contact-form" onSubmit={submit}>
+    <div className="contact-form-grid">
+      <label>Nome<input required minLength={2} maxLength={80} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Como podemos chamar você?" /></label>
+      <label>E-mail<input required type="email" maxLength={200} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="voce@exemplo.com" /></label>
+    </div>
+    <label>Mensagem<textarea required minLength={10} maxLength={4000} rows={6} value={form.message} onChange={(event) => setForm({ ...form, message: event.target.value })} placeholder="Conte como podemos ajudar…" /></label>
+    <label className="contact-honeypot" aria-hidden="true">Site<input tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => setForm({ ...form, website: event.target.value })} /></label>
+    <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Responderemos pelo e-mail informado.</span></div>
+    {status.text && <p className={`contact-status ${status.type}`} role="status">{status.text}</p>}
+    <div className="contact-form-alternative">{contactEmail && <span>Ou escreva para <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</span>}{whatsappUrl && whatsappUrl !== '#' && <a href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}</div>
+  </form>;
+}
 
 function InfoPage({ page }) {
   const [config, setConfig] = useState(fallbackConfig);
@@ -640,7 +677,7 @@ function InfoPage({ page }) {
     <main className="info-main">
       <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p></div></section>
       <article className="container info-content">
-        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{whatsappUrl && whatsappUrl !== '#' && <a className="button whatsapp" href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}{!contactEmail && (!whatsappUrl || whatsappUrl === '#') && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
+        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} whatsappUrl={whatsappUrl} />}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{whatsappUrl && whatsappUrl !== '#' && <a className="button whatsapp" href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}{!contactEmail && (!whatsappUrl || whatsappUrl === '#') && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
         <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
       </article>
     </main>
