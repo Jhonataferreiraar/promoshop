@@ -30,6 +30,8 @@ let groupId = '';
 let groupName = '';
 let selectedGroups = [];
 let maxPerHour = 10;
+let communityEnabled = true;
+let communityName = 'PromoShop - Ofertas';
 const initialStore = await readStore();
 const chromiumArgs = [
   '--disable-dev-shm-usage',
@@ -91,6 +93,18 @@ async function refreshConfig() {
   selectedGroups = Array.isArray(config.selectedGroups) ? config.selectedGroups.filter((group) => group.id) : [];
   if (!selectedGroups.length && groupId) selectedGroups = [{ id: groupId, name: groupName }];
   maxPerHour = Number(config.maxPerHour || 10);
+  communityEnabled = config.communityEnabled !== false;
+  communityName = String(config.communityName || 'PromoShop - Ofertas').trim();
+}
+
+function normalizeGroupName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function refreshActivePage() {
@@ -250,18 +264,14 @@ async function resolveDestinations(item) {
         : [];
   }
 
-  if (!audienceCodes.length) {
-    console.warn(
-      `Oferta "${item?.offerTitle || 'sem título'}" não possui público definido. Envio cancelado.`
-    );
-
-    return [];
-  }
-
   const groups = await listGroups();
+  const selectedIds = new Set(selectedGroups.map((group) => String(group.id)));
+  const availableGroups = selectedIds.size
+    ? groups.filter((group) => selectedIds.has(String(group.id)))
+    : groups;
 
   const destinations =
-    groups.filter((group) => {
+    availableGroups.filter((group) => {
       const name =
         String(group.name || '')
           .trim();
@@ -281,6 +291,28 @@ async function resolveDestinations(item) {
         }
       );
     });
+
+  // A comunidade geral não usa o padrão Gxx no nome. Ela recebe a oferta
+  // além do grupo temático, quando estiver habilitada e selecionada no painel.
+  const normalizedCommunity = normalizeGroupName(communityName);
+  if (communityEnabled && normalizedCommunity) {
+    const communityDestination = availableGroups.find((group) => {
+      const normalizedGroup = normalizeGroupName(group.name);
+      // Igualdade intencional: "PromoShop - Ofertas Gerais | G01" não pode
+      // ser confundido com a comunidade "PromoShop - Ofertas".
+      return normalizedGroup === normalizedCommunity;
+    });
+    if (communityDestination && !destinations.some((destination) => destination.id === communityDestination.id)) {
+      destinations.push(communityDestination);
+    }
+  }
+
+  if (!audienceCodes.length && !destinations.length) {
+    console.warn(
+      `Oferta "${item?.offerTitle || 'sem título'}" não possui público definido. Envio cancelado.`
+    );
+    return [];
+  }
 
   if (!destinations.length) {
     console.warn(

@@ -1527,6 +1527,8 @@ footer {
 .source-brand.mercado { background: #fff3b8; color: #735500; }
 .source-brand.shopee { background: #fff0eb; color: #d74718; }
 .source-brand.aliexpress { background: #fff0f2; color: #c9233c; }
+.source-brand.magalu { background: #e9f2ff; color: #1269f3; }
+.source-brand.netshoes { background: #f1f1f1; color: #1f2937; }
 
 .source-card-body {
   display: grid;

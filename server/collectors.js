@@ -886,7 +886,33 @@ export async function runCollection() {
   catch (error) { errors.push(`AliExpress: ${error.message}`); }
 
   const minDiscount = Number(config.minDiscount || 0);
-  candidates = candidates.filter((offer) => offer.title && offer.price > 0 && offer.score >= minDiscount);
+  // A mesma oferta pode aparecer em mais de uma busca. Mantemos a versão com
+  // maior desconto e exigimos uma promoção real, evitando preço zerado,
+  // desconto impossível ou anúncios repetidos na fila.
+  const uniqueCandidates = new Map();
+  for (const offer of candidates) {
+    const urlKey = String(offer.affiliateUrl || offer.productUrl || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[?#].*$/, '');
+    const titleKey = String(offer.title || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    const key = urlKey || `${titleKey}|${Number(offer.price || 0).toFixed(2)}`;
+    const previous = uniqueCandidates.get(key);
+    if (!previous || Number(offer.score || 0) > Number(previous.score || 0)) {
+      uniqueCandidates.set(key, offer);
+    }
+  }
+  candidates = [...uniqueCandidates.values()].filter((offer) => {
+    const calculatedDiscount = calculateDiscount(Number(offer.price), Number(offer.originalPrice));
+    const reportedDiscount = Number(offer.score || 0);
+    const discount = Math.max(calculatedDiscount, reportedDiscount);
+    return Boolean(offer.title) && Number(offer.price) > 0 && discount >= minDiscount && discount <= 95;
+  });
   let imported = 0;
   let refreshedLinks = 0;
   await updateStore((data) => {

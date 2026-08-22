@@ -1106,6 +1106,19 @@ RESPONDA APENAS JSON:
         0
       );
 
+    // A IA pode interpretar uma palavra ambígua de forma diferente do
+    // propósito real do produto. O roteador local usa título, categoria e
+    // palavras configuradas como segunda barreira e vence quando encontrou
+    // um tema claro. Assim uma oferta de casa, por exemplo, não vai para
+    // tecnologia só porque o anúncio menciona "smart" em um acessório.
+    const localCodes = getAudienceCodesForOffer(
+      offer,
+      config.whatsappAudiences
+    );
+    const localThematic = localCodes.find(
+      (code) => code !== 'G01' && code !== 'G10'
+    );
+
     const validCodes =
       new Set(
         thematicAudiences.map(
@@ -1116,16 +1129,14 @@ RESPONDA APENAS JSON:
 
     const codes = [];
 
-    if (
+    if (localThematic && validCodes.has(localThematic)) {
+      codes.push(localThematic);
+    } else if (
       requestedCode &&
-      validCodes.has(
-        requestedCode
-      ) &&
-      confidence >= 0.6
+      validCodes.has(requestedCode) &&
+      confidence >= 0.75
     ) {
-      codes.push(
-        requestedCode
-      );
+      codes.push(requestedCode);
     }
 
     /*
@@ -1133,19 +1144,6 @@ RESPONDA APENAS JSON:
      * teve confiança suficiente.
      */
     if (!codes.length) {
-      const localCodes =
-        getAudienceCodesForOffer(
-          offer,
-          config.whatsappAudiences
-        );
-
-      const localThematic =
-        localCodes.find(
-          (code) =>
-            code !== 'G01' &&
-            code !== 'G10'
-        );
-
       if (localThematic) {
         codes.push(
           localThematic
