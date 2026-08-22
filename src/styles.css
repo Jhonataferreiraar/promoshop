@@ -4222,8 +4222,8 @@ button {
 .coupon-form { display: grid; gap: 16px; }
 .coupon-audience-picker { display: grid; gap: 8px; padding: 15px; border: 1px solid #e4e7ec; border-radius: 13px; background: #f8fafc; }
 .coupon-audience-picker > small { color: #667085; line-height: 1.45; }
-.coupon-audience-picker .group-options { display: grid; gap: 8px; max-height: 210px; overflow: auto; }
-.coupon-audience-picker .group-option { min-width: 0; min-height: 54px; padding: 10px 11px; border: 1px solid #e4e7ec; background: #fff; }
+.coupon-audience-picker .group-options { display: grid; align-content: start; grid-auto-rows: max-content; gap: 8px; max-height: 210px; overflow: auto; }
+.coupon-audience-picker .group-option { display: flex; align-items: flex-start; min-width: 0; min-height: 0; padding: 10px 11px; border: 1px solid #e4e7ec; background: #fff; }
 .coupon-audience-picker .group-option:hover { border-color: #b2ccff; background: #f5f8ff; }
 .coupon-audience-picker .group-option input { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px; }
 .coupon-group-label { display: grid; min-width: 0; gap: 3px; }
@@ -4235,8 +4235,6 @@ button {
 .coupon-admin-row > div:first-child { display: grid; flex: 1 1 240px; gap: 5px; min-width: 0; }
 .coupon-admin-row > div:first-child > strong { overflow-wrap: anywhere; color: #101828; line-height: 1.35; }
 .coupon-admin-row small { color: #667085; }
-.coupon-audience-summary { line-height: 1.45; overflow-wrap: anywhere; }
-.coupon-audience-summary b { color: #344054; }
 .coupon-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; flex: 0 0 auto; }
 .coupon-row-actions button { min-height: 34px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 9px; color: #344054; background: #fff; font-size: 12px; font-weight: 800; cursor: pointer; }
 .coupon-row-actions button.force { color: #fff; border-color: var(--primary); background: var(--primary); }
@@ -4256,6 +4254,51 @@ button {
   .coupon-admin-row { padding: 13px; }
   .coupon-row-actions { grid-template-columns: 1fr; }
   .coupon-audience-picker { padding: 12px; }
+}
+
+/* Nomes dos grupos legíveis em telas estreitas. */
+.group-selector .group-option {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.group-selector .group-option > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.group-selector .group-option input,
+.coupon-audience-picker .group-option input {
+  flex: 0 0 18px;
+  margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .group-selector .group-options,
+  .coupon-audience-picker .group-options {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .group-selector .group-option,
+  .coupon-audience-picker .group-option {
+    width: 100%;
+    min-height: 54px;
+    padding: 10px;
+  }
+
+  .coupon-audience-picker .group-option {
+    min-height: 0;
+  }
+
+  .group-selector .group-option > span,
+  .coupon-group-label strong {
+    font-size: 13px;
+    line-height: 1.4;
+  }
 }
 
 /* Navegação e âncoras: mantém títulos visíveis sob o cabeçalho fixo. */
