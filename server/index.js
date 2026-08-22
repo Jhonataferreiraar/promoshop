@@ -1020,7 +1020,8 @@ app.get(
       heroText,
       primaryColor,
       whatsappUrl,
-      disclosure
+      disclosure,
+      contactEmail
     } = config;
 
     /*
@@ -1039,6 +1040,7 @@ app.get(
       primaryColor,
       whatsappUrl,
       disclosure,
+      contactEmail,
 
       assistantAvailable:
         Boolean(
