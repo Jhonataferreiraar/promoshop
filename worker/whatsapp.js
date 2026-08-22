@@ -117,6 +117,18 @@ function normalizeGroupName(value) {
     .trim();
 }
 
+function isWhatsAppGroup(id) {
+  return String(id || '').endsWith('@g.us');
+}
+
+function isWhatsAppChannel(id) {
+  return String(id || '').endsWith('@newsletter');
+}
+
+function isWhatsAppDestination(id) {
+  return isWhatsAppGroup(id) || isWhatsAppChannel(id);
+}
+
 async function refreshActivePage() {
   const pages = await client.pupBrowser.pages();
   const activePage = pages.find((page) => page.url().includes('web.whatsapp.com'));
@@ -149,7 +161,7 @@ async function listGroups() {
               : ''
           );
 
-        if (!id || !id.endsWith('@g.us')) {
+        if (!id || (!id.endsWith('@g.us') && !id.endsWith('@newsletter'))) {
           return null;
         }
 
@@ -164,6 +176,8 @@ async function listGroups() {
           chat.title ||
           metadata?.subject ||
           metadata?.name ||
+          chat.newsletterMetadata?.name ||
+          chat.newsletterMetadata?.title ||
           chat.contact?.pushname ||
           chat.contact?.name ||
           chat.contact?.shortName ||
@@ -171,7 +185,8 @@ async function listGroups() {
 
         return {
           id,
-          name: String(name || '').trim()
+          name: String(name || '').trim(),
+          type: id.endsWith('@newsletter') ? 'channel' : 'group'
         };
       })
       .filter(Boolean);
@@ -190,10 +205,10 @@ async function syncGroups(attempt = 1) {
     }
     await request('/api/worker/groups', { method: 'POST', body: JSON.stringify({ groups }) });
     const message = selectedGroups.length
-      ? `Conectado. ${selectedGroups.length} grupo${selectedGroups.length === 1 ? '' : 's'} selecionado${selectedGroups.length === 1 ? '' : 's'} para publicação.`
-      : `${groups.length} grupos encontrados. Escolha um no painel.`;
+      ? `Conectado. ${selectedGroups.length} destino${selectedGroups.length === 1 ? '' : 's'} selecionado${selectedGroups.length === 1 ? '' : 's'} para publicação.`
+      : `${groups.length} grupos e canais encontrados. Escolha os destinos no painel.`;
     await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'connected', message }) });
-    console.log(`WhatsApp conectado. ${groups.length} grupos disponíveis.`);
+    console.log(`WhatsApp conectado. ${groups.length} grupos/canais disponíveis.`);
   } catch (error) {
     console.error(
       `Tentativa ${attempt} de carregar grupos falhou:`,
@@ -276,12 +291,16 @@ async function resolveDestinations(item) {
 
   const groups = await listGroups();
   const selectedIds = new Set(selectedGroups.map((group) => String(group.id)));
-  const availableGroups = selectedIds.size
+  const selectedDestinations = selectedIds.size
     ? groups.filter((group) => selectedIds.has(String(group.id)))
     : groups;
 
   const destinations =
-    availableGroups.filter((group) => {
+    selectedDestinations.filter((group) => {
+      // Canais não participam da classificação Gxx. Eles são incluídos
+      // abaixo pelo nome da comunidade/canal geral.
+      if (!isWhatsAppGroup(group.id)) return false;
+
       const name =
         String(group.name || '')
           .trim();
@@ -306,14 +325,21 @@ async function resolveDestinations(item) {
   // além do grupo temático, quando estiver habilitada e selecionada no painel.
   const normalizedCommunity = normalizeGroupName(communityName);
   if (communityEnabled && normalizedCommunity) {
-    const communityDestination = availableGroups.find((group) => {
+    // O mesmo nome pode existir como comunidade/grupo e como canal. Procure
+    // em todos os destinos sincronizados, mesmo que o usuário tenha marcado
+    // apenas os grupos temáticos.
+    const communityDestinations = groups.filter((group) => {
+      if (!isWhatsAppDestination(group.id)) return false;
       const normalizedGroup = normalizeGroupName(group.name);
       // Igualdade intencional: "PromoShop - Ofertas Gerais | G01" não pode
       // ser confundido com a comunidade "PromoShop - Ofertas".
       return normalizedGroup === normalizedCommunity;
     });
-    if (communityDestination && !destinations.some((destination) => destination.id === communityDestination.id)) {
-      destinations.push(communityDestination);
+
+    for (const communityDestination of communityDestinations) {
+      if (!destinations.some((destination) => destination.id === communityDestination.id)) {
+        destinations.push(communityDestination);
+      }
     }
   }
 
