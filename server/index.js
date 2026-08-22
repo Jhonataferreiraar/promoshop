@@ -2645,6 +2645,75 @@ app.post(
 );
 
 app.post(
+  '/api/admin/whatsapp/reconnect',
+  requireAdmin,
+  async (_req, res) => {
+    const data = await readStore();
+    const whatsapp = data.meta.whatsapp || {};
+    const processRunning = Boolean(whatsappProcess) && whatsappProcess.exitCode === null;
+    const lastSeenAt = whatsapp.lastSeenAt ? new Date(whatsapp.lastSeenAt).getTime() : 0;
+    const heartbeatFresh = lastSeenAt > 0 && Date.now() - lastSeenAt < 30_000;
+
+    if (processRunning && whatsapp.status === 'connected' && heartbeatFresh) {
+      return res.json({
+        ok: true,
+        connected: true,
+        processRunning: true,
+        status: 'connected',
+        message: 'WhatsApp já estava conectado. O painel foi atualizado.'
+      });
+    }
+
+    const transitionalStatuses = new Set(['starting', 'qr', 'pairing', 'authenticated']);
+
+    if (processRunning && heartbeatFresh && transitionalStatuses.has(whatsapp.status)) {
+      return res.json({
+        ok: true,
+        connected: false,
+        reconnecting: false,
+        processRunning: true,
+        status: whatsapp.status,
+        message: 'O publicador já está iniciando. Aguarde alguns segundos para o painel atualizar.'
+      });
+    }
+
+    if (processRunning) {
+      const processToRestart = whatsappProcess;
+      whatsappStopRequested = true;
+      processToRestart.kill();
+
+      await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        processToRestart.once('exit', finish);
+        setTimeout(finish, 3_000);
+      });
+
+      if (whatsappProcess === processToRestart) whatsappProcess = null;
+      whatsappStopRequested = false;
+    }
+
+    whatsappRestartAttempts = 0;
+    const result = await startWhatsappWorker({ mode: 'qr', automatic: true });
+
+    return res.json({
+      ok: true,
+      connected: false,
+      reconnecting: Boolean(result.started),
+      processRunning: Boolean(result.started),
+      status: 'starting',
+      message: result.started
+        ? 'Reconexão iniciada. A sessão salva será restaurada; se necessário, um novo QR Code aparecerá.'
+        : result.message
+    });
+  }
+);
+
+app.post(
   '/api/admin/whatsapp/check',
   requireAdmin,
   async (
