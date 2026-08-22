@@ -252,6 +252,86 @@ function checkContactLimit(ip) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[character]));
+}
+
+function contactMessageHtml(message) {
+  return escapeHtml(message).replace(/\r?\n/g, '<br>');
+}
+
+function buildContactEmailHtml({ name, email, message }) {
+  const safeName = escapeHtml(name);
+  const safeEmail = escapeHtml(email);
+  const safeMessage = contactMessageHtml(message);
+
+  return `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mensagem recebida pelo PromoShop</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .email-shell { width: 100% !important; }
+        .email-pad { padding: 24px 18px !important; }
+        .email-title { font-size: 24px !important; line-height: 1.2 !important; }
+        .email-meta { display: block !important; }
+        .email-meta-label { display: block !important; width: auto !important; padding-bottom: 4px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0; padding:0; width:100%; background:#f3f6fb; color:#1d2939; font-family:Arial,Helvetica,sans-serif; -webkit-text-size-adjust:100%;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; background:#f3f6fb;">
+      <tr>
+        <td align="center" style="padding:28px 12px;">
+          <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid #e4e7ec; border-radius:18px; background:#ffffff;">
+            <tr>
+              <td style="padding:26px 30px; background:#0b1f3a; color:#ffffff;">
+                <div style="font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9fc2ff;">PromoShop</div>
+                <div class="email-title" style="margin-top:10px; font-size:28px; line-height:1.25; font-weight:800;">Nova mensagem recebida</div>
+                <div style="margin-top:8px; color:#d7e5ff; font-size:14px; line-height:1.5;">Uma pessoa entrou em contato pelo seu site.</div>
+              </td>
+            </tr>
+            <tr>
+              <td class="email-pad" style="padding:30px;">
+                <p style="margin:0 0 20px; color:#344054; font-size:16px; line-height:1.6;">Olá, PromoShop! Você recebeu uma nova mensagem:</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; border:1px solid #eaecf0; border-radius:12px; overflow:hidden;">
+                  <tr class="email-meta">
+                    <td class="email-meta-label" width="120" style="width:120px; padding:14px 16px; border-bottom:1px solid #eaecf0; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; vertical-align:top;">Nome</td>
+                    <td style="padding:14px 16px; border-bottom:1px solid #eaecf0; color:#101828; font-size:15px; line-height:1.5; word-break:break-word;">${safeName}</td>
+                  </tr>
+                  <tr class="email-meta">
+                    <td class="email-meta-label" width="120" style="width:120px; padding:14px 16px; border-bottom:1px solid #eaecf0; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; vertical-align:top;">E-mail</td>
+                    <td style="padding:14px 16px; border-bottom:1px solid #eaecf0; color:#101828; font-size:15px; line-height:1.5; word-break:break-word;"><a href="mailto:${safeEmail}" style="color:#1269f3; text-decoration:none;">${safeEmail}</a></td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:16px; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Mensagem</td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:0 16px 18px; color:#344054; font-size:15px; line-height:1.7; word-break:break-word; overflow-wrap:anywhere;">${safeMessage}</td>
+                  </tr>
+                </table>
+                <div style="margin-top:24px; padding:16px 18px; border-left:4px solid #1269f3; border-radius:8px; background:#eff6ff; color:#344054; font-size:13px; line-height:1.55;">Para responder, use o botão de resposta do seu e-mail. A resposta será enviada diretamente para ${safeName}.</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;">Mensagem enviada pelo formulário de contato do PromoShop.</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
 const analyticsSessionWindowMs = 30 * 60 * 1000;
 const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
 const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
@@ -1181,6 +1261,20 @@ app.post(
     const recipient = String(process.env.CONTACT_EMAIL || config.contactEmail || 'contatopromoshop.site@gmail.com').trim();
     const senderEmail = String(process.env.BREVO_SENDER_EMAIL || recipient).trim();
     const senderName = String(process.env.BREVO_SENDER_NAME || 'PromoShop').trim();
+    const copyToVisitor = email.toLowerCase() !== recipient.toLowerCase()
+      ? [{ email, name }]
+      : [];
+    const textContent = [
+      'PromoShop — nova mensagem recebida',
+      '',
+      `Nome: ${name}`,
+      `E-mail: ${email}`,
+      '',
+      'Mensagem:',
+      message,
+      '',
+      'Para responder, use o botão de resposta do seu e-mail.'
+    ].join('\n');
 
     if (!apiKey) {
       return res.status(503).json({
@@ -1202,12 +1296,14 @@ app.post(
             email: senderEmail
           },
           to: [{ email: recipient, name: 'PromoShop' }],
+          ...(copyToVisitor.length ? { cc: copyToVisitor } : {}),
           replyTo: {
             email,
             name
           },
-          subject: `Contato pelo site — ${name}`,
-          textContent: `Nome: ${name}\nE-mail: ${email}\n\nMensagem:\n${message}`
+          subject: 'Mensagem recebida pelo PromoShop',
+          textContent,
+          htmlContent: buildContactEmailHtml({ name, email, message })
         })
       });
 

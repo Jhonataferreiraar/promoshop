@@ -550,7 +550,6 @@ function SiteFooter({ config = fallbackConfig }) {
         <h3>Informações</h3>
         <a href="/termos-de-uso">Termos de uso</a>
         <a href="/privacidade">Privacidade</a>
-        <a href="/contato">Fale conosco</a>
       </div>
       <div className="footer-column footer-contact">
         <h3>Contato</h3>
