@@ -4364,3 +4364,60 @@ button {
   .analytics-chart { gap: 5px; }
   .analytics-bar-group { min-width: 25px; }
 }
+
+/* Rodapé institucional e páginas públicas */
+.site-shell .site-footer { padding: 50px 0 22px; color: #d7e1f0; border-top: 0; background: #101a2e; }
+.site-shell .site-footer .footer-grid-rich { display: grid; grid-template-columns: minmax(220px, 1.55fr) repeat(3, minmax(130px, 1fr)); align-items: start; gap: 34px; }
+.site-shell .site-footer .footer-brand { display: grid; gap: 11px; }
+.site-shell .site-footer .footer-brand .logo { width: fit-content; color: #fff; }
+.site-shell .site-footer .footer-brand p { max-width: 360px; margin: 0; color: #aab8cc; font-size: 13px; line-height: 1.55; }
+.site-shell .site-footer .footer-brand small { color: #71819a; font-size: 12px; }
+.site-shell .site-footer .footer-column { display: grid; align-content: start; justify-items: start; gap: 10px; }
+.site-shell .site-footer .footer-column h3 { margin: 2px 0 5px; color: #fff; font-size: 13px; letter-spacing: .02em; }
+.site-shell .site-footer .footer-column a,
+.site-shell .site-footer .footer-column span { color: #aab8cc; font-size: 13px; line-height: 1.45; }
+.site-shell .site-footer .footer-column a:hover { color: #fff; }
+.site-shell .site-footer .footer-contact .footer-whatsapp-link { color: #7ee2a8; font-weight: 800; }
+.site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
+.info-main { min-height: 65vh; background: #f8fafc; }
+.info-hero { padding: 76px 0 70px; color: #fff; background: linear-gradient(125deg, #0d4fc2, var(--primary) 55%, #4f8eff); }
+.info-hero .container { max-width: 920px; }
+.info-hero h1 { max-width: 760px; margin: 12px 0 16px; font-size: clamp(38px, 5vw, 62px); line-height: 1.02; letter-spacing: -.045em; }
+.info-hero p { max-width: 700px; margin: 0; color: rgba(255,255,255,.84); font-size: 18px; line-height: 1.6; }
+.info-content { max-width: 920px; padding-top: 62px; padding-bottom: 78px; }
+.info-section { padding: 0 0 30px; }
+.info-section + .info-section { padding-top: 30px; border-top: 1px solid #eaecf0; }
+.info-section h2 { margin: 0 0 12px; color: #101828; font-size: 22px; letter-spacing: -.02em; }
+.info-section p { max-width: 800px; margin: 0 0 12px; color: #475467; font-size: 15px; line-height: 1.75; }
+.info-contact-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.info-contact-actions .button.whatsapp { color: #fff; }
+.info-contact-missing { padding: 13px 15px; border: 1px solid #fedf89; border-radius: 10px; color: #854a0e !important; background: #fffaeb; font-size: 13px !important; }
+.info-disclosure { margin-top: 12px; padding: 18px 20px; border: 1px solid #b2ccff; border-radius: 14px; background: #eff6ff; }
+.info-disclosure strong { color: #174ea6; font-size: 14px; }
+.info-disclosure p { margin: 6px 0 0; color: #344054; font-size: 13px; line-height: 1.55; }
+.settings-help { margin: -4px 0 0; color: #667085; font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .site-shell .site-footer .footer-grid-rich { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-shell .site-footer .footer-brand { grid-column: 1 / -1; }
+}
+
+@media (max-width: 600px) {
+  .site-shell .site-footer { padding-top: 38px; }
+  .site-shell .site-footer .footer-grid-rich { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; text-align: left; }
+  .site-shell .site-footer .footer-brand { grid-column: 1 / -1; }
+  .site-shell .site-footer .footer-bottom { align-items: flex-start; flex-direction: column; gap: 6px; margin-top: 30px; }
+  .info-hero { padding: 54px 0 50px; }
+  .info-hero h1 { font-size: clamp(34px, 10vw, 46px); }
+  .info-hero p { font-size: 16px; }
+  .info-content { padding-top: 42px; padding-bottom: 56px; }
+  .info-section h2 { font-size: 20px; }
+  .info-section p { font-size: 14px; line-height: 1.65; }
+  .info-contact-actions { display: grid; }
+  .info-contact-actions .button { width: 100%; }
+}
+
+@media (max-width: 400px) {
+  .site-shell .site-footer .footer-grid-rich { grid-template-columns: 1fr; gap: 23px; }
+  .site-shell .site-footer .footer-brand { grid-column: auto; }
+}

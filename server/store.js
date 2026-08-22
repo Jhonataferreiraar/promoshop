@@ -19,6 +19,7 @@ const initialData = {
     whatsappUrl: '#',
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
+    contactEmail: '',
     minDiscount: 20,
 
     maxPostsPerDay: 100,

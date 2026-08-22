@@ -12,7 +12,8 @@ const fallbackConfig = {
   whatsappUrl: '#',
   whatsappAudiences: [],
   assistantAvailable: false,
-  disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.'
+  disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
+  contactEmail: ''
 }
 
 const mercadoLivreCategories = [
@@ -81,6 +82,34 @@ function anonymousStorageId(storage, key) {
   }
 }
 
+function usePublicAnalytics() {
+  const analyticsSentRef = useRef(false);
+
+  useEffect(() => {
+    if (analyticsSentRef.current) return;
+    analyticsSentRef.current = true;
+
+    try {
+      const lastSentAt = Number(window.sessionStorage.getItem('promoshop_analytics_pageview') || 0);
+      if (lastSentAt && Date.now() - lastSentAt < 10000) return;
+      window.sessionStorage.setItem('promoshop_analytics_pageview', String(Date.now()));
+    } catch { }
+
+    const visitorId = anonymousStorageId(window.localStorage, 'promoshop_analytics_visitor');
+    const sessionId = anonymousStorageId(window.sessionStorage, 'promoshop_analytics_session');
+
+    api('/analytics/visit', {
+      method: 'POST',
+      cache: 'no-store',
+      body: JSON.stringify({
+        visitorId,
+        sessionId,
+        path: window.location.pathname
+      })
+    }).catch(() => { });
+  }, []);
+}
+
 function discount(offer) {
   if (!offer.originalPrice || offer.originalPrice <= offer.price) return 0;
   return Math.round((1 - offer.price / offer.originalPrice) * 100);
@@ -106,7 +135,7 @@ function PublicSite() {
   const [assistantReply, setAssistantReply] = useState('');
   const [assistantAudiences, setAssistantAudiences] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
-  const analyticsSentRef = useRef(false);
+  usePublicAnalytics();
 
   useEffect(() => {
     Promise.all([
@@ -165,30 +194,6 @@ function PublicSite() {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, []);
-
-  useEffect(() => {
-    if (analyticsSentRef.current) return;
-    analyticsSentRef.current = true;
-
-    try {
-      const lastSentAt = Number(window.sessionStorage.getItem('promoshop_analytics_pageview') || 0);
-      if (lastSentAt && Date.now() - lastSentAt < 10000) return;
-      window.sessionStorage.setItem('promoshop_analytics_pageview', String(Date.now()));
-    } catch { }
-
-    const visitorId = anonymousStorageId(window.localStorage, 'promoshop_analytics_visitor');
-    const sessionId = anonymousStorageId(window.sessionStorage, 'promoshop_analytics_session');
-
-    api('/analytics/visit', {
-      method: 'POST',
-      cache: 'no-store',
-      body: JSON.stringify({
-        visitorId,
-        sessionId,
-        path: window.location.pathname
-      })
-    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -519,12 +524,127 @@ function PublicSite() {
       <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Quero receber ofertas</a></div></section>
     </main>
 
-    <footer>
-      <div className="container footer-grid">
-        <Logo name={config.brandName} />
-        <p>{config.disclosure}</p>
+    <SiteFooter config={config} />
+  </div>;
+}
+
+function SiteFooter({ config = fallbackConfig }) {
+  const brandName = config.brandName || fallbackConfig.brandName;
+  const contactEmail = String(config.contactEmail || '').trim();
+  const whatsappUrl = String(config.whatsappUrl || '').trim();
+  const year = new Date().getFullYear();
+
+  return <footer className="site-footer">
+    <div className="container footer-grid footer-grid-rich">
+      <div className="footer-brand">
+        <Logo name={brandName} />
+        <p>{config.disclosure || fallbackConfig.disclosure}</p>
+        <small>Ofertas selecionadas para ajudar você a comprar melhor.</small>
       </div>
-    </footer>
+      <div className="footer-column">
+        <h3>PromoShop</h3>
+        <a href="/sobre">Sobre nós</a>
+        <a href="/#ofertas">Ofertas</a>
+        <a href="/#cupons">Cupons</a>
+        <a href="/#grupos">Grupos do WhatsApp</a>
+      </div>
+      <div className="footer-column">
+        <h3>Informações</h3>
+        <a href="/termos-de-uso">Termos de uso</a>
+        <a href="/privacidade">Privacidade</a>
+        <a href="/contato">Fale conosco</a>
+      </div>
+      <div className="footer-column footer-contact">
+        <h3>Contato</h3>
+        {contactEmail ? <a href={`mailto:${contactEmail}`}>{contactEmail}</a> : <span>Atendimento pelo WhatsApp</span>}
+        {whatsappUrl && whatsappUrl !== '#' && <a className="footer-whatsapp-link" href={whatsappUrl} target="_blank" rel="noreferrer">Falar no WhatsApp ↗</a>}
+      </div>
+    </div>
+    <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
+  </footer>;
+}
+
+const publicInfoPages = {
+  '/sobre': {
+    eyebrow: 'SOBRE O PROMOSHOP',
+    title: 'Ofertas boas, encontradas com mais clareza.',
+    intro: 'O PromoShop reúne ofertas e cupons de diferentes lojas para você comparar oportunidades e decidir onde comprar.',
+    sections: [
+      { title: 'O que fazemos', paragraphs: ['Somos uma vitrine independente de curadoria de ofertas. Organizamos produtos, preços, descontos e cupons em um só lugar para reduzir o tempo que você gasta procurando uma boa oportunidade.', 'O PromoShop não é uma loja virtual e não processa pagamentos, entregas ou trocas. Ao clicar em uma oferta, você é levado ao site da loja parceira, onde a compra acontece diretamente.'] },
+      { title: 'Como selecionamos', paragraphs: ['As ofertas podem ser coletadas automaticamente de plataformas parceiras e revisadas antes de serem divulgadas. Preços, estoque, frete, cupons e condições podem mudar a qualquer momento na loja de origem.', 'Nossa proposta é facilitar a descoberta de oportunidades, sem prometer que todo desconto será o menor preço histórico ou que permanecerá disponível.'] },
+      { title: 'Transparência', paragraphs: ['O PromoShop participa de programas de afiliados. Isso significa que podemos receber uma comissão quando você acessa um link e realiza uma compra, sem custo adicional para você. Essa comissão ajuda a manter o projeto funcionando.'] }
+    ]
+  },
+  '/contato': {
+    eyebrow: 'FALE CONOSCO',
+    title: 'Estamos aqui para ajudar.',
+    intro: 'Encontrou um problema, quer sugerir uma loja ou tem uma dúvida sobre uma oferta? Escolha o canal mais conveniente.',
+    sections: [
+      { title: 'Dúvidas sobre ofertas', paragraphs: ['Como os preços e as regras pertencem à loja de origem, confirme sempre as condições diretamente no site antes de finalizar a compra. Se você encontrar um link quebrado ou uma informação desatualizada, avise-nos para que possamos revisar.'] },
+      { title: 'Contato direto', paragraphs: ['Você pode falar com a equipe pelo canal abaixo. Para agilizar o atendimento, informe o nome da oferta e a loja relacionada.'], contact: true },
+      { title: 'Parcerias e sugestões', paragraphs: ['Também recebemos sugestões de novas lojas, cupons e categorias para acompanhar. O envio de uma sugestão não garante publicação, mas toda contribuição é bem-vinda.'] }
+    ]
+  },
+  '/termos-de-uso': {
+    eyebrow: 'TERMOS DE USO',
+    title: 'Uso simples, transparente e responsável.',
+    intro: 'Ao acessar o PromoShop, você concorda com as condições abaixo. Leia com atenção antes de utilizar o site.',
+    sections: [
+      { title: '1. Sobre o serviço', paragraphs: ['O PromoShop é uma plataforma de divulgação e curadoria de ofertas e cupons. Não somos vendedores, fabricantes, representantes ou responsáveis pelas lojas anunciadas.', 'Os links podem levar a páginas de terceiros. A compra, o pagamento, a entrega, a garantia, a troca e o atendimento são de responsabilidade da loja correspondente.'] },
+      { title: '2. Preços e disponibilidade', paragraphs: ['As informações são apresentadas com base nos dados disponíveis no momento da publicação. Preços, descontos, estoque, frete, cupons e condições podem mudar sem aviso. A confirmação válida é sempre a exibida pela loja no momento da compra.'] },
+      { title: '3. Links de afiliados', paragraphs: ['Alguns links são links de afiliado. Se você comprar após acessar um desses links, o PromoShop poderá receber uma comissão, sem cobrança adicional para você. A existência de comissão não altera o preço apresentado pela loja.'] },
+      { title: '4. Uso adequado', paragraphs: ['Você concorda em utilizar o site de forma lícita, sem tentar interferir no funcionamento, copiar seu conteúdo de maneira abusiva, praticar fraude ou utilizar as informações para finalidades que violem a legislação.'] },
+      { title: '5. Alterações', paragraphs: ['Podemos atualizar o site, os conteúdos e estes termos para acompanhar mudanças no serviço ou na legislação. A versão publicada nesta página é a que vale para o acesso atual.'] }
+    ]
+  },
+  '/privacidade': {
+    eyebrow: 'PRIVACIDADE',
+    title: 'Sua navegação com o mínimo de dados.',
+    intro: 'Esta página explica, em linguagem simples, quais informações o PromoShop utiliza para funcionar e melhorar o serviço.',
+    sections: [
+      { title: '1. Dados de navegação', paragraphs: ['Para medir o alcance do site, criamos um identificador anônimo no navegador. Ele não contém seu nome, e-mail, telefone ou endereço e é usado apenas para contar visitantes, visualizações e sessões.', 'O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas. Se você limpar os dados do navegador ou trocar de dispositivo, poderá ser contado como um novo visitante.'] },
+      { title: '2. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
+      { title: '3. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. As métricas anônimas são mantidas para gerar relatórios de alcance e são resumidas no painel administrativo. Não vendemos dados pessoais.'] },
+      { title: '4. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
+    ]
+  }
+};
+
+function InfoPage({ page }) {
+  const [config, setConfig] = useState(fallbackConfig);
+  const info = publicInfoPages[page] || publicInfoPages['/sobre'];
+  const contactEmail = String(config.contactEmail || '').trim();
+  const whatsappUrl = String(config.whatsappUrl || '').trim();
+
+  usePublicAnalytics();
+
+  useEffect(() => {
+    api('/config/public')
+      .then((configData) => setConfig({ ...fallbackConfig, ...configData }))
+      .catch(() => { });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--primary', config.primaryColor || fallbackConfig.primaryColor);
+    document.title = `${info.title} — ${config.brandName || fallbackConfig.brandName}`;
+  }, [config, info.title]);
+
+  return <div className="site-shell info-shell">
+    <header className="topbar">
+      <div className="container nav-wrap">
+        <Logo name={config.brandName || fallbackConfig.brandName} />
+        <nav><a href="/#ofertas">Ofertas</a><a href="/#cupons">Cupons</a><a href="/#grupos">Grupos</a><a href="/#como-funciona">Como funciona</a></nav>
+        <div className="nav-actions"><a className="nav-whatsapp" href={whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
+      </div>
+    </header>
+    <main className="info-main">
+      <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p></div></section>
+      <article className="container info-content">
+        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{whatsappUrl && whatsappUrl !== '#' && <a className="button whatsapp" href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}{!contactEmail && (!whatsappUrl || whatsappUrl === '#') && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
+        <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
+      </article>
+    </main>
+    <SiteFooter config={config} />
   </div>;
 }
 
@@ -2304,7 +2424,7 @@ function AdminApp() {
         <div className="form-footer"><span>As alterações entram em vigor após salvar.</span><button className="button primary">Salvar grupos e regras</button></div>
       </form>
     </div>}
-    {tab === 'settings' && <form className="panel settings-form" onSubmit={saveConfig}><h2>Identidade do site</h2><div className="settings-grid">{[['brandName', 'Nome do site'], ['heroTitle', 'Título principal'], ['heroText', 'Texto principal'], ['primaryColor', 'Cor principal'], ['disclosure', 'Aviso de afiliado']].map(([key, label]) => <label key={key}>{label}{['heroText', 'disclosure'].includes(key) ? <textarea value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} /> : <input type={key === 'primaryColor' ? 'color' : 'text'} value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} />}</label>)}</div><button className="button primary">Salvar aparência</button></form>}
+    {tab === 'settings' && <form className="panel settings-form" onSubmit={saveConfig}><h2>Identidade do site</h2><div className="settings-grid">{[['brandName', 'Nome do site'], ['heroTitle', 'Título principal'], ['heroText', 'Texto principal'], ['primaryColor', 'Cor principal'], ['disclosure', 'Aviso de afiliado'], ['contactEmail', 'E-mail de contato']].map(([key, label]) => <label key={key}>{label}{['heroText', 'disclosure'].includes(key) ? <textarea value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} /> : <input type={key === 'primaryColor' ? 'color' : key === 'contactEmail' ? 'email' : 'text'} value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} />}</label>)}</div><p className="settings-help">Esse e-mail aparece nas páginas de contato e no rodapé público. Deixe vazio para priorizar o WhatsApp.</p><button className="button primary">Salvar aparência</button></form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
@@ -2358,4 +2478,6 @@ function QueueTable({ queue, onRemove, onForce, onRetry }) {
 }
 
 const isAdmin = window.location.pathname.startsWith('/admin');
-createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : <PublicSite />}</React.StrictMode>);
+const normalizedPublicPath = window.location.pathname.replace(/\/+$/, '') || '/';
+const isInfoPage = Object.prototype.hasOwnProperty.call(publicInfoPages, normalizedPublicPath);
+createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : <PublicSite />}</React.StrictMode>);
