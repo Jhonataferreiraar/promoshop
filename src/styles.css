@@ -4377,7 +4377,6 @@ button {
 .site-shell .site-footer .footer-column a,
 .site-shell .site-footer .footer-column span { color: #aab8cc; font-size: 13px; line-height: 1.45; }
 .site-shell .site-footer .footer-column a:hover { color: #fff; }
-.site-shell .site-footer .footer-contact .footer-whatsapp-link { color: #7ee2a8; font-weight: 800; }
 .site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
 .info-main { min-height: 65vh; background: #f8fafc; }
 .info-hero { padding: 76px 0 70px; color: #fff; background: linear-gradient(125deg, #0d4fc2, var(--primary) 55%, #4f8eff); }

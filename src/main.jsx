@@ -530,8 +530,6 @@ function PublicSite() {
 
 function SiteFooter({ config = fallbackConfig }) {
   const brandName = config.brandName || fallbackConfig.brandName;
-  const contactEmail = String(config.contactEmail || '').trim();
-  const whatsappUrl = String(config.whatsappUrl || '').trim();
   const year = new Date().getFullYear();
 
   return <footer className="site-footer">
@@ -556,8 +554,7 @@ function SiteFooter({ config = fallbackConfig }) {
       </div>
       <div className="footer-column footer-contact">
         <h3>Contato</h3>
-        {contactEmail ? <a href={`mailto:${contactEmail}`}>{contactEmail}</a> : <span>Atendimento pelo WhatsApp</span>}
-        {whatsappUrl && whatsappUrl !== '#' && <a className="footer-whatsapp-link" href={whatsappUrl} target="_blank" rel="noreferrer">Falar no WhatsApp ↗</a>}
+        <a href="/contato">Fale conosco ↗</a>
       </div>
     </div>
     <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
@@ -611,7 +608,7 @@ const publicInfoPages = {
   }
 };
 
-function ContactForm({ contactEmail, whatsappUrl }) {
+function ContactForm({ contactEmail }) {
   const [form, setForm] = useState({ name: '', email: '', message: '', website: '' });
   const [status, setStatus] = useState({ type: '', text: '' });
   const [sending, setSending] = useState(false);
@@ -644,7 +641,7 @@ function ContactForm({ contactEmail, whatsappUrl }) {
     <label className="contact-honeypot" aria-hidden="true">Site<input tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => setForm({ ...form, website: event.target.value })} /></label>
     <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Responderemos pelo e-mail informado.</span></div>
     {status.text && <p className={`contact-status ${status.type}`} role="status">{status.text}</p>}
-    <div className="contact-form-alternative">{contactEmail && <span>Ou escreva para <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</span>}{whatsappUrl && whatsappUrl !== '#' && <a href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}</div>
+    <div className="contact-form-alternative">{contactEmail && <span>Ou escreva para <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</span>}</div>
   </form>;
 }
 
@@ -678,7 +675,7 @@ function InfoPage({ page }) {
     <main className="info-main">
       <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p></div></section>
       <article className="container info-content">
-        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} whatsappUrl={whatsappUrl} />}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{whatsappUrl && whatsappUrl !== '#' && <a className="button whatsapp" href={whatsappUrl} target="_blank" rel="noreferrer">Falar pelo WhatsApp ↗</a>}{!contactEmail && (!whatsappUrl || whatsappUrl === '#') && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
+        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} />}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{!contactEmail && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
         <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
       </article>
     </main>
