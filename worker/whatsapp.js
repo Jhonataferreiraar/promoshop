@@ -141,33 +141,57 @@ async function refreshActivePage() {
 async function listGroups() {
   const page = await refreshActivePage();
 
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const collection =
       window.require?.('WAWebCollections')?.Chat ||
       window.Store?.Chat;
 
-    const chats =
-      collection?.getModelsArray?.() ||
-      collection?.models ||
-      [];
+    const chats = [
+      ...(collection?.getModelsArray?.() || collection?.models || [])
+    ];
 
-    return chats
+    const newsletterCollection =
+      window.require?.('WAWebCollections')?.WAWebNewsletterCollection;
+
+    let channels = [];
+    try {
+      channels = window.WWebJS?.getChannels
+        ? await window.WWebJS.getChannels()
+        : (newsletterCollection?.getModelsArray?.() || newsletterCollection?.models || []);
+    } catch {
+      channels = newsletterCollection?.getModelsArray?.() || newsletterCollection?.models || [];
+    }
+
+    const seen = new Set();
+
+    return [...chats, ...channels]
       .map((chat) => {
         const id =
-          chat.id?._serialized ||
-          (
-            chat.id?.user && chat.id?.server
-              ? `${chat.id.user}@${chat.id.server}`
-              : ''
-          );
+          typeof chat.id === 'string'
+            ? chat.id
+            : chat.id?._serialized ||
+              (
+                chat.id?.user && chat.id?.server
+                  ? `${chat.id.user}@${chat.id.server}`
+                  : ''
+              );
 
-        if (!id || (!id.endsWith('@g.us') && !id.endsWith('@newsletter'))) {
+        const isChannel = Boolean(chat.isChannel) || id.endsWith('@newsletter');
+
+        if (!id || (!id.endsWith('@g.us') && !isChannel) || seen.has(id)) {
           return null;
         }
+
+        seen.add(id);
 
         const metadata =
           chat.groupMetadata ||
           chat.groupMetadata?.groupMetadata ||
+          null;
+
+        const channelMetadata =
+          chat.channelMetadata ||
+          chat.newsletterMetadata ||
           null;
 
         const name =
@@ -176,8 +200,8 @@ async function listGroups() {
           chat.title ||
           metadata?.subject ||
           metadata?.name ||
-          chat.newsletterMetadata?.name ||
-          chat.newsletterMetadata?.title ||
+          channelMetadata?.name ||
+          channelMetadata?.title ||
           chat.contact?.pushname ||
           chat.contact?.name ||
           chat.contact?.shortName ||
@@ -186,7 +210,7 @@ async function listGroups() {
         return {
           id,
           name: String(name || '').trim(),
-          type: id.endsWith('@newsletter') ? 'channel' : 'group'
+          type: isChannel ? 'channel' : 'group'
         };
       })
       .filter(Boolean);
