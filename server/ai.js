@@ -75,6 +75,16 @@ function money(value) {
   );
 }
 
+function comparableText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const toneProfiles = {
   seller: {
     label: 'vendedor e confiável',
@@ -412,9 +422,36 @@ function finalizeGeneratedMessage(
   );
 
   if (missingFields.length) {
-    throw new Error(
-      `A IA não criou a mensagem completa (faltou ${missingFields.join(', ')}).`
-    );
+    const normalizedMessage = comparableText(message);
+    const normalizedTitle = comparableText(offer.title);
+    const titleWasWritten =
+      normalizedTitle &&
+      normalizedMessage.includes(normalizedTitle);
+
+    // Alguns modelos obedecem ao formato, mas escrevem o título/preço
+    // diretamente. Aproveitamos o texto criativo e só completamos os dados
+    // que precisam ser preenchidos pelo sistema. Respostas genéricas, sem o
+    // produto, continuam sendo rejeitadas para ativar o fallback seguro.
+    if (
+      missingFields.includes('{title}') &&
+      !titleWasWritten
+    ) {
+      if (missingFields.length === 3) {
+        throw new Error(
+          `A IA não criou a mensagem completa (faltou ${missingFields.join(', ')}).`
+        );
+      }
+
+      message = `*{title}*\n\n${message}`;
+    }
+
+    if (missingFields.includes('{price}')) {
+      message += '\n\n💰 Por: *{price}*';
+    }
+
+    if (missingFields.includes('{link}')) {
+      message += '\n\n👉 Confira a oferta:\n{link}';
+    }
   }
 
   if (

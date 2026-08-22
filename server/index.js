@@ -1278,38 +1278,47 @@ app.put(
     req,
     res
   ) => {
+    const body =
+      req.body &&
+      typeof req.body === 'object' &&
+      !Array.isArray(req.body)
+        ? req.body
+        : {};
+
     await updateStore(
       (data) => {
+        const previousAudiences =
+          Array.isArray(data.config.whatsappAudiences)
+            ? data.config.whatsappAudiences
+            : [];
+
         const writingStyleChanged =
           (
-            'aiTone' in
-            req.body &&
-            req.body.aiTone !==
+            Object.prototype.hasOwnProperty.call(body, 'aiTone') &&
+            body.aiTone !==
             data.config.aiTone
           ) ||
           (
-            'aiInstructions' in
-            req.body &&
-            req.body
-              .aiInstructions !==
+            Object.prototype.hasOwnProperty.call(body, 'aiInstructions') &&
+            body.aiInstructions !==
             data.config
               .aiInstructions
           ) ||
           (
-            'messageTemplate' in
-            req.body &&
-            req.body
-              .messageTemplate !==
+            Object.prototype.hasOwnProperty.call(body, 'messageTemplate') &&
+            body.messageTemplate !==
             data.config
               .messageTemplate
           );
 
         const audienceRoutingChanged =
-          'whatsappAudiences' in req.body;
+          Object.prototype.hasOwnProperty.call(body, 'whatsappAudiences') &&
+          JSON.stringify(previousAudiences) !==
+          JSON.stringify(body.whatsappAudiences);
 
         data.config = {
           ...data.config,
-          ...req.body
+          ...body
         };
 
         if (audienceRoutingChanged) {

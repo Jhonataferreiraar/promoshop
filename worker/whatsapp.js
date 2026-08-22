@@ -42,7 +42,6 @@ const chromiumArgs = [
   '--disable-sync',
   '--hide-scrollbars',
   '--mute-audio',
-  '--no-zygote',
   '--renderer-process-limit=1',
   '--js-flags=--max-old-space-size=128'
 ];
@@ -58,6 +57,17 @@ const browserPath = process.env.CHROME_PATH || [
   '/snap/bin/chromium'
 ].find((candidate) => existsSync(candidate));
 
+// O Render não possui servidor gráfico. Mesmo que uma configuração antiga
+// tenha deixado o modo oculto desligado, o publicador precisa iniciar sem
+// abrir janela nesse ambiente. Em um computador com tela, a opção do painel
+// continua podendo escolher o modo visível.
+const hasDisplay =
+  process.platform === 'win32' ||
+  Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+const headless =
+  initialStore.config.whatsappHeadless !== false ||
+  !hasDisplay;
+
 if (!workerToken) {
   console.error('Não foi possível carregar a identificação segura do publicador.');
   process.exit(1);
@@ -67,7 +77,7 @@ const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'promoshop', dataPath: authDataPath }),
   ...(pairingPhoneNumber ? { pairWithPhoneNumber: { phoneNumber: pairingPhoneNumber, showNotification: true, intervalMs: 180000 } } : {}),
   puppeteer: {
-    headless: Boolean(initialStore.config.whatsappHeadless),
+    headless,
     ...(browserPath ? { executablePath: browserPath } : {}),
     args: chromiumArgs
   }
