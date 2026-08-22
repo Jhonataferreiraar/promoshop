@@ -963,6 +963,23 @@ function AdminApp() {
     }
   }
 
+  async function reconnectWhatsapp() {
+    setMessage('Restabelecendo a conexão do WhatsApp…');
+
+    try {
+      const result = await authApi('/admin/whatsapp/reconnect', {
+        method: 'POST',
+        body: '{}'
+      });
+
+      await load();
+      setMessage(result.message || 'Reconexão solicitada. Aguarde alguns segundos.');
+      window.setTimeout(() => load({ preserveConfig: true }), 1800);
+    } catch (error) {
+      setMessage(`Não foi possível reconectar o WhatsApp: ${error.message}`);
+    }
+  }
+
   async function stopWhatsapp() {
     try {
       await authApi('/admin/whatsapp/stop', {
@@ -1916,6 +1933,14 @@ function AdminApp() {
     {tab === 'whatsapp' && <div className="whatsapp-admin-grid">
       <section className="panel connection-panel">
         <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{data.queue.filter((item) => item.status === 'pending').length}</strong> aguardando na fila</span></div><div className="connection-actions">
+          <button
+            className="button primary"
+            type="button"
+            onClick={reconnectWhatsapp}
+          >
+            Reconectar
+          </button>
+
           <button
             className="button subtle"
             type="button"
