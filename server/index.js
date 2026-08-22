@@ -255,6 +255,43 @@ function normalizeAudienceCode(value) {
     .toUpperCase();
 }
 
+function normalizeCouponAudienceCodes(codes) {
+  return [
+    ...new Set(
+      (Array.isArray(codes) ? codes : [])
+        .map((code) => normalizeAudienceCode(code))
+        .filter((code) => /^G\d+$/.test(code))
+    )
+  ].slice(0, 50);
+}
+
+function formatCouponMessage(coupon) {
+  const title = String(coupon?.title || 'Cupom disponível').trim();
+  const description = String(coupon?.description || '').trim();
+  const code = String(coupon?.code || '').trim();
+  const discountType = String(coupon?.discountType || '').trim();
+  const discountValue = Number(coupon?.discountValue || 0);
+  const minPurchase = Number(coupon?.minPurchase || 0);
+  const expiresAt = coupon?.expiresAt ? new Date(coupon.expiresAt) : null;
+  const parts = [`🎟️ *${title}*`];
+
+  if (description) parts.push(description);
+  if (discountValue > 0) {
+    const suffix = discountType === 'fixed' ? ' OFF' : discountType === 'free-shipping' ? '' : '% OFF';
+    const prefix = discountType === 'fixed' ? 'R$ ' : '';
+    parts.push(`💸 Desconto: *${prefix}${discountValue}${suffix}*`);
+  }
+  if (code) parts.push(`🏷️ Código: *${code}*`);
+  if (minPurchase > 0) parts.push(`🛒 Válido em compras acima de *R$ ${minPurchase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}*`);
+  if (discountType === 'free-shipping') parts.push('🚚 Frete grátis conforme as regras da loja.');
+  if (expiresAt && !Number.isNaN(expiresAt.getTime())) {
+    parts.push(`⏰ Válido até ${expiresAt.toLocaleDateString('pt-BR')}.`);
+  }
+  if (coupon?.link) parts.push(`👉 Ative aqui: ${coupon.link}`);
+  parts.push('⚠️ Confira as regras e a validade antes de usar.');
+  return parts.filter(Boolean).join('\n\n');
+}
+
 function getRoundAudienceCodes(data) {
   const audiences =
     Array.isArray(
@@ -332,6 +369,10 @@ function getLocalCodesForQueueItem(
   offers,
   config
 ) {
+  if (item?.kind === 'coupon') {
+    return normalizeCouponAudienceCodes(item.targetAudienceCodes || item.couponSnapshot?.targetAudienceCodes);
+  }
+
   const offer =
     offers.find(
       (entry) =>
@@ -975,6 +1016,27 @@ app.get(
               a.featured
             )
         )
+    );
+  }
+);
+
+app.get(
+  '/api/coupons',
+  async (_req, res) => {
+    const { coupons } = await readStore();
+    const now = Date.now();
+
+    res.json(
+      (Array.isArray(coupons) ? coupons : [])
+        .filter((coupon) => {
+          if (coupon.active === false) return false;
+          if (!coupon.expiresAt) return true;
+          const expiresAt = new Date(coupon.expiresAt).getTime();
+          return Number.isNaN(expiresAt) || expiresAt >= now;
+        })
+        .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .slice(0, 100)
+        .map(({ targetAudienceCodes, ...coupon }) => coupon)
     );
   }
 );
@@ -1767,6 +1829,8 @@ app.post(
     const secrets =
       await readSecrets();
 
+    const { config } = await readStore();
+
     const results = [];
     const errors = [];
 
@@ -1815,6 +1879,17 @@ app.post(
       }
     }
 
+    let magaluStoreUrl = '';
+    if (selectedStores.includes('magalu')) {
+      const slug = String(
+        config.magaluStoreSlug ||
+        (String(secrets.magaluAffiliateId || '').toLowerCase().includes('magazine') ? secrets.magaluAffiliateId : '') ||
+        'magazinepromoshopsite'
+      ).trim().replace(/^\/+|\/+$/g, '');
+      magaluStoreUrl = `https://www.magazinevoce.com.br/${encodeURIComponent(slug)}/busca/?q=${encodeURIComponent(query)}`;
+      errors.push('Magalu: a vitrine pode exigir captcha e não libera uma busca automática confiável. Abra a busca da sua loja e cadastre o link do produto no formulário abaixo.');
+    }
+
     res.json({
       query,
 
@@ -1822,7 +1897,8 @@ app.post(
         results.length,
 
       results,
-      errors
+      errors,
+      magaluStoreUrl
     });
   }
 );
@@ -2001,6 +2077,132 @@ app.post(
       .json(
         queueItem
       );
+  }
+);
+
+/*
+ * ==========================================================
+ * CUPONS
+ * ==========================================================
+ */
+
+app.post(
+  '/api/admin/coupons',
+  requireAdmin,
+  async (req, res) => {
+    const title = String(req.body?.title || '').trim().slice(0, 180);
+    const link = String(req.body?.link || '').trim().slice(0, 1000);
+    const description = String(req.body?.description || '').trim().slice(0, 500);
+    const code = String(req.body?.code || '').trim().slice(0, 80);
+    const store = String(req.body?.store || 'Magalu').trim().slice(0, 60) || 'Magalu';
+    const discountType = ['percent', 'fixed', 'free-shipping'].includes(req.body?.discountType)
+      ? req.body.discountType
+      : 'percent';
+    const rawDiscountValue = Number(req.body?.discountValue || 0);
+    const rawMinPurchase = Number(req.body?.minPurchase || 0);
+    const discountValue = Number.isFinite(rawDiscountValue) ? Math.max(0, rawDiscountValue) : 0;
+    const minPurchase = Number.isFinite(rawMinPurchase) ? Math.max(0, rawMinPurchase) : 0;
+    const targetAudienceCodes = normalizeCouponAudienceCodes(req.body?.targetAudienceCodes);
+    const expiresAtDate = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+
+    let parsedLink;
+    try { parsedLink = new URL(link); } catch { parsedLink = null; }
+
+    if (!title || !parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
+      return res.status(400).json({ error: 'Informe o título e um link HTTPS válido para o cupom.' });
+    }
+    if (!targetAudienceCodes.length) {
+      return res.status(400).json({ error: 'Selecione pelo menos um grupo para este cupom.' });
+    }
+    if (expiresAtDate && Number.isNaN(expiresAtDate.getTime())) {
+      return res.status(400).json({ error: 'Informe uma validade correta para o cupom.' });
+    }
+
+    const coupon = {
+      id: createId('coupon'),
+      title,
+      store,
+      code,
+      description,
+      discountType,
+      discountValue,
+      minPurchase,
+      expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
+      link,
+      image: String(req.body?.image || '').trim().slice(0, 1000),
+      featured: req.body?.featured !== false,
+      active: req.body?.active !== false,
+      targetAudienceCodes,
+      source: 'manual',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await updateStore((data) => {
+      data.coupons ||= [];
+      data.coupons.unshift(coupon);
+      data.coupons = data.coupons.slice(0, 300);
+    });
+
+    await addLog(`Cupom cadastrado: ${coupon.title} → ${coupon.targetAudienceCodes.join(', ')}`, 'success');
+    return res.status(201).json(coupon);
+  }
+);
+
+app.delete(
+  '/api/admin/coupons/:id',
+  requireAdmin,
+  async (req, res) => {
+    let removed = false;
+    await updateStore((data) => {
+      data.coupons ||= [];
+      const before = data.coupons.length;
+      data.coupons = data.coupons.filter((coupon) => coupon.id !== req.params.id);
+      removed = data.coupons.length !== before;
+      data.queue = data.queue.filter((item) => !(item.kind === 'coupon' && item.couponId === req.params.id && item.status === 'pending'));
+    });
+    if (!removed) return res.status(404).json({ error: 'Cupom não encontrado.' });
+    await addLog('Cupom removido.', 'info');
+    return res.json({ ok: true });
+  }
+);
+
+app.post(
+  '/api/admin/coupons/:id/queue',
+  requireAdmin,
+  async (req, res) => {
+    let queueItem;
+    await updateStore((data) => {
+      const coupon = (data.coupons || []).find((entry) => entry.id === req.params.id);
+      if (!coupon || coupon.active === false) return;
+      const targetAudienceCodes = normalizeCouponAudienceCodes(coupon.targetAudienceCodes);
+      if (!targetAudienceCodes.length) return;
+      const message = formatCouponMessage(coupon);
+      queueItem = {
+        id: createId('queue'),
+        kind: 'coupon',
+        couponId: coupon.id,
+        offerId: null,
+        offerTitle: coupon.title,
+        store: coupon.store || 'Magalu',
+        targetAudienceCodes,
+        couponSnapshot: { ...coupon, targetAudienceCodes },
+        message,
+        messageSource: 'coupon',
+        aiStatus: 'not-applicable',
+        image: coupon.image || '',
+        status: 'pending',
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+        sentAt: null,
+        error: null,
+        force: Boolean(req.body?.force)
+      };
+      data.queue.push(queueItem);
+    });
+    if (!queueItem) return res.status(400).json({ error: 'Cupom não encontrado, inativo ou sem grupos selecionados.' });
+    await addLog(`${queueItem.force ? 'Cupom priorizado' : 'Cupom enviado para a fila'}: ${queueItem.offerTitle} → ${queueItem.targetAudienceCodes.join(', ')}`, queueItem.force ? 'success' : 'info');
+    return res.status(201).json(queueItem);
   }
 );
 
@@ -2574,6 +2776,53 @@ app.get(
       }
 
       try {
+        if (item.kind === 'coupon') {
+          const coupon = item.couponSnapshot || {};
+          const selectedCodes = normalizeCouponAudienceCodes(
+            item.targetAudienceCodes || coupon.targetAudienceCodes
+          );
+          const normalizedRoundAudienceCode = normalizeAudienceCode(roundAudienceCode);
+
+          if (
+            normalizedRoundAudienceCode &&
+            !selectedCodes.includes(normalizedRoundAudienceCode)
+          ) {
+            return { skippedForAudience: true };
+          }
+
+          const deliveryAudienceCodes = normalizedRoundAudienceCode
+            ? [normalizedRoundAudienceCode]
+            : selectedCodes;
+
+          if (!deliveryAudienceCodes.length || !coupon.title || !coupon.link) {
+            throw new Error('Cupom sem título, link ou grupo selecionado.');
+          }
+
+          const message = String(item.message || formatCouponMessage(coupon)).trim();
+          await updateStore((data) => {
+            const saved = data.queue.find(
+              (entry) => entry.id === item.id && entry.status === 'pending'
+            );
+            if (!saved) return;
+            saved.message = message;
+            saved.messageSource = 'coupon';
+            saved.aiStatus = 'not-applicable';
+            saved.targetAudienceCodes = [...deliveryAudienceCodes];
+            saved.roundAudienceCode = normalizedRoundAudienceCode || null;
+            delete saved.aiRetryAt;
+            delete saved.aiError;
+          });
+
+          return {
+            ...item,
+            message,
+            messageSource: 'coupon',
+            aiStatus: 'not-applicable',
+            targetAudienceCodes: deliveryAudienceCodes,
+            roundAudienceCode: normalizedRoundAudienceCode || null
+          };
+        }
+
         const offer =
           offers.find(
             (entry) =>
@@ -3512,13 +3761,8 @@ app.get(
              * Não reutiliza produto
              * já usado nesta rodada.
              */
-            if (
-              round
-                .usedOfferIds
-                .includes(
-                  item.offerId
-                )
-            ) {
+            const itemRoundId = item.kind === 'coupon' ? item.id : item.offerId;
+            if (itemRoundId && round.usedOfferIds.includes(itemRoundId)) {
               return false;
             }
 
@@ -4221,7 +4465,7 @@ app.post(
            * Produto não poderá ser
            * usado novamente nesta rodada.
            */
-          if (item.offerId) {
+          if (item.offerId || item.kind === 'coupon') {
             round.usedOfferIds = [
               ...new Set([
                 ...(
@@ -4230,7 +4474,7 @@ app.post(
                   []
                 ),
 
-                item.offerId
+                item.kind === 'coupon' ? item.id : item.offerId
               ])
             ];
           }
