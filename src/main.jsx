@@ -77,6 +77,8 @@ function Logo({ name }) {
 function PublicSite() {
   const [config, setConfig] = useState(fallbackConfig);
   const [offers, setOffers] = useState(fallbackOffers);
+  const [coupons, setCoupons] = useState([]);
+  const [couponCopied, setCouponCopied] = useState('');
   const [query, setQuery] = useState('');
   const [store, setStore] = useState('Todas');
   const [sort, setSort] = useState('discount');
@@ -93,12 +95,14 @@ function PublicSite() {
     Promise.all([
       api('/config/public'),
       api('/offers'),
+      api('/coupons'),
       api('/audiences/public')
     ])
       .then(
         ([
           configData,
           offerData,
+          couponData,
           audienceData
         ]) => {
 
@@ -108,6 +112,7 @@ function PublicSite() {
           });
 
           setOffers(offerData);
+          setCoupons(Array.isArray(couponData) ? couponData : []);
 
           setAudiences(
             Array.isArray(audienceData)
@@ -192,6 +197,7 @@ function PublicSite() {
         <Logo name={config.brandName} />
         <nav>
           <a href="#ofertas">Ofertas</a>
+          {coupons.length > 0 && <a href="#cupons">Cupons</a>}
           <a href="#grupos">Grupos</a>
           <a href="#como-funciona">Como funciona</a>
         </nav>
@@ -236,6 +242,36 @@ function PublicSite() {
         {visibleCount < filtered.length && <div className="load-more"><button className="button subtle" type="button" onClick={() => setVisibleCount((count) => count + 24)}>Mostrar mais ofertas</button><small>Exibindo {visibleOffers.length} de {filtered.length}</small></div>}
         {!filtered.length && <div className="empty"><strong>Nenhuma oferta encontrada</strong><p>Tente remover algum filtro.</p></div>}
       </section>
+
+      {coupons.length > 0 && (
+        <section className="coupons-section" id="cupons">
+          <div className="container">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow dark">ECONOMIA EXTRA</span>
+                <h2>Cupons para usar hoje</h2>
+                <p>Copie o código, confira as regras e ative direto na loja.</p>
+              </div>
+              <span className="results-count"><strong>{coupons.length}</strong> cupons ativos</span>
+            </div>
+            <div className="coupon-grid">
+              {coupons.map((coupon) => (
+                <article className="coupon-card" key={coupon.id}>
+                  <div className="coupon-card-top">
+                    <span className="coupon-store">{coupon.store || 'Magalu'}</span>
+                    {coupon.expiresAt && <small>Até {new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}</small>}
+                  </div>
+                  <h3>{coupon.title}</h3>
+                  {coupon.description && <p>{coupon.description}</p>}
+                  {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
+                  {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
+                  <a className="button primary full" href={coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="how-section" id="como-funciona"><div className="container"><div className="section-heading centered"><div><span className="eyebrow dark">SIMPLES E TRANSPARENTE</span><h2>Economizar ficou mais fácil</h2><p>Nós reunimos as oportunidades. Você decide onde comprar.</p></div></div><div className="how-grid"><article><span>01</span><h3>Buscamos</h3><p>As ofertas são coletadas nas principais plataformas.</p></article><article><span>02</span><h3>Organizamos</h3><p>Você filtra por loja, preço ou desconto sem perder tempo.</p></article><article><span>03</span><h3>Você economiza</h3><p>Abra a oferta na loja oficial e conclua sua compra com segurança.</p></article></div></div></section>
       {audiences.length > 0 && (
@@ -440,12 +476,14 @@ function Login({ onLogin }) {
 }
 
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };
+const defaultCoupon = { title: '', store: 'Magalu', code: '', description: '', discountType: 'percent', discountValue: '', minPurchase: '', expiresAt: '', link: 'https://www.magazinevoce.com.br/magazinepromoshopsite/', image: '', featured: true, active: true, targetAudienceCodes: ['G01'] };
 
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem('promoshop_token'));
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
+  const [couponForm, setCouponForm] = useState(defaultCoupon);
   const [secretForm, setSecretForm] = useState({
     adminUser: 'admin',
     adminPassword: '',
@@ -482,13 +520,14 @@ function AdminApp() {
   const [adminOfferStore, setAdminOfferStore] = useState('Todas');
   const [productSearch, setProductSearch] = useState({
     query: '',
-    stores: ['mercadolivre', 'shopee'],
+    stores: ['mercadolivre', 'shopee', 'magalu'],
     limit: 10
   });
 
   const [productSearchResults, setProductSearchResults] = useState([]);
   const [productSearchErrors, setProductSearchErrors] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   function updateAudience(index, changes) {
     const audiences = Array.isArray(
       data.config.whatsappAudiences
@@ -830,6 +869,40 @@ function AdminApp() {
     setMessage('Acesso administrativo atualizado. Use os novos dados no próximo login.');
   }
   async function addOffer(event) { event.preventDefault(); await authApi('/admin/offers', { method: 'POST', body: JSON.stringify(newOffer) }); setNewOffer(defaultNewOffer); await load(); setMessage('Oferta adicionada.'); }
+  async function addCoupon(event) {
+    event.preventDefault();
+    if (!couponForm.targetAudienceCodes.length) {
+      setMessage('Selecione pelo menos um grupo para o cupom.');
+      return;
+    }
+    try {
+      await authApi('/admin/coupons', { method: 'POST', body: JSON.stringify(couponForm) });
+      setCouponForm(defaultCoupon);
+      await load();
+      setMessage('Cupom cadastrado e visível no site.');
+    } catch (error) {
+      setMessage(`Não foi possível cadastrar o cupom: ${error.message}`);
+    }
+  }
+  async function removeCoupon(id) {
+    if (!window.confirm('Excluir este cupom?')) return;
+    try {
+      await authApi(`/admin/coupons/${id}`, { method: 'DELETE' });
+      await load();
+      setMessage('Cupom excluído.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+  async function queueCoupon(id, force = true) {
+    try {
+      await authApi(`/admin/coupons/${id}/queue`, { method: 'POST', body: JSON.stringify({ force }) });
+      await load();
+      setMessage(force ? 'Cupom priorizado para envio aos grupos selecionados.' : 'Cupom colocado na fila.');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
   function removeOffer(id) {
     const offer = data.offers.find((item) => item.id === id);
     setDialog({ type: 'delete-offer', offer });
@@ -939,6 +1012,7 @@ function AdminApp() {
     setProductSearchLoading(true);
     setProductSearchResults([]);
     setProductSearchErrors([]);
+    setMagaluStoreUrl('');
     setMessage(`Buscando "${query}" nas lojas selecionadas…`);
 
     try {
@@ -965,6 +1039,7 @@ function AdminApp() {
           ? result.errors
           : []
       );
+      setMagaluStoreUrl(result.magaluStoreUrl || '');
 
       if (result.count > 0) {
         setMessage(
@@ -1003,11 +1078,11 @@ function AdminApp() {
   }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', queue: '↗', sources: '⌁', whatsapp: '◉', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', queue: '↗', sources: '⌁', whatsapp: '◉', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
-    { label: 'Operação', items: ['overview', 'offers', 'queue'] },
+    { label: 'Operação', items: ['overview', 'offers', 'coupons', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp'] },
     { label: 'Sistema', items: ['settings', 'security', 'logs'] }
   ];
@@ -1028,7 +1103,7 @@ function AdminApp() {
               <span className="section-step">BUSCA MANUAL</span>
               <h2>Buscar produto nas lojas</h2>
               <p>
-                Digite o produto que deseja encontrar no Mercado Livre ou Shopee.
+                Digite o produto que deseja encontrar nas lojas conectadas. No Magalu, a vitrine pode exigir captcha; nesse caso o painel abre a busca da sua loja para você copiar o link.
               </p>
             </div>
           </div>
@@ -1129,6 +1204,20 @@ function AdminApp() {
 
                 Shopee
               </label>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={productSearch.stores.includes('magalu')}
+                  onChange={(event) => {
+                    const stores = event.target.checked
+                      ? [...new Set([...productSearch.stores, 'magalu'])]
+                      : productSearch.stores.filter((store) => store !== 'magalu');
+                    setProductSearch({ ...productSearch, stores });
+                  }}
+                />
+                Magalu
+              </label>
             </div>
 
             <button
@@ -1147,6 +1236,11 @@ function AdminApp() {
               {productSearchErrors.map((error) => (
                 <p key={error}>{error}</p>
               ))}
+              {magaluStoreUrl && (
+                <a className="button subtle" href={magaluStoreUrl} target="_blank" rel="noreferrer">
+                  Abrir busca da minha loja Magalu ↗
+                </a>
+              )}
             </div>
           )}
 
@@ -1319,6 +1413,7 @@ function AdminApp() {
                 <option>Mercado Livre</option>
                 <option>Shopee</option>
                 <option>AliExpress</option>
+                <option>Magalu</option>
                 <option>Outra</option>
               </select>
             </label>
@@ -1455,6 +1550,22 @@ function AdminApp() {
         </div>
       </div>
     )}
+    {tab === 'coupons' && <div className="coupons-admin-layout">
+      <form className="panel form-grid coupon-form" onSubmit={addCoupon}>
+        <div className="panel-heading"><div><span className="section-step">CADASTRO MANUAL</span><h2>Novo cupom</h2><p>O cupom aparece no site e pode ser disparado apenas para os grupos marcados.</p></div></div>
+        <label>Título<input required value={couponForm.title} onChange={(event) => setCouponForm({ ...couponForm, title: event.target.value })} placeholder="Ex.: 20% OFF em produtos selecionados" /></label>
+        <label>Loja<select value={couponForm.store} onChange={(event) => setCouponForm({ ...couponForm, store: event.target.value })}><option>Magalu</option><option>Mercado Livre</option><option>Shopee</option><option>AliExpress</option><option>Outra</option></select></label>
+        <label>Código do cupom<input value={couponForm.code} onChange={(event) => setCouponForm({ ...couponForm, code: event.target.value.toUpperCase() })} placeholder="PROMO20" /></label>
+        <label>Descrição<textarea rows={3} value={couponForm.description} onChange={(event) => setCouponForm({ ...couponForm, description: event.target.value })} placeholder="Explique rapidamente onde o cupom pode ser usado." /></label>
+        <div className="settings-grid two-columns"><label>Tipo de desconto<select value={couponForm.discountType} onChange={(event) => setCouponForm({ ...couponForm, discountType: event.target.value })}><option value="percent">Percentual</option><option value="fixed">Valor fixo</option><option value="free-shipping">Frete grátis</option></select></label><label>Valor do desconto<input type="number" min="0" step="0.01" value={couponForm.discountValue} onChange={(event) => setCouponForm({ ...couponForm, discountValue: event.target.value })} placeholder="20" /></label><label>Compra mínima<input type="number" min="0" step="0.01" value={couponForm.minPurchase} onChange={(event) => setCouponForm({ ...couponForm, minPurchase: event.target.value })} placeholder="Opcional" /></label><label>Validade<input type="datetime-local" value={couponForm.expiresAt} onChange={(event) => setCouponForm({ ...couponForm, expiresAt: event.target.value })} /></label></div>
+        <label>Link para ativar o cupom<input required type="url" value={couponForm.link} onChange={(event) => setCouponForm({ ...couponForm, link: event.target.value })} placeholder="https://www.magazinevoce.com.br/..." /></label>
+        <label>URL da imagem <small>(opcional)</small><input type="url" value={couponForm.image} onChange={(event) => setCouponForm({ ...couponForm, image: event.target.value })} placeholder="https://..." /></label>
+        <div className="coupon-audience-picker"><strong>Enviar para estes grupos</strong><small>Selecione um ou mais destinos. A comunidade geral continua seguindo a configuração do WhatsApp.</small><div className="group-options">{(data.config.whatsappAudiences || []).filter((audience) => audience.enabled !== false).map((audience) => { const code = String(audience.code || '').toUpperCase(); const checked = couponForm.targetAudienceCodes.includes(code); return <label className="group-option" key={code}><input type="checkbox" checked={checked} onChange={(event) => setCouponForm({ ...couponForm, targetAudienceCodes: event.target.checked ? [...new Set([...couponForm.targetAudienceCodes, code])] : couponForm.targetAudienceCodes.filter((selected) => selected !== code) })} /><span>{code} · {audience.name || 'Grupo sem nome'}</span></label>; })}</div></div>
+        <div className="settings-grid two-columns"><label className="toggle-card"><input type="checkbox" checked={couponForm.featured} onChange={(event) => setCouponForm({ ...couponForm, featured: event.target.checked })} /><span><strong>Destacar no site</strong><small>Mostra o cupom antes dos demais.</small></span></label><label className="toggle-card"><input type="checkbox" checked={couponForm.active} onChange={(event) => setCouponForm({ ...couponForm, active: event.target.checked })} /><span><strong>Ativo</strong><small>Cupons inativos não aparecem no site.</small></span></label></div>
+        <button className="button primary full" type="submit">Cadastrar cupom</button>
+      </form>
+      <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
+    </div>}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div></div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -1787,8 +1898,8 @@ function AdminApp() {
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand magalu">M</div><div><h2>Magalu</h2><p>Cadastro do programa de afiliados.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableMagalu)} onChange={(event) => setData({ ...data, config: { ...data.config, enableMagalu: event.target.checked } })} /><span></span></label></div>
-          <div className="source-note"><strong>Integração preparada</strong><span>As APIs públicas do Magalu são de seller. Use aqui o identificador e a chave fornecidos pelo seu programa de afiliados; o catálogo automático só será ativado quando houver feed oficial.</span></div>
-          <div className="source-card-body"><label>ID do afiliado<input value={secretForm.magaluAffiliateId} onChange={(event) => setSecretForm({ ...secretForm, magaluAffiliateId: event.target.value.trim() })} placeholder={data.secrets?.magaluAffiliateIdConfigured ? 'ID configurado' : 'Cole o ID do programa'} autoComplete="off" /></label><label>Chave ou token <small>(se fornecido)</small><input type="password" value={secretForm.magaluApiKey} onChange={(event) => setSecretForm({ ...secretForm, magaluApiKey: event.target.value })} placeholder={data.secrets?.magaluApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave/token'} autoComplete="new-password" /></label><small>O cadastro fica criptografado. Não use a chave de seller em um campo de afiliado.</small></div>
+          <div className="source-note"><strong>Busca segura pela sua vitrine</strong><span>O Magalu pode apresentar captcha para automações. Use o botão Magalu na busca manual para abrir sua loja, copie o link do produto e cadastre-o no formulário. Não simulamos uma API de seller.</span></div>
+          <div className="source-card-body"><label>Endereço da loja (slug)<input value={data.config.magaluStoreSlug ?? 'magazinepromoshopsite'} onChange={(event) => setData({ ...data, config: { ...data.config, magaluStoreSlug: event.target.value.trim() } })} placeholder="magazinepromoshopsite" /><small>É a parte final de magazinevoce.com.br/magazinepromoshopsite/.</small></label><label>ID do afiliado<input value={secretForm.magaluAffiliateId} onChange={(event) => setSecretForm({ ...secretForm, magaluAffiliateId: event.target.value.trim() })} placeholder={data.secrets?.magaluAffiliateIdConfigured ? 'ID configurado' : 'Cole o ID do programa'} autoComplete="off" /></label><label>Chave ou token <small>(se fornecido)</small><input type="password" value={secretForm.magaluApiKey} onChange={(event) => setSecretForm({ ...secretForm, magaluApiKey: event.target.value })} placeholder={data.secrets?.magaluApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave/token'} autoComplete="new-password" /></label><small>O cadastro fica criptografado. Não use a chave de seller em um campo de afiliado.</small></div>
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand netshoes">N</div><div><h2>Netshoes</h2><p>Parceiro Netshoes / rede de afiliados.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableNetshoes)} onChange={(event) => setData({ ...data, config: { ...data.config, enableNetshoes: event.target.checked } })} /><span></span></label></div>

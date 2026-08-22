@@ -121,10 +121,16 @@ const initialData = {
     enableMagalu: false,
     enableNetshoes: false,
 
+    // Slug público da vitrine Magazine Você. A busca automática do Magalu
+    // pode ser protegida por captcha; este endereço é usado para abrir a
+    // busca da sua própria loja no painel.
+    magaluStoreSlug: 'magazinepromoshopsite',
+
     autoQueue: false,
     messageTemplate: '🔥 *{title}*\n\n✨ {benefit}\n\nDe: ~{originalPrice}~\nPor: *{price}* 🔥\n💸 {discount}% OFF\n\n{shipping}\n\n👉 Confira a oferta:\n🛒 {link}\n\n⚠️ Preço, promoção e estoque podem mudar a qualquer momento.'
   },
   offers: [],
+  coupons: [],
   queue: [],
   logs: [],
   meta: { lastCollectionAt: null, whatsapp: { status: 'offline', lastSeenAt: null, qrDataUrl: null, pairingCode: null, groups: [], message: 'Publicador ainda não iniciado.' } }
@@ -182,6 +188,7 @@ export async function readStore() {
   }
   data.meta = { ...initialData.meta, ...(data.meta || {}), whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) } };
   data.offers ||= [];
+  data.coupons ||= [];
   data.queue ||= [];
   data.logs ||= [];
   return data;
