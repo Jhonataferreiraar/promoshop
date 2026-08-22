@@ -104,6 +104,13 @@ const assistantWindowMs =
 
 const assistantMaxAttempts = 10;
 
+const contactAttempts = new Map();
+
+const contactWindowMs =
+  15 * 60 * 1000;
+
+const contactMaxAttempts = 5;
+
 app.set('trust proxy', 1);
 
 /*
@@ -214,6 +221,34 @@ function checkAssistantLimit(ip) {
         assistantMaxAttempts -
         current.count
       )
+  };
+}
+
+function checkContactLimit(ip) {
+  const now = Date.now();
+  const current = contactAttempts.get(ip) || {
+    count: 0,
+    resetAt: now + contactWindowMs
+  };
+
+  if (current.resetAt <= now) {
+    current.count = 0;
+    current.resetAt = now + contactWindowMs;
+  }
+
+  if (current.count >= contactMaxAttempts) {
+    return {
+      allowed: false,
+      retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000))
+    };
+  }
+
+  current.count += 1;
+  contactAttempts.set(ip, current);
+
+  return {
+    allowed: true,
+    remaining: Math.max(0, contactMaxAttempts - current.count)
   };
 }
 
@@ -1102,6 +1137,95 @@ app.get(
         .slice(0, 100)
         .map(({ targetAudienceCodes, ...coupon }) => coupon)
     );
+  }
+);
+
+app.post(
+  '/api/contact',
+  async (req, res) => {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const limit = checkContactLimit(clientIp);
+
+    if (!limit.allowed) {
+      res.set('Retry-After', String(limit.retryAfter));
+      return res.status(429).json({
+        error: 'Muitas mensagens enviadas. Aguarde alguns minutos e tente novamente.'
+      });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+    const message = String(body.message || '').trim();
+    const honeypot = String(body.website || '').trim();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (honeypot) return res.json({ ok: true });
+
+    if (name.length < 2 || name.length > 80) {
+      return res.status(400).json({ error: 'Informe um nome entre 2 e 80 caracteres.' });
+    }
+
+    if (!emailPattern.test(email) || email.length > 200) {
+      return res.status(400).json({ error: 'Informe um e-mail válido.' });
+    }
+
+    if (message.length < 10 || message.length > 4000) {
+      return res.status(400).json({ error: 'Escreva uma mensagem entre 10 e 4.000 caracteres.' });
+    }
+
+    const apiKey = String(process.env.BREVO_API_KEY || '').trim();
+    const { config } = await readStore();
+    const recipient = String(process.env.CONTACT_EMAIL || config.contactEmail || 'contatopromoshop.site@gmail.com').trim();
+    const senderEmail = String(process.env.BREVO_SENDER_EMAIL || recipient).trim();
+    const senderName = String(process.env.BREVO_SENDER_NAME || 'PromoShop').trim();
+
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'O formulário ainda não está conectado ao Brevo. Configure a chave do Brevo no Render ou use o e-mail exibido abaixo.'
+      });
+    }
+
+    try {
+      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: {
+            name: senderName,
+            email: senderEmail
+          },
+          to: [{ email: recipient, name: 'PromoShop' }],
+          replyTo: {
+            email,
+            name
+          },
+          subject: `Contato pelo site — ${name}`,
+          textContent: `Nome: ${name}\nE-mail: ${email}\n\nMensagem:\n${message}`
+        })
+      });
+
+      if (!brevoResponse.ok) {
+        const details = (await brevoResponse.text()).slice(0, 300);
+        console.error(`Brevo recusou o formulário (${brevoResponse.status}): ${details}`);
+        return res.status(502).json({
+          error: 'O serviço de e-mail não aceitou a mensagem. Tente novamente ou use o e-mail exibido na página.'
+        });
+      }
+
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('Falha ao enviar formulário pelo Brevo:', error.message);
+      return res.status(502).json({
+        error: 'Não foi possível enviar agora. Tente novamente em alguns instantes.'
+      });
+    }
   }
 );
 

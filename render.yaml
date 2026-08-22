@@ -13,6 +13,15 @@ services:
         value: https://promoshop.onrender.com
       - key: ADMIN_PASSWORD
         sync: false
+      # Formulário de contato enviado pelo Brevo.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        value: contatopromoshop.site@gmail.com
+      - key: BREVO_SENDER_NAME
+        value: PromoShop
+      - key: CONTACT_EMAIL
+        value: contatopromoshop.site@gmail.com
       - key: DATA_DIR
         value: /var/data
       - key: CHROME_PATH
