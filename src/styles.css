@@ -4242,3 +4242,32 @@ button {
   .coupon-admin-row { align-items: flex-start; flex-direction: column; }
   .coupon-row-actions { justify-content: flex-start; }
 }
+
+/* Navegação e âncoras: mantém títulos visíveis sob o cabeçalho fixo. */
+.site-shell #ofertas,
+.site-shell #cupons,
+.site-shell #grupos,
+.site-shell #como-funciona {
+  scroll-margin-top: 88px;
+}
+
+@media (max-width: 640px) {
+  .site-shell .topbar nav {
+    display: flex;
+    min-width: 0;
+    max-width: calc(100vw - 150px);
+    gap: 13px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .site-shell .topbar nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-shell .topbar nav a {
+    flex: 0 0 auto;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
