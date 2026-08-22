@@ -4329,3 +4329,38 @@ button {
     white-space: nowrap;
   }
 }
+
+/* Dashboard de acessos anônimos */
+.analytics-layout { display: grid; gap: 20px; }
+.analytics-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.analytics-panel { min-width: 0; }
+.analytics-chart { display: flex; align-items: flex-end; gap: 10px; min-height: 250px; padding: 24px 16px 14px; border: 1px solid #eaecf0; border-radius: 16px; background: linear-gradient(180deg, #f8fbff 0%, #fff 100%); overflow-x: auto; }
+.analytics-bar-group { display: flex; flex: 1 1 0; align-items: center; justify-content: flex-end; gap: 7px; min-width: 34px; height: 210px; flex-direction: column; }
+.analytics-bar-group strong { color: #667085; font-size: 11px; line-height: 1; }
+.analytics-bar { width: min(34px, 72%); min-height: 8px; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, var(--primary), #7aa7ff); box-shadow: 0 7px 14px color-mix(in srgb, var(--primary) 18%, transparent); transition: height .25s ease; }
+.analytics-bar-group small { color: #667085; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.analytics-note { display: flex; align-items: flex-start; gap: 14px; }
+.analytics-note-icon { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: var(--primary); background: #eef4ff; font-size: 22px; }
+.analytics-note h2 { margin: 0 0 7px; font-size: 17px; }
+.analytics-note p { margin: 0 0 8px; color: #475467; line-height: 1.55; }
+.analytics-note small { color: #667085; line-height: 1.45; }
+.queue-clear-failed { min-height: 36px; padding: 0 13px; border: 1px solid #fecdca; border-radius: 9px; color: #b42318; background: #fff5f4; font-size: 12px; font-weight: 800; cursor: pointer; }
+.queue-clear-failed:hover { border-color: #fda29b; background: #fee4e2; }
+
+@media (max-width: 900px) {
+  .analytics-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .analytics-chart { gap: 7px; min-height: 220px; padding-inline: 10px; }
+  .analytics-bar-group { height: 180px; min-width: 29px; }
+  .analytics-bar-group strong { font-size: 10px; }
+  .analytics-note { gap: 10px; }
+  .analytics-note-icon { flex-basis: 32px; width: 32px; height: 32px; }
+}
+
+@media (max-width: 400px) {
+  .analytics-stats { grid-template-columns: 1fr; }
+  .analytics-chart { gap: 5px; }
+  .analytics-bar-group { min-width: 25px; }
+}

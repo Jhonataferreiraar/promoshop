@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -65,6 +65,22 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function anonymousStorageId(storage, key) {
+  try {
+    const current = storage.getItem(key);
+    if (current) return current;
+
+    const generated = window.crypto?.randomUUID
+      ? window.crypto.randomUUID().replace(/-/g, '')
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+
+    storage.setItem(key, generated);
+    return generated;
+  } catch {
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  }
+}
+
 function discount(offer) {
   if (!offer.originalPrice || offer.originalPrice <= offer.price) return 0;
   return Math.round((1 - offer.price / offer.originalPrice) * 100);
@@ -90,6 +106,7 @@ function PublicSite() {
   const [assistantReply, setAssistantReply] = useState('');
   const [assistantAudiences, setAssistantAudiences] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const analyticsSentRef = useRef(false);
 
   useEffect(() => {
     Promise.all([
@@ -123,8 +140,55 @@ function PublicSite() {
       )
       .catch(() => { })
       .finally(() =>
-        setLoading(false)
-      );
+      setLoading(false)
+    );
+  }, []);
+
+  useEffect(() => {
+    const refreshCoupons = () => {
+      if (document.visibilityState === 'hidden') return;
+
+      api('/coupons', { cache: 'no-store' })
+        .then((couponData) => {
+          setCoupons(Array.isArray(couponData) ? couponData : []);
+        })
+        .catch(() => { });
+    };
+
+    const interval = window.setInterval(refreshCoupons, 15000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshCoupons();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (analyticsSentRef.current) return;
+    analyticsSentRef.current = true;
+
+    try {
+      const lastSentAt = Number(window.sessionStorage.getItem('promoshop_analytics_pageview') || 0);
+      if (lastSentAt && Date.now() - lastSentAt < 10000) return;
+      window.sessionStorage.setItem('promoshop_analytics_pageview', String(Date.now()));
+    } catch { }
+
+    const visitorId = anonymousStorageId(window.localStorage, 'promoshop_analytics_visitor');
+    const sessionId = anonymousStorageId(window.sessionStorage, 'promoshop_analytics_session');
+
+    api('/analytics/visit', {
+      method: 'POST',
+      cache: 'no-store',
+      body: JSON.stringify({
+        visitorId,
+        sessionId,
+        path: window.location.pathname
+      })
+    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -481,7 +545,7 @@ const defaultCoupon = { title: '', store: 'Magalu', code: '', description: '', d
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem('promoshop_token'));
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], meta: { whatsapp: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [couponForm, setCouponForm] = useState(defaultCoupon);
   const [secretForm, setSecretForm] = useState({
@@ -924,6 +988,18 @@ function AdminApp() {
   async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await load(); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
   async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await load(); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
   async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await load(); setMessage('Item removido da fila.'); }
+  async function clearFailedQueue() {
+    const failedCount = data.queue.filter((item) => item.status === 'failed').length;
+    if (!failedCount || !window.confirm(`Excluir ${failedCount} publicação(ões) com falha da fila?`)) return;
+
+    try {
+      const result = await authApi('/admin/queue/failed', { method: 'DELETE' });
+      await load();
+      setMessage(`${result.removed || failedCount} publicação(ões) com falha removida(s).`);
+    } catch (error) {
+      setMessage(`Não foi possível excluir as falhas: ${error.message}`);
+    }
+  }
   function activateOffer(offer) {
     setDialog({
       type: 'affiliate-link',
@@ -1099,13 +1175,13 @@ function AdminApp() {
   }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', queue: '↗', sources: '⌁', whatsapp: '◉', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja o alcance do site com métricas anônimas e consistentes.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
     { label: 'Operação', items: ['overview', 'offers', 'coupons', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp'] },
-    { label: 'Sistema', items: ['settings', 'security', 'logs'] }
+    { label: 'Sistema', items: ['analytics', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
   const statusLabels = { offline: 'Desconectado', starting: 'Iniciando', qr: 'Aguardando leitura do QR Code', pairing: 'Código gerado', authenticated: 'Autenticado', connected: 'Conectado', error: 'Erro' };
@@ -1588,7 +1664,8 @@ function AdminApp() {
       </form>
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
-    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div></div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
+    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
+    {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
         <div className="section-title"><div><span className="section-step">REGRAS GERAIS</span><h2>Como selecionar as ofertas</h2><p>Estas regras valem para todas as plataformas ativas.</p></div></div>
@@ -2231,6 +2308,31 @@ function AdminApp() {
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
+}
+
+function AnalyticsDashboard({ analytics = {} }) {
+  const today = analytics.today || {};
+  const days = Array.isArray(analytics.last14Days) ? analytics.last14Days : [];
+  const maxPageViews = Math.max(1, ...days.map((day) => Number(day.pageViews || 0)));
+
+  return <div className="analytics-layout">
+    <div className="stats analytics-stats">
+      <div><span><i>◌</i>Visitantes únicos</span><strong>{Number(analytics.totalVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores anônimos identificados</small></div>
+      <div><span><i>⌁</i>Acessos hoje</span><strong>{Number(today.pageViews || 0).toLocaleString('pt-BR')}</strong><small>Visualizações de páginas</small></div>
+      <div><span><i>↗</i>Visitantes hoje</span><strong>{Number(today.uniqueVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores únicos no dia</small></div>
+      <div><span><i>◷</i>Sessões</span><strong>{Number(analytics.totalSessions || 0).toLocaleString('pt-BR')}</strong><small>Períodos de até 30 minutos</small></div>
+    </div>
+
+    <section className="panel analytics-panel">
+      <div className="panel-heading"><div><span className="section-step">ALCANCE DO SITE</span><h2>Visualizações nos últimos dias</h2><p>Uma pessoa que retorna depois de 30 minutos inicia uma nova sessão.</p></div></div>
+      {days.length ? <div className="analytics-chart" aria-label="Gráfico de visualizações por dia">{days.map((day) => {
+        const height = Math.max(8, Math.round((Number(day.pageViews || 0) / maxPageViews) * 100));
+        return <div className="analytics-bar-group" key={day.date} title={`${day.date}: ${day.pageViews || 0} visualizações e ${day.uniqueVisitors || 0} visitantes`}><strong>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</strong><div className="analytics-bar" style={{ height: `${height}%` }}></div><small>{String(day.date || '').slice(8, 10)}/{String(day.date || '').slice(5, 7)}</small></div>;
+      })}</div> : <div className="empty"><strong>Ainda não há acessos registrados</strong><p>As métricas aparecerão assim que alguém visitar o site público.</p></div>}
+    </section>
+
+    <section className="panel analytics-note"><div className="analytics-note-icon">◎</div><div><h2>Como a contagem funciona</h2><p>O site cria um identificador anônimo no navegador para reconhecer retornos sem coletar nome, e-mail, endereço IP ou impressão digital do dispositivo. Se a pessoa limpar os dados do navegador ou trocar de dispositivo, ela será contada como um novo visitante.</p><small>Por isso, o painel mostra visitantes únicos por navegador — é a forma mais precisa possível sem login obrigatório e sem armazenar dados pessoais.</small></div></section>
+  </div>;
 }
 
 function QueueTable({ queue, onRemove, onForce, onRetry }) {

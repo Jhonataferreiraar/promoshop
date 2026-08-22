@@ -217,6 +217,66 @@ function checkAssistantLimit(ip) {
   };
 }
 
+const analyticsSessionWindowMs = 30 * 60 * 1000;
+const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
+const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
+
+function normalizeAnalyticsId(value) {
+  const id = String(value || '').trim();
+  return /^[a-zA-Z0-9_-]{16,128}$/.test(id) ? id : '';
+}
+
+function analyticsDay(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function analyticsDaySummary(day) {
+  const visitors = day?.visitors && typeof day.visitors === 'object'
+    ? day.visitors
+    : {};
+
+  return {
+    date: String(day?.date || ''),
+    pageViews: Number(day?.pageViews || 0),
+    sessions: Number(day?.sessions || 0),
+    uniqueVisitors: Object.keys(visitors).length
+  };
+}
+
+function summarizeAnalytics(analytics = {}) {
+  const visitors = analytics.visitors && typeof analytics.visitors === 'object'
+    ? analytics.visitors
+    : {};
+  const daily = analytics.daily && typeof analytics.daily === 'object'
+    ? analytics.daily
+    : {};
+  const todayKey = analyticsDay();
+  const dates = Object.keys(daily).sort();
+  const recentDates = dates.slice(-14);
+
+  return {
+    totalPageViews: Number(analytics.totalPageViews || 0),
+    totalSessions: Number(analytics.totalSessions || 0),
+    totalVisitors: Number(analytics.totalVisitors || Object.keys(visitors).length),
+    today: analyticsDaySummary({
+      ...(daily[todayKey] || {}),
+      date: todayKey
+    }),
+    last14Days: recentDates.map((date) => analyticsDaySummary({
+      ...(daily[date] || {}),
+      date
+    }))
+  };
+}
+
 function whatsappAutoStartEnabled(
   config
 ) {
@@ -1026,6 +1086,8 @@ app.get(
     const { coupons } = await readStore();
     const now = Date.now();
 
+    res.set('Cache-Control', 'no-store');
+
     res.json(
       (Array.isArray(coupons) ? coupons : [])
         .filter((coupon) => {
@@ -1038,6 +1100,78 @@ app.get(
         .slice(0, 100)
         .map(({ targetAudienceCodes, ...coupon }) => coupon)
     );
+  }
+);
+
+app.post(
+  '/api/analytics/visit',
+  async (req, res) => {
+    const visitorId = normalizeAnalyticsId(req.body?.visitorId);
+    const sessionId = normalizeAnalyticsId(req.body?.sessionId);
+
+    if (!visitorId || !sessionId) {
+      return res.status(400).json({
+        error: 'Identificador anônimo inválido.'
+      });
+    }
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const dayKey = analyticsDay(now);
+    let isNewVisitor = false;
+    let isNewSession = false;
+
+    await updateStore((data) => {
+      data.analytics ||= {
+        totalPageViews: 0,
+        totalSessions: 0,
+        totalVisitors: 0,
+        visitors: {},
+        daily: {}
+      };
+      data.analytics.visitors ||= {};
+      data.analytics.daily ||= {};
+
+      const previous = data.analytics.visitors[visitorId];
+      isNewVisitor = !previous;
+      isNewSession = isNewVisitor || !previous.lastSessionAt || nowMs - new Date(previous.lastSessionAt).getTime() >= analyticsSessionWindowMs;
+
+      data.analytics.visitors[visitorId] = {
+        firstSeenAt: previous?.firstSeenAt || now.toISOString(),
+        lastSeenAt: now.toISOString(),
+        lastSessionAt: isNewSession ? now.toISOString() : previous.lastSessionAt,
+        pageViews: Number(previous?.pageViews || 0) + 1
+      };
+
+      data.analytics.totalPageViews = Number(data.analytics.totalPageViews || 0) + 1;
+      if (isNewVisitor) data.analytics.totalVisitors = Number(data.analytics.totalVisitors || 0) + 1;
+      if (isNewSession) data.analytics.totalSessions = Number(data.analytics.totalSessions || 0) + 1;
+
+      const daily = data.analytics.daily[dayKey] ||= {
+        pageViews: 0,
+        sessions: 0,
+        visitors: {}
+      };
+      daily.pageViews = Number(daily.pageViews || 0) + 1;
+      daily.sessions = Number(daily.sessions || 0) + (isNewSession ? 1 : 0);
+      daily.visitors ||= {};
+      daily.visitors[visitorId] = true;
+
+      for (const [id, visitor] of Object.entries(data.analytics.visitors)) {
+        if (!visitor?.lastSeenAt || nowMs - new Date(visitor.lastSeenAt).getTime() > analyticsVisitorRetentionMs) {
+          delete data.analytics.visitors[id];
+        }
+      }
+
+      const dailyCutoff = nowMs - analyticsDailyRetentionMs;
+      for (const date of Object.keys(data.analytics.daily)) {
+        const dateMs = new Date(`${date}T12:00:00-03:00`).getTime();
+        if (!Number.isFinite(dateMs) || dateMs < dailyCutoff) delete data.analytics.daily[date];
+      }
+    });
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true });
   }
 );
 
@@ -1324,6 +1458,11 @@ app.get(
 
     res.json({
       ...data,
+
+      analytics:
+        summarizeAnalytics(
+          data.analytics
+        ),
 
       secrets:
         secretStatus(
@@ -2387,6 +2526,29 @@ app.post(
  * FILA - ADMIN
  * ==========================================================
  */
+
+app.delete(
+  '/api/admin/queue/failed',
+  requireAdmin,
+  async (_req, res) => {
+    let removed = 0;
+
+    await updateStore((data) => {
+      const before = data.queue.length;
+      data.queue = data.queue.filter((item) => item.status !== 'failed');
+      removed = before - data.queue.length;
+    });
+
+    await addLog(
+      removed > 0
+        ? `${removed} publicação(ões) com falha removida(s) da fila.`
+        : 'Nenhuma publicação com falha para remover da fila.',
+      removed > 0 ? 'success' : 'info'
+    );
+
+    res.json({ ok: true, removed });
+  }
+);
 
 app.delete(
   '/api/admin/queue/:id',

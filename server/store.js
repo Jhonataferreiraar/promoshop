@@ -133,6 +133,13 @@ const initialData = {
   coupons: [],
   queue: [],
   logs: [],
+  analytics: {
+    totalPageViews: 0,
+    totalSessions: 0,
+    totalVisitors: 0,
+    visitors: {},
+    daily: {}
+  },
   meta: { lastCollectionAt: null, whatsapp: { status: 'offline', lastSeenAt: null, qrDataUrl: null, pairingCode: null, groups: [], message: 'Publicador ainda não iniciado.' } }
 };
 
@@ -191,6 +198,18 @@ export async function readStore() {
   data.coupons ||= [];
   data.queue ||= [];
   data.logs ||= [];
+  data.analytics = {
+    ...initialData.analytics,
+    ...(data.analytics || {}),
+    visitors: {
+      ...initialData.analytics.visitors,
+      ...(data.analytics?.visitors || {})
+    },
+    daily: {
+      ...initialData.analytics.daily,
+      ...(data.analytics?.daily || {})
+    }
+  };
   return data;
 }
 
