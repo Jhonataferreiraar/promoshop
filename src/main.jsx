@@ -603,9 +603,10 @@ const publicInfoPages = {
     intro: 'Esta página explica, em linguagem simples, quais informações o PromoShop utiliza para funcionar e melhorar o serviço.',
     sections: [
       { title: '1. Dados de navegação', paragraphs: ['Para medir o alcance do site, criamos um identificador anônimo no navegador. Ele não contém seu nome, e-mail, telefone ou endereço e é usado apenas para contar visitantes, visualizações e sessões.', 'O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas. Se você limpar os dados do navegador ou trocar de dispositivo, poderá ser contado como um novo visitante.'] },
-      { title: '2. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
-      { title: '3. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. As métricas anônimas são mantidas para gerar relatórios de alcance e são resumidas no painel administrativo. Não vendemos dados pessoais.'] },
-      { title: '4. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
+      { title: '2. Formulário de contato', paragraphs: ['Quando você envia uma mensagem pelo formulário, recebemos seu nome, e-mail e o conteúdo da mensagem para responder à solicitação. Esses dados são enviados ao Brevo, nosso serviço de entrega de e-mails, e podem permanecer na caixa de entrada e no histórico da conta pelo tempo necessário para atender e organizar o contato.', 'Não usamos esses dados para vender listas ou enviar publicidade sem uma base adequada. Você pode solicitar informações sobre o uso dos seus dados pelo canal de contato indicado nesta página.'] },
+      { title: '3. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp, o Brevo ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
+      { title: '4. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. As métricas anônimas são mantidas para gerar relatórios de alcance e são resumidas no painel administrativo. Não vendemos dados pessoais.'] },
+      { title: '5. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
     ]
   }
 };
