@@ -698,12 +698,34 @@ function Login({ onLogin }) {
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };
 const defaultCoupon = { title: '', store: 'Magalu', code: '', description: '', discountType: 'percent', discountValue: '', minPurchase: '', expiresAt: '', link: 'https://www.magazinevoce.com.br/magazinepromoshopsite/', image: '', featured: true, active: true, targetAudienceCodes: ['G01'] };
 
+function couponDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function couponFormFromCoupon(coupon) {
+  return {
+    ...defaultCoupon,
+    ...coupon,
+    discountValue: coupon.discountValue ?? '',
+    minPurchase: coupon.minPurchase ?? '',
+    expiresAt: couponDateTimeLocal(coupon.expiresAt),
+    targetAudienceCodes: Array.isArray(coupon.targetAudienceCodes) && coupon.targetAudienceCodes.length
+      ? coupon.targetAudienceCodes.map((code) => String(code).toUpperCase())
+      : []
+  };
+}
+
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem('promoshop_token'));
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [couponForm, setCouponForm] = useState(defaultCoupon);
+  const [editingCouponId, setEditingCouponId] = useState('');
   const [secretForm, setSecretForm] = useState({
     adminUser: 'admin',
     adminPassword: '',
@@ -1105,13 +1127,26 @@ function AdminApp() {
         ...couponForm,
         expiresAt: couponForm.expiresAt ? new Date(couponForm.expiresAt).toISOString() : ''
       };
-      await authApi('/admin/coupons', { method: 'POST', body: JSON.stringify(payload) });
+      const isEditing = Boolean(editingCouponId);
+      await authApi(isEditing ? `/admin/coupons/${editingCouponId}` : '/admin/coupons', { method: isEditing ? 'PUT' : 'POST', body: JSON.stringify(payload) });
       setCouponForm(defaultCoupon);
+      setEditingCouponId('');
       await load();
-      setMessage('Cupom cadastrado e visível no site.');
+      setMessage(isEditing ? 'Cupom atualizado e visível no site.' : 'Cupom cadastrado e visível no site.');
     } catch (error) {
-      setMessage(`Não foi possível cadastrar o cupom: ${error.message}`);
+      setMessage(`Não foi possível ${editingCouponId ? 'atualizar' : 'cadastrar'} o cupom: ${error.message}`);
     }
+  }
+  function editCoupon(coupon) {
+    setEditingCouponId(coupon.id);
+    setCouponForm(couponFormFromCoupon(coupon));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setMessage('Cupom carregado para edição.');
+  }
+  function cancelCouponEdit() {
+    setEditingCouponId('');
+    setCouponForm(defaultCoupon);
+    setMessage('Edição cancelada.');
   }
   async function removeCoupon(id) {
     if (!window.confirm('Excluir este cupom?')) return;
@@ -1847,7 +1882,7 @@ function AdminApp() {
     )}
     {tab === 'coupons' && <div className="coupons-admin-layout">
       <form className="panel form-grid coupon-form" onSubmit={addCoupon}>
-        <div className="panel-heading"><div><span className="section-step">CADASTRO MANUAL</span><h2>Novo cupom</h2><p>O cupom aparece no site e pode ser disparado apenas para os grupos marcados.</p></div></div>
+        <div className="panel-heading"><div><span className="section-step">{editingCouponId ? 'EDIÇÃO DE CUPOM' : 'CADASTRO MANUAL'}</span><h2>{editingCouponId ? 'Editar cupom' : 'Novo cupom'}</h2><p>O cupom aparece no site e pode ser disparado apenas para os grupos marcados.</p></div></div>
         <label>Título<input required value={couponForm.title} onChange={(event) => setCouponForm({ ...couponForm, title: event.target.value })} placeholder="Ex.: 20% OFF em produtos selecionados" /></label>
         <label>Loja<select value={couponForm.store} onChange={(event) => setCouponForm({ ...couponForm, store: event.target.value })}><option>Magalu</option><option>Mercado Livre</option><option>Shopee</option><option>AliExpress</option><option>Outra</option></select></label>
         <label>Código do cupom<input value={couponForm.code} onChange={(event) => setCouponForm({ ...couponForm, code: event.target.value.toUpperCase() })} placeholder="PROMO20" /></label>
@@ -1857,9 +1892,9 @@ function AdminApp() {
         <label>URL da imagem <small>(opcional)</small><input type="url" value={couponForm.image} onChange={(event) => setCouponForm({ ...couponForm, image: event.target.value })} placeholder="https://..." /></label>
         <div className="coupon-audience-picker"><strong>Enviar para estes grupos</strong><small>Selecione um ou mais destinos. O nome do grupo aparece em destaque; o código serve apenas para identificação interna.</small><div className="group-options">{configuredAudiences.filter((audience) => audience.enabled !== false).map((audience) => { const code = String(audience.code || '').toUpperCase(); const checked = couponForm.targetAudienceCodes.includes(code); return <label className="group-option" key={code}><input type="checkbox" checked={checked} onChange={(event) => setCouponForm({ ...couponForm, targetAudienceCodes: event.target.checked ? [...new Set([...couponForm.targetAudienceCodes, code])] : couponForm.targetAudienceCodes.filter((selected) => selected !== code) })} /><span className="coupon-group-label"><strong>{audience.name || 'Grupo sem nome'}</strong><small>{code}</small></span></label>; })}</div></div>
         <div className="settings-grid two-columns"><label className="toggle-card"><input type="checkbox" checked={couponForm.featured} onChange={(event) => setCouponForm({ ...couponForm, featured: event.target.checked })} /><span><strong>Destacar no site</strong><small>Mostra o cupom antes dos demais.</small></span></label><label className="toggle-card"><input type="checkbox" checked={couponForm.active} onChange={(event) => setCouponForm({ ...couponForm, active: event.target.checked })} /><span><strong>Ativo</strong><small>Cupons inativos não aparecem no site.</small></span></label></div>
-        <button className="button primary full" type="submit">Cadastrar cupom</button>
+        <div className="coupon-form-actions"><button className="button primary full" type="submit">{editingCouponId ? 'Salvar alterações' : 'Cadastrar cupom'}</button>{editingCouponId && <button className="coupon-cancel-button" type="button" onClick={cancelCouponEdit}>Cancelar edição</button>}</div>
       </form>
-      <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
+      <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}

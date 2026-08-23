@@ -2854,40 +2854,40 @@ app.post(
  * ==========================================================
  */
 
-app.post(
-  '/api/admin/coupons',
-  requireAdmin,
-  async (req, res) => {
-    const title = String(req.body?.title || '').trim().slice(0, 180);
-    const link = String(req.body?.link || '').trim().slice(0, 1000);
-    const description = String(req.body?.description || '').trim().slice(0, 500);
-    const code = String(req.body?.code || '').trim().slice(0, 80);
-    const store = String(req.body?.store || 'Magalu').trim().slice(0, 60) || 'Magalu';
-    const discountType = ['percent', 'fixed', 'free-shipping'].includes(req.body?.discountType)
-      ? req.body.discountType
-      : 'percent';
-    const rawDiscountValue = Number(req.body?.discountValue || 0);
-    const rawMinPurchase = Number(req.body?.minPurchase || 0);
-    const discountValue = Number.isFinite(rawDiscountValue) ? Math.max(0, rawDiscountValue) : 0;
-    const minPurchase = Number.isFinite(rawMinPurchase) ? Math.max(0, rawMinPurchase) : 0;
-    const targetAudienceCodes = normalizeCouponAudienceCodes(req.body?.targetAudienceCodes);
-    const expiresAtDate = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+function parseCouponInput(body = {}, existing = {}) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(body || {}, key);
+  const pick = (key, fallback = '') => has(key) ? body[key] : (existing[key] ?? fallback);
+  const title = String(pick('title')).trim().slice(0, 180);
+  const link = String(pick('link')).trim().slice(0, 1000);
+  const description = String(pick('description')).trim().slice(0, 500);
+  const code = String(pick('code')).trim().slice(0, 80);
+  const store = String(pick('store', 'Magalu')).trim().slice(0, 60) || 'Magalu';
+  const discountType = ['percent', 'fixed', 'free-shipping'].includes(pick('discountType'))
+    ? pick('discountType')
+    : 'percent';
+  const rawDiscountValue = Number(pick('discountValue', 0));
+  const rawMinPurchase = Number(pick('minPurchase', 0));
+  const discountValue = Number.isFinite(rawDiscountValue) ? Math.max(0, rawDiscountValue) : 0;
+  const minPurchase = Number.isFinite(rawMinPurchase) ? Math.max(0, rawMinPurchase) : 0;
+  const targetAudienceCodes = normalizeCouponAudienceCodes(pick('targetAudienceCodes', []));
+  const expiresAtRaw = pick('expiresAt', '');
+  const expiresAtDate = expiresAtRaw ? new Date(expiresAtRaw) : null;
 
-    let parsedLink;
-    try { parsedLink = new URL(link); } catch { parsedLink = null; }
+  let parsedLink;
+  try { parsedLink = new URL(link); } catch { parsedLink = null; }
 
-    if (!title || !parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
-      return res.status(400).json({ error: 'Informe o título e um link HTTPS válido para o cupom.' });
-    }
-    if (!targetAudienceCodes.length) {
-      return res.status(400).json({ error: 'Selecione pelo menos um grupo para este cupom.' });
-    }
-    if (expiresAtDate && Number.isNaN(expiresAtDate.getTime())) {
-      return res.status(400).json({ error: 'Informe uma validade correta para o cupom.' });
-    }
+  if (!title || !parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
+    return { error: 'Informe o título e um link HTTPS válido para o cupom.' };
+  }
+  if (!targetAudienceCodes.length) {
+    return { error: 'Selecione pelo menos um grupo para este cupom.' };
+  }
+  if (expiresAtRaw && (!expiresAtDate || Number.isNaN(expiresAtDate.getTime()))) {
+    return { error: 'Informe uma validade correta para o cupom.' };
+  }
 
-    const coupon = {
-      id: createId('coupon'),
+  return {
+    fields: {
       title,
       store,
       code,
@@ -2897,10 +2897,24 @@ app.post(
       minPurchase,
       expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
       link,
-      image: String(req.body?.image || '').trim().slice(0, 1000),
-      featured: req.body?.featured !== false,
-      active: req.body?.active !== false,
-      targetAudienceCodes,
+      image: String(pick('image')).trim().slice(0, 1000),
+      featured: pick('featured', true) !== false,
+      active: pick('active', true) !== false,
+      targetAudienceCodes
+    }
+  };
+}
+
+app.post(
+  '/api/admin/coupons',
+  requireAdmin,
+  async (req, res) => {
+    const parsed = parseCouponInput(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    const coupon = {
+      id: createId('coupon'),
+      ...parsed.fields,
       source: 'manual',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -2914,6 +2928,51 @@ app.post(
 
     await addLog(`Cupom cadastrado: ${coupon.title} → ${coupon.targetAudienceCodes.join(', ')}`, 'success');
     return res.status(201).json(coupon);
+  }
+);
+
+app.put(
+  '/api/admin/coupons/:id',
+  requireAdmin,
+  async (req, res) => {
+    let updated;
+    let validationError = '';
+
+    await updateStore((data) => {
+      data.coupons ||= [];
+      const coupon = data.coupons.find((entry) => entry.id === req.params.id);
+      if (!coupon) return;
+
+      const parsed = parseCouponInput(req.body, coupon);
+      if (parsed.error) {
+        validationError = parsed.error;
+        return;
+      }
+
+      Object.assign(coupon, parsed.fields, { updatedAt: new Date().toISOString() });
+      data.queue ||= [];
+      if (coupon.active === false) {
+        data.queue = data.queue.filter((item) => !(item.kind === 'coupon' && item.couponId === coupon.id && item.status === 'pending'));
+      } else {
+        const targetAudienceCodes = normalizeCouponAudienceCodes(coupon.targetAudienceCodes);
+        data.queue.forEach((item) => {
+          if (item.kind !== 'coupon' || item.couponId !== coupon.id || item.status !== 'pending') return;
+          item.offerTitle = coupon.title;
+          item.store = coupon.store || 'Magalu';
+          item.targetAudienceCodes = targetAudienceCodes;
+          item.couponSnapshot = { ...coupon, targetAudienceCodes };
+          item.message = formatCouponMessage(coupon);
+          item.image = coupon.image || '';
+        });
+      }
+      updated = { ...coupon };
+    });
+
+    if (validationError) return res.status(400).json({ error: validationError });
+    if (!updated) return res.status(404).json({ error: 'Cupom não encontrado.' });
+
+    await addLog(`Cupom atualizado: ${updated.title} → ${updated.targetAudienceCodes.join(', ')}`, 'success');
+    return res.json(updated);
   }
 );
 
