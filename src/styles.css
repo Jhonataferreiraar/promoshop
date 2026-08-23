@@ -3980,6 +3980,8 @@ button {
 }
 
 .product-search-card {
+  display: grid;
+  grid-template-rows: 190px 1fr;
   overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
@@ -4006,7 +4008,8 @@ button {
 }
 
 .product-search-card-content {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   padding: 16px;
 }
@@ -4052,13 +4055,24 @@ button {
 }
 
 .product-search-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 4px;
+  margin-top: auto;
+  padding-top: 4px;
 }
 
 .product-search-actions .button {
-  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 62px;
+  padding: 8px 10px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.product-search-actions .button:only-child {
+  grid-column: 1 / -1;
 }
 
 .product-search-errors {
