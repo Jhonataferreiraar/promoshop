@@ -266,9 +266,10 @@ function contactMessageHtml(message) {
   return escapeHtml(message).replace(/\r?\n/g, '<br>');
 }
 
-function buildContactEmailHtml({ name, email, message }) {
+function buildContactEmailHtml({ name, email, subject, message }) {
   const safeName = escapeHtml(name);
   const safeEmail = escapeHtml(email);
+  const safeSubject = escapeHtml(subject);
   const safeMessage = contactMessageHtml(message);
   const year = new Date().getFullYear();
 
@@ -311,6 +312,10 @@ function buildContactEmailHtml({ name, email, message }) {
                   <tr class="email-meta">
                     <td class="email-meta-label" width="120" style="width:120px; padding:14px 16px; border-bottom:1px solid #eaecf0; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; vertical-align:top;">E-mail</td>
                     <td style="padding:14px 16px; border-bottom:1px solid #eaecf0; color:#101828; font-size:15px; line-height:1.5; word-break:break-word;"><a href="mailto:${safeEmail}" style="color:#1269f3; text-decoration:none;">${safeEmail}</a></td>
+                  </tr>
+                  <tr class="email-meta">
+                    <td class="email-meta-label" width="120" style="width:120px; padding:14px 16px; border-bottom:1px solid #eaecf0; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; vertical-align:top;">Assunto</td>
+                    <td style="padding:14px 16px; border-bottom:1px solid #eaecf0; color:#101828; font-size:15px; line-height:1.5; word-break:break-word;">${safeSubject}</td>
                   </tr>
                   <tr>
                     <td colspan="2" style="padding:16px; color:#667085; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Mensagem</td>
@@ -462,10 +467,23 @@ function mailboxName(value) {
 const analyticsSessionWindowMs = 30 * 60 * 1000;
 const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
 const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
+const privacyConsentRetentionMs = 5 * 365 * 24 * 60 * 60 * 1000;
+const contactRetentionMs = 365 * 24 * 60 * 60 * 1000;
+const privacyPolicyVersion = '2026-08-23';
 
 function normalizeAnalyticsId(value) {
   const id = String(value || '').trim();
   return /^[a-zA-Z0-9_-]{16,128}$/.test(id) ? id : '';
+}
+
+function pruneInboxEntries(data, nowMs = Date.now()) {
+  data.inbox = (Array.isArray(data.inbox) ? data.inbox : []).filter((entry) => {
+    const activityDates = [entry?.createdAt, entry?.repliedAt, entry?.lastInboundAt, ...(entry?.replies || []).map((reply) => reply?.createdAt)]
+      .map((value) => new Date(value || 0).getTime())
+      .filter(Number.isFinite);
+    const lastActivityAt = activityDates.length ? Math.max(...activityDates) : 0;
+    return lastActivityAt > 0 && nowMs - lastActivityAt <= contactRetentionMs;
+  }).slice(0, 500);
 }
 
 function analyticsDay(date = new Date()) {
@@ -588,10 +606,19 @@ function formatCouponMessage(coupon) {
   if (discountType === 'free-shipping') parts.push('🚚 Frete grátis conforme as regras da loja.');
   if (expiresAt && !Number.isNaN(expiresAt.getTime())) {
     parts.push(`⏰ Válido até ${expiresAt.toLocaleDateString('pt-BR')}.`);
+  } else {
+    parts.push('⏰ Validade não informada pela loja; confirme antes de usar.');
   }
   if (coupon?.link) parts.push(`👉 Ative aqui: ${coupon.shortUrl || coupon.link}`);
   parts.push('⚠️ Confira as regras e a validade antes de usar.');
+  parts.push('ℹ️ Link de afiliado: a PromoShop pode receber comissão, sem custo adicional para você.');
   return parts.filter(Boolean).join('\n\n');
+}
+
+function withAffiliateDisclosure(message) {
+  const text = String(message || '').trim();
+  if (!text || /link\s+de\s+afiliad/i.test(text)) return text;
+  return `${text}\n\nℹ️ Link de afiliado: a PromoShop pode receber comissão, sem custo adicional para você.`;
 }
 
 function getRoundAudienceCodes(data) {
@@ -1395,6 +1422,7 @@ app.post(
       : {};
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
+    const subject = String(body.subject || '').trim();
     const message = String(body.message || '').trim();
     const honeypot = String(body.website || '').trim();
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1407,6 +1435,10 @@ app.post(
 
     if (!emailPattern.test(email) || email.length > 200) {
       return res.status(400).json({ error: 'Informe um e-mail válido.' });
+    }
+
+    if (subject.length < 3 || subject.length > 120) {
+      return res.status(400).json({ error: 'Selecione um assunto válido.' });
     }
 
     if (message.length < 10 || message.length > 4000) {
@@ -1426,6 +1458,7 @@ app.post(
       id: inboxId,
       name,
       email,
+      subject,
       message,
       replyAddress: inboundReplyAddress(config, inboxId),
       status: 'unread',
@@ -1440,6 +1473,7 @@ app.post(
       '',
       `Nome: ${name}`,
       `E-mail: ${email}`,
+      `Assunto: ${subject}`,
       '',
       'Mensagem:',
       message,
@@ -1452,7 +1486,7 @@ app.post(
     await updateStore((data) => {
       data.inbox ||= [];
       data.inbox.unshift(inboxItem);
-      data.inbox = data.inbox.slice(0, 500);
+      pruneInboxEntries(data);
     });
 
     if (!apiKey) {
@@ -1480,9 +1514,9 @@ app.post(
             email: inboxItem.replyAddress || email,
             name: inboxItem.replyAddress ? 'PromoShop atendimento' : name
           },
-          subject: 'Mensagem recebida pelo PromoShop',
+          subject: `PromoShop: ${subject}`,
           textContent,
-          htmlContent: buildContactEmailHtml({ name, email, message })
+          htmlContent: buildContactEmailHtml({ name, email, subject, message })
         })
       });
 
@@ -1707,7 +1741,7 @@ app.post(
         imported += 1;
       }
 
-      data.inbox = data.inbox.slice(0, 500);
+      pruneInboxEntries(data);
     });
 
     if (imported) await addLog(`${imported} resposta(s) de e-mail recebida(s) no painel.`, 'success');
@@ -1790,6 +1824,59 @@ app.post(
         { host: domain, type: 'MX', priority: 20, value: 'inbound2.sendinblue.com.' }
       ]
     });
+  }
+);
+
+app.post(
+  '/api/privacy/consent',
+  async (req, res) => {
+    const receiptId = normalizeAnalyticsId(req.body?.receiptId);
+    const previousVisitorId = normalizeAnalyticsId(req.body?.previousVisitorId);
+    const choice = String(req.body?.choice || '').trim();
+    const policyVersion = String(req.body?.policyVersion || '').trim();
+
+    if (!receiptId || !['accepted', 'rejected'].includes(choice) || policyVersion !== privacyPolicyVersion) {
+      return res.status(400).json({ error: 'Comprovante de privacidade inválido.' });
+    }
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    await updateStore((data) => {
+      data.privacyConsents = data.privacyConsents && typeof data.privacyConsents === 'object'
+        ? data.privacyConsents
+        : {};
+      data.privacyConsents[receiptId] = {
+        receiptId,
+        choice,
+        policyVersion,
+        updatedAt: now.toISOString()
+      };
+
+      for (const [id, receipt] of Object.entries(data.privacyConsents)) {
+        const updatedAt = new Date(receipt?.updatedAt || 0).getTime();
+        if (!Number.isFinite(updatedAt) || nowMs - updatedAt > privacyConsentRetentionMs) {
+          delete data.privacyConsents[id];
+        }
+      }
+
+      const receiptEntries = Object.entries(data.privacyConsents);
+      if (receiptEntries.length > 50000) {
+        receiptEntries
+          .sort((left, right) => new Date(left[1]?.updatedAt || 0).getTime() - new Date(right[1]?.updatedAt || 0).getTime())
+          .slice(0, receiptEntries.length - 50000)
+          .forEach(([id]) => delete data.privacyConsents[id]);
+      }
+
+      if (choice === 'rejected' && previousVisitorId && data.analytics) {
+        delete data.analytics.visitors?.[previousVisitorId];
+        for (const day of Object.values(data.analytics.daily || {})) {
+          if (day?.visitors) delete day.visitors[previousVisitorId];
+        }
+      }
+    });
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true });
   }
 );
 
@@ -4108,6 +4195,8 @@ app.get(
           );
         }
 
+        message = withAffiliateDisclosure(message);
+
         /*
          * ==================================================
          * SALVA PREPARAÇÃO
@@ -5853,6 +5942,14 @@ app.use(
  * COLETA AUTOMÁTICA
  * ==========================================================
  */
+
+cron.schedule('15 3 * * *', async () => {
+  try {
+    await updateStore((data) => pruneInboxEntries(data));
+  } catch (error) {
+    console.error('Falha ao aplicar a retenção da caixa de entrada:', error.message);
+  }
+});
 
 cron.schedule(
   '* * * * *',

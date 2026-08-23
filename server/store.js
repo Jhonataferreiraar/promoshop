@@ -14,7 +14,7 @@ const initialData = {
   config: {
     brandName: 'PromoShop',
     heroTitle: 'Ofertas boas não esperam.',
-    heroText: 'Promoções selecionadas e verificadas para você economizar sem perder tempo.',
+    heroText: 'Promoções selecionadas e organizadas para você economizar sem perder tempo.',
     primaryColor: '#1269f3',
     whatsappUrl: '#',
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
@@ -137,6 +137,7 @@ const initialData = {
   offers: [],
   coupons: [],
   inbox: [],
+  privacyConsents: {},
   queue: [],
   logs: [],
   analytics: {
@@ -177,6 +178,10 @@ export async function readStore() {
     ...(data.config || {})
   };
 
+  if (data.config.heroText === 'Promoções selecionadas e verificadas para você economizar sem perder tempo.') {
+    data.config.heroText = initialData.config.heroText;
+  }
+
   data.config.aiModels = {
     ...initialData.config.aiModels,
     ...(data.config.aiModels || {})
@@ -203,6 +208,9 @@ export async function readStore() {
   data.offers ||= [];
   data.coupons ||= [];
   data.inbox ||= [];
+  data.privacyConsents = data.privacyConsents && typeof data.privacyConsents === 'object'
+    ? data.privacyConsents
+    : {};
   data.queue ||= [];
   data.logs ||= [];
   data.analytics = {

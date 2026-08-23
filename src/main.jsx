@@ -7,7 +7,7 @@ const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL
 const fallbackConfig = {
   brandName: 'PromoShop',
   heroTitle: 'Ofertas boas não esperam.',
-  heroText: 'Promoções selecionadas e verificadas para você economizar sem perder tempo.',
+  heroText: 'Promoções selecionadas e organizadas para você economizar sem perder tempo.',
   primaryColor: '#1269f3',
   whatsappUrl: '#',
   whatsappAudiences: [],
@@ -87,6 +87,9 @@ function anonymousStorageId(storage, key) {
 const analyticsConsentKey = 'promoshop_analytics_consent';
 const analyticsConsentEvent = 'promoshop:analytics-consent';
 const privacyOpenEvent = 'promoshop:privacy-open';
+const privacyPolicyVersion = '2026-08-23';
+const privacyReceiptKey = 'promoshop_privacy_receipt';
+const privacyReceiptSyncKey = 'promoshop_privacy_receipt_synced';
 
 function readAnalyticsConsent() {
   try {
@@ -105,11 +108,34 @@ function clearAnalyticsIdentifiers() {
   } catch { }
 }
 
+function recordAnalyticsConsent(value, previousVisitorId = '') {
+  const receiptId = anonymousStorageId(window.localStorage, privacyReceiptKey);
+  api('/privacy/consent', {
+    method: 'POST',
+    cache: 'no-store',
+    body: JSON.stringify({
+      receiptId,
+      choice: value,
+      policyVersion: privacyPolicyVersion,
+      previousVisitorId
+    })
+  }).then(() => {
+    try {
+      window.localStorage.setItem(privacyReceiptSyncKey, `${privacyPolicyVersion}:${value}`);
+    } catch { }
+  }).catch(() => { });
+}
+
 function saveAnalyticsConsent(value) {
+  let previousVisitorId = '';
+  try {
+    previousVisitorId = window.localStorage.getItem('promoshop_analytics_visitor') || '';
+  } catch { }
   try {
     window.localStorage.setItem(analyticsConsentKey, value);
   } catch { }
   if (value === 'rejected') clearAnalyticsIdentifiers();
+  recordAnalyticsConsent(value, value === 'rejected' ? previousVisitorId : '');
 
   window.dispatchEvent(new CustomEvent(analyticsConsentEvent, { detail: value }));
 }
@@ -164,6 +190,11 @@ function PrivacyConsent() {
 
   useEffect(() => {
     if (!choice) clearAnalyticsIdentifiers();
+    if (choice) {
+      let synced = '';
+      try { synced = window.localStorage.getItem(privacyReceiptSyncKey) || ''; } catch { }
+      if (synced !== `${privacyPolicyVersion}:${choice}`) recordAnalyticsConsent(choice);
+    }
 
     const showPreferences = () => setOpen(true);
     const syncChoice = () => {
@@ -192,7 +223,7 @@ function PrivacyConsent() {
     <div className="privacy-consent-icon" aria-hidden="true">✓</div>
     <div className="privacy-consent-copy">
       <strong>Privacidade e medição de acessos</strong>
-      <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitantes e melhorar a PromoShop. O site continua funcionando normalmente se você rejeitar.</p>
+      <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitantes e melhorar a PromoShop. Não guardamos seu nome ou IP nessa medição. O site continua funcionando normalmente se você rejeitar.</p>
       <span><a href="/privacidade">Política de Privacidade</a><a href="/termos-de-uso">Termos de Uso</a>{choice && <small>Escolha atual: {choice === 'accepted' ? 'medição aceita' : 'medição rejeitada'}.</small>}</span>
     </div>
     <div className="privacy-consent-actions">
@@ -377,9 +408,9 @@ function PublicSite() {
             <div className="hero-metrics"><span><strong>{offers.length}</strong><small>ofertas disponíveis</small></span><span><strong>até {topDiscount}%</strong><small>de desconto</small></span><span><strong>3 lojas</strong><small>em um só lugar</small></span></div>
           </div>
           <div className="hero-art" aria-hidden="true">
-            <div className="floating-card card-one"><span>HOJE</span><strong>Até 55% OFF</strong><small>em eletrônicos</small></div>
-            <div className="phone"><div className="phone-head"><i></i><b>{config.brandName}</b></div><div className="mini-offer"><div></div><span><b>Oferta relâmpago</b><small>Preço caiu agora</small></span></div><div className="mini-offer"><div></div><span><b>Frete grátis</b><small>Selecionados</small></span></div><div className="phone-cta">VER OFERTA</div></div>
-            <div className="floating-card card-two"><span>🔥</span><strong>Preço caiu!</strong></div>
+            <div className="floating-card card-one"><span>OFERTAS</span><strong>Até {topDiscount}% OFF</strong><small>confirme na loja</small></div>
+            <div className="phone"><div className="phone-head"><i></i><b>{config.brandName}</b></div><div className="mini-offer"><div></div><span><b>Oferta selecionada</b><small>Confira na loja</small></span></div><div className="mini-offer"><div></div><span><b>Frete grátis</b><small>Quando informado</small></span></div><div className="phone-cta">VER OFERTA</div></div>
+            <div className="floating-card card-two"><span>✨</span><strong>Novas ofertas</strong></div>
           </div>
         </div>
       </section>
@@ -396,8 +427,8 @@ function PublicSite() {
         {loading && <p className="notice">Atualizando ofertas…</p>}
         <div className="offer-grid">
           {visibleOffers.map((offer) => <article className="offer-card" key={offer.id}>
-            <div className="offer-image"><img src={offer.image} alt={offer.title} loading="lazy" />{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${offer.store.toLowerCase().includes('shopee') ? 'shopee' : offer.store.toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span></div>
-            <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3>{offer.title}</h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço sujeito a alteração</small></div><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer">Ir para a oferta <span>↗</span></a></div>
+            <div className="offer-image"><img src={offer.image} alt={offer.title} loading="lazy" referrerPolicy="no-referrer" />{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${offer.store.toLowerCase().includes('shopee') ? 'shopee' : offer.store.toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span></div>
+            <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3>{offer.title}</h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div><small className="affiliate-label">Publicidade · Link de afiliado</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer">Ir para a oferta <span>↗</span></a></div>
           </article>)}
         </div>
         {visibleCount < filtered.length && <div className="load-more"><button className="button subtle" type="button" onClick={() => setVisibleCount((count) => count + 24)}>Mostrar mais ofertas</button><small>Exibindo {visibleOffers.length} de {filtered.length}</small></div>}
@@ -420,13 +451,14 @@ function PublicSite() {
                 <article className="coupon-card" key={coupon.id}>
                   <div className="coupon-card-top">
                     <span className="coupon-store">{coupon.store || 'Magalu'}</span>
-                    {coupon.expiresAt && <small>Até {new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}</small>}
+                    <small>{coupon.expiresAt ? `Até ${new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}` : 'Validade não informada'}</small>
                   </div>
                   <h3>{coupon.title}</h3>
                   {coupon.description && <p>{coupon.description}</p>}
                   <div className="coupon-card-actions">
                     {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
                     {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
+                    <small className="affiliate-label">Publicidade · Link de afiliado</small>
                     <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
                   </div>
                 </article>
@@ -652,7 +684,7 @@ function SiteFooter({ config = fallbackConfig }) {
         <a href="/contato">Fale conosco ↗</a>
       </div>
     </div>
-    <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
+    <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Responsável: Jhonata Ferreira de Araujo · Brasília/DF</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
   </footer>;
 }
 
@@ -661,50 +693,65 @@ const publicInfoPages = {
     eyebrow: 'SOBRE O PROMOSHOP',
     title: 'Ofertas boas, encontradas com mais clareza.',
     intro: 'O PromoShop reúne ofertas e cupons de diferentes lojas para você comparar oportunidades e decidir onde comprar.',
+    updatedAt: '23 de agosto de 2026',
     sections: [
-      { title: 'O que fazemos', paragraphs: ['Somos uma vitrine independente de curadoria de ofertas. Organizamos produtos, preços, descontos e cupons em um só lugar para reduzir o tempo que você gasta procurando uma boa oportunidade.', 'O PromoShop não é uma loja virtual e não processa pagamentos, entregas ou trocas. Ao clicar em uma oferta, você é levado ao site da loja parceira, onde a compra acontece diretamente.'] },
-      { title: 'Como selecionamos', paragraphs: ['As ofertas podem ser coletadas automaticamente de plataformas parceiras e revisadas antes de serem divulgadas. Preços, estoque, frete, cupons e condições podem mudar a qualquer momento na loja de origem.', 'Nossa proposta é facilitar a descoberta de oportunidades, sem prometer que todo desconto será o menor preço histórico ou que permanecerá disponível.'] },
-      { title: 'Transparência', paragraphs: ['O PromoShop participa de programas de afiliados. Isso significa que podemos receber uma comissão quando você acessa um link e realiza uma compra, sem custo adicional para você. Essa comissão ajuda a manter o projeto funcionando.'] }
+      { title: 'O que fazemos', paragraphs: ['Somos uma vitrine independente de curadoria de ofertas. Organizamos produtos, preços, descontos e cupons em um só lugar para reduzir o tempo gasto na busca por oportunidades.', 'As informações podem ser coletadas automaticamente nas plataformas parceiras e organizadas por critérios do PromoShop. Sempre confirme preço, estoque, frete, validade e demais condições diretamente na loja.'] },
+      { title: 'Não somos uma loja', paragraphs: ['O PromoShop não vende produtos, não recebe pagamentos, não entrega mercadorias e não administra trocas, garantias ou reembolsos. Ao clicar em uma oferta, você é direcionado à loja responsável pela venda e pelo atendimento.'] },
+      { title: 'Programas de afiliados', paragraphs: ['Participamos atualmente dos programas de afiliados do Mercado Livre, Shopee, AliExpress e Magalu. Podemos receber uma comissão quando uma compra é realizada por nossos links, sem custo adicional para você. As ofertas e cupons identificam essa relação de forma discreta.'] },
+      { title: 'Responsável pelo projeto', paragraphs: ['O PromoShop é mantido por Jhonata Ferreira de Araujo, pessoa física, em Brasília/DF. Dúvidas gerais ou de privacidade podem ser enviadas para contatopromoshop.site@gmail.com ou pelo formulário de contato.'] }
     ]
   },
   '/contato': {
     eyebrow: 'FALE CONOSCO',
     title: 'Estamos aqui para ajudar.',
-    intro: 'Encontrou um problema, quer sugerir uma loja ou tem uma dúvida sobre uma oferta? Escolha o canal mais conveniente.',
+    intro: 'Encontrou um problema, quer sugerir uma loja ou exercer um direito de privacidade? Envie sua mensagem pelo formulário.',
+    updatedAt: '23 de agosto de 2026',
     sections: [
       { title: 'Dúvidas sobre ofertas', paragraphs: ['Como os preços e as regras pertencem à loja de origem, confirme sempre as condições diretamente no site antes de finalizar a compra. Se você encontrar um link quebrado ou uma informação desatualizada, avise-nos para que possamos revisar.'] },
-      { title: 'Contato direto', paragraphs: ['Você pode falar com a equipe pelo formulário abaixo. Para agilizar o atendimento, informe o nome da oferta e a loja relacionada.'], contactForm: true },
-      { title: 'Parcerias e sugestões', paragraphs: ['Também recebemos sugestões de novas lojas, cupons e categorias para acompanhar. O envio de uma sugestão não garante publicação, mas toda contribuição é bem-vinda.'] }
+      { title: 'Contato direto', paragraphs: ['Você pode falar com Jhonata Ferreira de Araujo pelo formulário abaixo. A resposta inicial será enviada ao e-mail informado em até 5 dias úteis. Solicitações complexas ou sujeitas a prazo legal podem exigir tempo adicional, que será informado quando necessário.'], contactForm: true },
+      { title: 'Privacidade, parcerias e sugestões', paragraphs: ['Use o assunto “Privacidade e dados pessoais” para solicitar acesso, correção, eliminação ou outras providências previstas na legislação. Também recebemos sugestões de lojas, cupons e categorias; o envio não garante publicação.'] }
     ]
   },
   '/termos-de-uso': {
     eyebrow: 'TERMOS DE USO',
     title: 'Uso simples, transparente e responsável.',
     intro: 'Ao acessar o PromoShop, você concorda com as condições abaixo. Leia com atenção antes de utilizar o site.',
+    updatedAt: '23 de agosto de 2026',
     sections: [
-      { title: '1. Sobre o serviço', paragraphs: ['O PromoShop é uma plataforma de divulgação e curadoria de ofertas e cupons. Não somos vendedores, fabricantes, representantes ou responsáveis pelas lojas anunciadas.', 'Os links podem levar a páginas de terceiros. A compra, o pagamento, a entrega, a garantia, a troca e o atendimento são de responsabilidade da loja correspondente.'] },
-      { title: '2. Preços e disponibilidade', paragraphs: ['As informações são apresentadas com base nos dados disponíveis no momento da publicação. Preços, descontos, estoque, frete, cupons e condições podem mudar sem aviso. A confirmação válida é sempre a exibida pela loja no momento da compra.'] },
-      { title: '3. Links de afiliados', paragraphs: ['Alguns links são links de afiliado. Se você comprar após acessar um desses links, o PromoShop poderá receber uma comissão, sem cobrança adicional para você. A existência de comissão não altera o preço apresentado pela loja.'] },
-      { title: '4. Uso adequado', paragraphs: ['Você concorda em utilizar o site de forma lícita, sem tentar interferir no funcionamento, copiar seu conteúdo de maneira abusiva, praticar fraude ou utilizar as informações para finalidades que violem a legislação.'] },
-      { title: '5. Alterações', paragraphs: ['Podemos atualizar o site, os conteúdos e estes termos para acompanhar mudanças no serviço ou na legislação. A versão publicada nesta página é a que vale para o acesso atual.'] }
+      { title: '1. Responsável e finalidade', paragraphs: ['O PromoShop é mantido por Jhonata Ferreira de Araujo, pessoa física, em Brasília/DF. O serviço divulga e organiza ofertas, cupons e links para lojas de terceiros.'] },
+      { title: '2. Intermediação e responsabilidades', paragraphs: ['O PromoShop não recebe pagamentos, não vende, não entrega e não participa do contrato de compra e venda. Pagamento, estoque, entrega, garantia, troca, devolução, suporte e nota fiscal são de responsabilidade exclusiva da loja e do consumidor, conforme as regras e a legislação aplicáveis.', 'Uma eventual divergência deve ser confirmada e tratada diretamente com a loja. O PromoShop pode ajudar a revisar ou remover uma divulgação, mas não substitui o atendimento do vendedor.'] },
+      { title: '3. Preços, cupons e disponibilidade', paragraphs: ['As informações refletem os dados disponíveis no momento da coleta ou publicação e podem mudar sem aviso. Não garantimos menor preço histórico, disponibilidade, frete grátis ou manutenção do desconto.', 'Quando a loja não informar a validade de um cupom, ele será identificado como “validade não informada”. A condição válida é sempre aquela exibida pela loja antes da conclusão da compra.'] },
+      { title: '4. Links de afiliados', paragraphs: ['Participamos dos programas de afiliados do Mercado Livre, Shopee, AliExpress e Magalu. O PromoShop poderá receber comissão por compras qualificadas iniciadas por um link de afiliado, sem custo adicional para você. Essa relação é identificada nas ofertas e nos cupons.'] },
+      { title: '5. WhatsApp', paragraphs: ['As publicações são realizadas em grupos e canais nos quais as pessoas entraram voluntariamente. A participação pode ser encerrada a qualquer momento pelos recursos do próprio WhatsApp.', 'O uso do WhatsApp também está sujeito aos termos e às configurações da plataforma. Conforme o tipo de grupo e as configurações escolhidas, outras pessoas poderão visualizar informações do perfil ou número do participante.'] },
+      { title: '6. Público e menores de idade', paragraphs: ['O site apresenta promoções de uso geral e não é direcionado especificamente a crianças. Menores devem navegar e enviar solicitações com acompanhamento ou autorização de responsável legal, especialmente quando houver fornecimento de dados no formulário.'] },
+      { title: '7. Uso adequado', paragraphs: ['É proibido tentar comprometer a segurança ou a disponibilidade do site, acessar áreas restritas sem autorização, usar automação abusiva, praticar fraude ou reproduzir conteúdo de forma que viole direitos do PromoShop ou de terceiros.'] },
+      { title: '8. Serviços e marcas de terceiros', paragraphs: ['Links externos conduzem a ambientes controlados por terceiros e sujeitos aos próprios termos e políticas. Marcas, nomes, imagens e sinais distintivos pertencem aos respectivos titulares e são utilizados apenas para identificar ofertas e lojas.'] },
+      { title: '9. Propriedade intelectual', paragraphs: ['A identidade visual, a organização, os textos próprios e os componentes do PromoShop são protegidos pela legislação aplicável. O acesso ao site não transfere direitos de propriedade intelectual ao usuário.'] },
+      { title: '10. Alterações, contato e legislação', paragraphs: ['Estes termos podem ser atualizados para refletir mudanças no serviço ou na legislação. A versão e a data vigentes ficam indicadas nesta página. Dúvidas podem ser enviadas pelo Fale Conosco.', 'Aplicam-se as leis da República Federativa do Brasil, preservados os direitos do consumidor e o foro legalmente competente.'] }
     ]
   },
   '/privacidade': {
     eyebrow: 'PRIVACIDADE',
     title: 'Sua navegação com o mínimo de dados.',
     intro: 'Esta página explica, em linguagem simples, quais informações o PromoShop utiliza para funcionar e melhorar o serviço.',
+    updatedAt: '23 de agosto de 2026',
     sections: [
-      { title: '1. Dados de navegação', paragraphs: ['Somente após a sua autorização, criamos um identificador anônimo no navegador para contar visitantes, visualizações e sessões. Ele não contém seu nome, e-mail, telefone ou endereço.', 'Você pode rejeitar essa medição sem perder nenhuma funcionalidade do site e alterar sua escolha a qualquer momento em “Preferências de privacidade”, no rodapé. O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas.'] },
-      { title: '2. Formulário de contato', paragraphs: ['Quando você envia uma mensagem pelo formulário, recebemos seu nome, e-mail e o conteúdo da mensagem para responder à solicitação. Esses dados são armazenados no painel administrativo do PromoShop e enviados ao Brevo, nosso serviço de entrega de e-mails, podendo permanecer nesses sistemas pelo tempo necessário para atender e organizar o contato.', 'Não usamos esses dados para vender listas ou enviar publicidade sem uma base adequada. Você pode solicitar informações sobre o uso dos seus dados pelo canal de contato indicado nesta página.'] },
-      { title: '3. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp, o Brevo ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
-      { title: '4. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. O identificador anônimo pode ser mantido por até 365 dias e os registros diários por até 120 dias para gerar relatórios de alcance. Não vendemos dados pessoais.'] },
-      { title: '5. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
+      { title: '1. Controlador e contato', paragraphs: ['O responsável pelo tratamento relacionado ao PromoShop é Jhonata Ferreira de Araujo, pessoa física, localizado em Brasília/DF. O canal para assuntos de privacidade é contatopromoshop.site@gmail.com ou o formulário Fale Conosco.', 'Buscamos enviar uma resposta inicial em até 5 dias úteis, sem prejuízo de prazos específicos previstos em lei.'] },
+      { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões e páginas vistas. Eles não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
+      { title: '3. Finalidades e bases legais', paragraphs: ['A medição de audiência é realizada com consentimento e pode ser rejeitada ou revogada sem perda de funcionalidade. Guardamos apenas um comprovante anônimo da escolha, com data, versão desta política e decisão, sem nome ou IP.', 'Os dados do contato são usados para receber, organizar e responder à solicitação, com base em procedimentos solicitados pelo titular e, conforme o caso, legítimo interesse no atendimento e na segurança. Também poderemos conservar informações para cumprir obrigação legal ou exercer direitos em processo.'] },
+      { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem e a Brevo para entrega e recebimento de e-mails. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu e WhatsApp. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
+      { title: '5. Transferências internacionais', paragraphs: ['Alguns provedores de hospedagem, e-mail, mensageria e programas de afiliados podem processar dados fora do Brasil. Nesses casos, buscamos utilizar serviços reconhecidos e mecanismos contratuais e de segurança compatíveis com a legislação aplicável.'] },
+      { title: '6. Retenção e eliminação', paragraphs: ['Mensagens e respostas do Fale Conosco são mantidas por até 12 meses após a última interação, salvo necessidade legal de conservação por prazo maior. Identificadores de audiência podem ser mantidos por até 365 dias e resumos diários por até 120 dias.', 'Comprovantes anônimos de consentimento podem ser mantidos por até 5 anos para demonstrar a escolha registrada. Quando a pessoa rejeita ou revoga a medição, o identificador individual conhecido por este navegador é removido dos registros ativos; totais estatísticos já agregados não permitem reidentificação e podem permanecer.'] },
+      { title: '7. Seus direitos', paragraphs: ['Você pode solicitar confirmação de tratamento, acesso, correção, anonimização, bloqueio, eliminação, portabilidade quando aplicável, informação sobre compartilhamento, revisão, oposição e revogação do consentimento. Poderemos pedir informações mínimas para confirmar a legitimidade da solicitação.', 'Para mudar a medição, use “Preferências de privacidade” no rodapé. Para outras solicitações, use o Fale Conosco com o assunto “Privacidade e dados pessoais”.'] },
+      { title: '8. Crianças e adolescentes', paragraphs: ['O PromoShop é um site de promoções de uso geral e não é direcionado especificamente a crianças. Não buscamos criar perfis de menores. Solicitações que envolvam dados de menores devem ser realizadas com acompanhamento ou autorização de responsável legal.'] },
+      { title: '9. Segurança e incidentes', paragraphs: ['Adotamos controles de acesso, autenticação administrativa, limitação contra abuso e outras medidas razoáveis para proteger os dados. Nenhum sistema é totalmente livre de riscos; caso ocorra incidente relevante, serão adotadas as providências legais e técnicas cabíveis.'] },
+      { title: '10. Atualizações e contato', paragraphs: ['Esta política pode ser atualizada quando houver mudanças no serviço, nos fornecedores ou na legislação. A versão vigente será publicada nesta página com a data da atualização.'] , contact: true }
     ]
   }
 };
 
 function ContactForm({ contactEmail }) {
-  const [form, setForm] = useState({ name: '', email: '', message: '', website: '' });
+  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '', website: '' });
   const [status, setStatus] = useState({ type: '', text: '' });
   const [sending, setSending] = useState(false);
 
@@ -718,7 +765,7 @@ function ContactForm({ contactEmail }) {
         method: 'POST',
         body: JSON.stringify(form)
       });
-      setForm({ name: '', email: '', message: '', website: '' });
+      setForm({ name: '', email: '', subject: '', message: '', website: '' });
       setStatus({ type: 'success', text: 'Mensagem enviada. Obrigado por entrar em contato!' });
     } catch (error) {
       setStatus({ type: 'error', text: error.message || 'Não foi possível enviar agora. Tente novamente.' });
@@ -732,9 +779,11 @@ function ContactForm({ contactEmail }) {
       <label>Nome<input required minLength={2} maxLength={80} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Como podemos chamar você?" /></label>
       <label>E-mail<input required type="email" maxLength={200} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="voce@exemplo.com" /></label>
     </div>
+    <label>Assunto<select required value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })}><option value="">Selecione o assunto</option><option>Dúvida sobre oferta</option><option>Link ou preço desatualizado</option><option>Privacidade e dados pessoais</option><option>Parceria ou sugestão</option><option>Outro</option></select></label>
     <label>Mensagem<textarea required minLength={10} maxLength={4000} rows={6} value={form.message} onChange={(event) => setForm({ ...form, message: event.target.value })} placeholder="Conte como podemos ajudar…" /></label>
     <label className="contact-honeypot" aria-hidden="true">Site<input tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => setForm({ ...form, website: event.target.value })} /></label>
-    <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Responderemos pelo e-mail informado.</span></div>
+    <p className="contact-privacy-note">Ao enviar, você concorda com o uso dos dados para responder e acompanhar esta solicitação, conforme a <a href="/privacidade">Política de Privacidade</a>. Menores devem usar o formulário com acompanhamento ou autorização de responsável.</p>
+    <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Resposta inicial em até 5 dias úteis pelo e-mail informado.</span></div>
     {status.text && <p className={`contact-status ${status.type}`} role="status">{status.text}</p>}
     <div className="contact-form-alternative">{contactEmail && <span>Ou escreva para <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</span>}</div>
   </form>;
@@ -768,7 +817,7 @@ function InfoPage({ page }) {
       </div>
     </header>
     <main className="info-main">
-      <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p></div></section>
+      <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p>{info.updatedAt && <small className="info-updated">Versão vigente · Atualizada em {info.updatedAt}</small>}</div></section>
       <article className="container info-content">
         {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} />}{section.contact && <div className="info-contact-actions"><a className="button primary" href="/contato">Ir para Fale Conosco ↗</a></div>}</section>)}
         <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
@@ -2723,12 +2772,12 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSe
         <div><span className="section-step">ATENDIMENTO</span><h2>Mensagens recebidas</h2><p>{sortedMessages.length} mensagem(ns) · {unreadCount} não lida(s)</p></div>
         <span className="inbox-count">{unreadCount}</span>
       </div>
-      {sortedMessages.length ? <div className="inbox-list">{sortedMessages.map((item) => <button type="button" className={`inbox-list-item ${selected?.id === item.id ? 'active' : ''} ${item.status === 'unread' ? 'unread' : ''}`} key={item.id} onClick={() => selectMessage(item)}><span className="inbox-avatar">{String(item.name || '?').slice(0, 1).toUpperCase()}</span><span className="inbox-list-copy"><strong>{item.name || 'Visitante'}</strong><small>{item.email}</small><span>{String(item.message || '').replace(/\s+/g, ' ').slice(0, 90)}{String(item.message || '').length > 90 ? '…' : ''}</span></span><time>{item.createdAt ? new Date(item.createdAt).toLocaleDateString('pt-BR') : ''}</time></button>)}</div> : <div className="empty inbox-empty"><strong>Nenhuma mensagem ainda</strong><p>As mensagens enviadas pelo formulário da página de contato aparecerão aqui.</p></div>}
+      {sortedMessages.length ? <div className="inbox-list">{sortedMessages.map((item) => <button type="button" className={`inbox-list-item ${selected?.id === item.id ? 'active' : ''} ${item.status === 'unread' ? 'unread' : ''}`} key={item.id} onClick={() => selectMessage(item)}><span className="inbox-avatar">{String(item.name || '?').slice(0, 1).toUpperCase()}</span><span className="inbox-list-copy"><strong>{item.name || 'Visitante'}</strong><small>{item.subject || item.email}</small><span>{String(item.message || '').replace(/\s+/g, ' ').slice(0, 90)}{String(item.message || '').length > 90 ? '…' : ''}</span></span><time>{item.createdAt ? new Date(item.createdAt).toLocaleDateString('pt-BR') : ''}</time></button>)}</div> : <div className="empty inbox-empty"><strong>Nenhuma mensagem ainda</strong><p>As mensagens enviadas pelo formulário da página de contato aparecerão aqui.</p></div>}
     </section>
     <section className="panel inbox-detail-panel">
       {selected ? <>
         <div className="inbox-detail-head"><div><span className="section-step">MENSAGEM</span><h2>{selected.name || 'Visitante'}</h2><a href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="inbox-detail-actions"><span className={`inbox-status ${selected.status}`}>{selected.status === 'unread' ? 'Não lida' : selected.status === 'replied' ? 'Respondida' : 'Lida'}</span><button className="text-button" type="button" onClick={() => onMarkRead(selected.id, selected.status === 'unread' ? 'read' : 'unread')}>{selected.status === 'unread' ? 'Marcar como lida' : 'Marcar como não lida'}</button></div></div>
-        <div className="inbox-meta"><span>Recebida em {selected.createdAt ? new Date(selected.createdAt).toLocaleString('pt-BR') : '—'}</span>{selected.deliveryStatus === 'failed' && <span className="inbox-delivery-error">A notificação por e-mail falhou, mas a mensagem foi salva aqui.</span>}</div>
+        <div className="inbox-meta"><span>Recebida em {selected.createdAt ? new Date(selected.createdAt).toLocaleString('pt-BR') : '—'}</span>{selected.subject && <span>Assunto: {selected.subject}</span>}{selected.deliveryStatus === 'failed' && <span className="inbox-delivery-error">A notificação por e-mail falhou, mas a mensagem foi salva aqui.</span>}</div>
         <div className="inbox-message-body">{selected.message}</div>
         {(selected.replies || []).length > 0 && <div className="inbox-replies"><h3>Histórico da conversa</h3>{selected.replies.map((reply) => <article className={reply.direction === 'inbound' ? 'inbound' : 'outbound'} key={reply.id}><div><strong>{reply.direction === 'inbound' ? (reply.name || selected.name || 'Visitante') : 'Você'}</strong><time>{reply.createdAt ? new Date(reply.createdAt).toLocaleString('pt-BR') : ''}</time></div><p>{reply.message}</p></article>)}</div>}
         <form className="inbox-reply-form" onSubmit={submitReply}><label>Responder para {selected.name || 'visitante'}<textarea required minLength={1} maxLength={4000} rows={6} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Escreva sua resposta…" /></label>{replyError && <p className="inbox-reply-error" role="alert">{replyError}</p>}<div className="inbox-reply-footer"><small>A resposta será enviada pelo remetente configurado na Brevo.</small><button className="button primary" type="submit" disabled={sending || !replyText.trim()}>{sending ? 'Enviando…' : 'Enviar resposta'}</button></div></form>

@@ -4886,7 +4886,7 @@ button {
 .site-shell .site-footer .footer-column a:hover,
 .site-shell .site-footer .footer-privacy-button:hover { color: #fff; }
 .site-shell .site-footer .footer-privacy-button { margin: 0; padding: 0; border: 0; color: #aab8cc; background: transparent; font: inherit; font-size: 13px; line-height: 1.45; text-align: left; cursor: pointer; }
-.site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
+.site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
 .privacy-consent { position: fixed; z-index: 1000; right: 24px; bottom: 24px; left: 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; width: min(1040px, calc(100% - 48px)); margin-inline: auto; padding: 18px; border: 1px solid #d0d5dd; border-radius: 18px; color: #101828; background: rgba(255,255,255,.98); box-shadow: 0 24px 70px rgba(16,24,40,.22); backdrop-filter: blur(12px); }
 .privacy-consent-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #fff; background: var(--primary); font-weight: 900; box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 25%, transparent); }
 .privacy-consent-copy { min-width: 0; }
@@ -4906,6 +4906,7 @@ button {
 .info-hero .container { max-width: 920px; }
 .info-hero h1 { max-width: 760px; margin: 12px 0 16px; font-size: clamp(38px, 5vw, 62px); line-height: 1.02; letter-spacing: -.045em; }
 .info-hero p { max-width: 700px; margin: 0; color: rgba(255,255,255,.84); font-size: 18px; line-height: 1.6; }
+.info-updated { display: block; margin-top: 18px; color: rgba(255,255,255,.72); font-size: 12px; font-weight: 700; }
 .info-content { max-width: 920px; padding-top: 62px; padding-bottom: 78px; }
 .info-section { padding: 0 0 30px; }
 .info-section + .info-section { padding-top: 30px; border-top: 1px solid #eaecf0; }
@@ -4918,10 +4919,17 @@ button {
 .contact-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .contact-form label { display: grid; gap: 7px; color: #344054; font-size: 13px; font-weight: 800; }
 .contact-form input,
+.contact-form select,
 .contact-form textarea { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid #d0d5dd; border-radius: 10px; color: #101828; background: #fff; font: inherit; font-size: 14px; font-weight: 500; outline: none; resize: vertical; transition: border-color .18s ease, box-shadow .18s ease; }
 .contact-form textarea { min-height: 135px; }
 .contact-form input:focus,
+.contact-form select:focus,
 .contact-form textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.contact-privacy-note { margin: -2px 0 0; color: #667085; font-size: 12px; font-weight: 500; line-height: 1.55; }
+.contact-privacy-note a { color: var(--primary); font-weight: 800; }
+.affiliate-label { display: block; color: #667085; font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.offer-content > .affiliate-label { margin: -2px 0 8px; }
+.coupon-card-actions > .affiliate-label { margin-top: 2px; }
 .contact-form-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .contact-form-footer span { color: #667085; font-size: 12px; }
 .contact-form-footer button:disabled { cursor: wait; opacity: .65; }

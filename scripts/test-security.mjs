@@ -56,6 +56,24 @@ try {
   const authorization = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 200);
 
+  const receiptId = 'privacyreceipt1234567890';
+  const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23' })
+  });
+  assert.equal(privacyReceipt.status, 200);
+  const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  assert.equal(dashboardWithReceipt.privacyConsents[receiptId].choice, 'accepted');
+  assert.equal(Object.hasOwn(dashboardWithReceipt.privacyConsents[receiptId], 'ip'), false);
+
+  const invalidContact = await fetch(`${origin}/api/contact`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Visitante', email: 'visitante@example.com', message: 'Mensagem sem assunto.' })
+  });
+  assert.equal(invalidContact.status, 400);
+
   const passwordChange = await fetch(`${origin}/api/admin/secrets`, {
     method: 'PUT',
     headers: authorization,
