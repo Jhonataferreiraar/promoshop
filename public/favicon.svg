@@ -1,26 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100%" height="100%">
-  <defs>
-    <!-- Filtro para a sombra suave azulada -->
-    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="-2" dy="6" stdDeviation="10" flood-color="#1867fc" flood-opacity="0.4"/>
-    </filter>
-  </defs>
-
-  <!-- Grupo com a rotação levemente inclinada para a esquerda -->
-  <g transform="translate(60, 60) rotate(-6) translate(-60, -60)">
-    
-    <!-- Quadrado azul com bordas arredondadas e sombra -->
-    <rect x="25" y="25" width="70" height="70" rx="18" fill="#1867fc" filter="url(#soft-shadow)"/>
-
-    <!-- Símbolo de porcentagem (%) branco -->
-    <g stroke="#ffffff" stroke-linecap="round" fill="none">
-      <!-- Barra transversal -->
-      <line x1="52" y1="76" x2="68" y2="44" stroke-width="6.5"/>
-      <!-- Círculo superior esquerdo -->
-      <circle cx="50" cy="48" r="5.5" stroke-width="5.5"/>
-      <!-- Círculo inferior direito -->
-      <circle cx="70" cy="72" r="5.5" stroke-width="5.5"/>
-    </g>
-    
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <rect width="120" height="120" rx="26" fill="#1867fc"/>
+  <g stroke="#ffffff" stroke-linecap="round" fill="none">
+    <line x1="46" y1="82" x2="74" y2="38" stroke-width="10"/>
+    <circle cx="43" cy="42" r="9" stroke-width="9"/>
+    <circle cx="77" cy="78" r="9" stroke-width="9"/>
   </g>
 </svg>

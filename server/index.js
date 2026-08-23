@@ -6673,6 +6673,7 @@ function injectSeo(html, data, req) {
       '@type': 'Organization',
       name: config.brandName || 'PromoShop',
       url: origin,
+      logo: `${origin}/favicon-512.png`,
       email: config.contactEmail || undefined
     }
   };
@@ -6736,7 +6737,11 @@ app.get('/manifest.webmanifest', async (req, res) => {
     display: 'standalone',
     background_color: '#ffffff',
     theme_color: config.primaryColor || '#1269f3',
-    icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }]
+    icons: [
+      { src: '/favicon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/favicon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }
+    ]
   });
 });
 
