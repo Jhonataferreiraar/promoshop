@@ -12,6 +12,8 @@ assert.equal(relevant('notebook', 'Carregador Fonte Universal para Laptop', 'Ace
 assert.equal(relevant('notebook', 'Mochla Executiva Reforçada para Notebook', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Adaptador Bluetooth USB para Notebook', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Kit Limpa Telas com Lenço de Microfibra para Notebook', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Caixa de Som Estéreo para Computador Notebook', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Laptop Suporte Base de Alumínio Dobrável', 'Acessórios'), false);
 assert.equal(relevant('suporte notebook', 'Suporte Ergonômico para Notebook', 'Acessórios'), true);
 assert.equal(relevant('iphone 15 128gb', 'Apple iPhone 15 128GB Preto', 'Celulares'), true);
 assert.equal(relevant('iphone 15 128gb', 'Capinha Transparente para iPhone 15', 'Acessórios'), false);

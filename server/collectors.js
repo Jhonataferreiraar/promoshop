@@ -699,20 +699,30 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
     );
   }
 
-  const candidateLimit = Math.min(Math.max(Number(limit) || 40, 20), 80);
+  const candidateLimit = Math.min(Math.max(Number(limit) || 40, 20), 200);
   const variants = buildSearchQueryVariants(cleanQuery, 3);
-  const relevanceSearches = variants.flatMap((variant, index) => {
-    const pageCount = index === 0 ? 2 : 1;
-    return Array.from({ length: pageCount }, (_, pageIndex) => ({
-      variant,
-      page: pageIndex + 1,
+  const pageBudget = Math.min(10, Math.max(4, Math.ceil(candidateLimit / 20)));
+  const searches = [];
+  let popularPage = 1;
+  let relevanceCursor = 0;
+  while (searches.length < pageBudget) {
+    if (searches.length % 3 === 0) {
+      searches.push({
+        variant: variants[0] || cleanQuery,
+        page: popularPage,
+        sortType: 2
+      });
+      popularPage += 1;
+      continue;
+    }
+    const variantIndex = relevanceCursor % variants.length;
+    searches.push({
+      variant: variants[variantIndex],
+      page: Math.floor(relevanceCursor / variants.length) + 1,
       sortType: 1
-    }));
-  });
-  const searches = [
-    { variant: variants[0] || cleanQuery, page: 1, sortType: 2 },
-    ...relevanceSearches
-  ];
+    });
+    relevanceCursor += 1;
+  }
 
   const responses = await Promise.allSettled(searches.map(({ variant, page, sortType }, searchIndex) => {
     const graphqlQuery =
@@ -749,7 +759,7 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
     if (!fingerprint || seen.has(fingerprint)) return false;
     seen.add(fingerprint);
     return true;
-  }).slice(0, Math.min(80, Math.max(candidateLimit, searches.length * 20)));
+  }).slice(0, candidateLimit);
 
   return items.map((item) => {
     const price = Number(

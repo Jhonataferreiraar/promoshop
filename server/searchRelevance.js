@@ -1,7 +1,7 @@
 const stopWords = new Set(['a', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'o', 'os', 'para', 'por', 'um', 'uma']);
 
 const intents = [
-  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'lente', 'lentes', 'limpa', 'livro', 'memoria', 'mesa', 'microfibra', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela', 'telas', 'transmissor'] },
+  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'base', 'bateria', 'bolsa', 'cabo', 'caixa', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'lente', 'lentes', 'limpa', 'livro', 'memoria', 'mesa', 'microfibra', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'som', 'ssd', 'suporte', 'teclado', 'tela', 'telas', 'transmissor'], adjacentAccessories: ['adaptador', 'base', 'bolsa', 'capa', 'carregador', 'case', 'cooler', 'mesa', 'mochila', 'mochla', 'mouse', 'suporte', 'transmissor'] },
   { aliases: ['skincare'], matchTerms: ['skincare', 'hidratante', 'serum', 'niacinamida', 'retinol', 'retinal', 'acnezil', 'esfoliante', 'demaquilante', 'protetor', 'limpeza', 'mascara', 'acne'], accessories: ['cabo', 'capa', 'case', 'pelicula', 'suporte', 'tela'], alwaysExcludeAccessories: true },
   { aliases: ['celular', 'smartphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
@@ -60,7 +60,11 @@ export function productSearchRelevance(query, offer, { strict = true } = {}) {
     ? intent.accessories.filter((word) => {
       const position = titleTokens.indexOf(word);
       if (position < 0 || queryTokens.includes(word)) return false;
-      return intent.alwaysExcludeAccessories || position < intentPosition || intentMatchTerms.some((alias) => titleText.includes(`${word} para ${alias}`));
+      const adjacentAccessory = Array.isArray(intent.adjacentAccessories) &&
+        intent.adjacentAccessories.includes(word) &&
+        position > intentPosition &&
+        position - intentPosition <= 3;
+      return intent.alwaysExcludeAccessories || adjacentAccessory || position < intentPosition || intentMatchTerms.some((alias) => titleText.includes(`${word} para ${alias}`));
     })
     : [];
   const intentMatched = !intent || intentMatchTerms.some((alias) => titleTokens.includes(alias));
