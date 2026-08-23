@@ -270,6 +270,7 @@ function buildContactEmailHtml({ name, email, message }) {
   const safeName = escapeHtml(name);
   const safeEmail = escapeHtml(email);
   const safeMessage = contactMessageHtml(message);
+  const year = new Date().getFullYear();
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -322,7 +323,7 @@ function buildContactEmailHtml({ name, email, message }) {
               </td>
             </tr>
             <tr>
-              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;">Mensagem enviada pelo formulário de contato do PromoShop.</td>
+              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;"><div>Mensagem enviada pelo formulário de contato do PromoShop.</div><div style="margin-top:6px;">© ${year} PromoShop · <a href="https://promoshop.jhonatafaraujo.com.br" style="color:#667085; text-decoration:none;">promoshop.jhonatafaraujo.com.br</a></div></td>
             </tr>
           </table>
         </td>
@@ -335,6 +336,7 @@ function buildContactEmailHtml({ name, email, message }) {
 function buildContactReplyHtml({ name, message }) {
   const safeName = escapeHtml(name);
   const safeMessage = contactMessageHtml(message);
+  const year = new Date().getFullYear();
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -369,7 +371,7 @@ function buildContactReplyHtml({ name, message }) {
               </td>
             </tr>
             <tr>
-              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;">Esta mensagem foi enviada pelo painel de atendimento do PromoShop.</td>
+              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;"><div>Esta mensagem foi enviada pelo painel de atendimento do PromoShop.</div><div style="margin-top:6px;">© ${year} PromoShop · <a href="https://promoshop.jhonatafaraujo.com.br" style="color:#667085; text-decoration:none;">promoshop.jhonatafaraujo.com.br</a></div></td>
             </tr>
           </table>
         </td>
@@ -1381,7 +1383,9 @@ app.post(
       'Mensagem:',
       message,
       '',
-      'Para responder, use o botão de resposta do seu e-mail.'
+      'Para responder, use o botão de resposta do seu e-mail.',
+      '',
+      `© ${new Date().getFullYear()} PromoShop · promoshop.jhonatafaraujo.com.br`
       ].join('\n');
 
     await updateStore((data) => {
@@ -1521,7 +1525,7 @@ app.post(
           to: [{ email: entry.email, name: entry.name }],
           replyTo: { email: entry.replyAddress || senderEmail, name: senderName },
           subject: 'Resposta do PromoShop',
-          textContent: `Olá, ${entry.name}!\n\n${replyMessage}\n\nObrigado por entrar em contato com o PromoShop.`,
+          textContent: `Olá, ${entry.name}!\n\n${replyMessage}\n\nObrigado por entrar em contato com o PromoShop.\n\n© ${new Date().getFullYear()} PromoShop · promoshop.jhonatafaraujo.com.br`,
           htmlContent: buildContactReplyHtml({ name: entry.name, message: replyMessage })
         })
       });
