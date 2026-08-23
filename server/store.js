@@ -132,6 +132,7 @@ const initialData = {
   },
   offers: [],
   coupons: [],
+  inbox: [],
   queue: [],
   logs: [],
   analytics: {
@@ -197,6 +198,7 @@ export async function readStore() {
   data.meta = { ...initialData.meta, ...(data.meta || {}), whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) } };
   data.offers ||= [];
   data.coupons ||= [];
+  data.inbox ||= [];
   data.queue ||= [];
   data.logs ||= [];
   data.analytics = {

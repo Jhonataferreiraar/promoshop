@@ -332,6 +332,53 @@ function buildContactEmailHtml({ name, email, message }) {
 </html>`;
 }
 
+function buildContactReplyHtml({ name, message }) {
+  const safeName = escapeHtml(name);
+  const safeMessage = contactMessageHtml(message);
+
+  return `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Resposta do PromoShop</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .email-shell { width: 100% !important; }
+        .email-pad { padding: 24px 18px !important; }
+        .email-title { font-size: 24px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0; padding:0; width:100%; background:#f3f6fb; color:#1d2939; font-family:Arial,Helvetica,sans-serif; -webkit-text-size-adjust:100%;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; background:#f3f6fb;">
+      <tr>
+        <td align="center" style="padding:28px 12px;">
+          <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:600px; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid #e4e7ec; border-radius:18px; background:#ffffff;">
+            <tr>
+              <td style="padding:26px 30px; background:#0b1f3a; color:#ffffff;">
+                <div style="font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9fc2ff;">PromoShop</div>
+                <div class="email-title" style="margin-top:10px; font-size:28px; line-height:1.25; font-weight:800;">Resposta da nossa equipe</div>
+              </td>
+            </tr>
+            <tr>
+              <td class="email-pad" style="padding:30px;">
+                <p style="margin:0 0 18px; color:#344054; font-size:16px; line-height:1.6;">Olá, ${safeName}!</p>
+                <div style="padding:20px; border:1px solid #eaecf0; border-radius:12px; color:#344054; font-size:15px; line-height:1.7; word-break:break-word; overflow-wrap:anywhere;">${safeMessage}</div>
+                <p style="margin:22px 0 0; color:#667085; font-size:13px; line-height:1.6;">Obrigado por entrar em contato com o PromoShop.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px; border-top:1px solid #eaecf0; color:#98a2b3; font-size:12px; line-height:1.5; text-align:center;">Esta mensagem foi enviada pelo painel de atendimento do PromoShop.</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
 const analyticsSessionWindowMs = 30 * 60 * 1000;
 const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
 const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
@@ -1264,6 +1311,18 @@ app.post(
     const copyToVisitor = email.toLowerCase() !== recipient.toLowerCase()
       ? [{ email, name }]
       : [];
+    const inboxItem = {
+      id: createId('inbox'),
+      name,
+      email,
+      message,
+      status: 'unread',
+      deliveryStatus: 'pending',
+      createdAt: new Date().toISOString(),
+      readAt: null,
+      repliedAt: null,
+      replies: []
+    };
     const textContent = [
       'PromoShop — nova mensagem recebida',
       '',
@@ -1274,7 +1333,13 @@ app.post(
       message,
       '',
       'Para responder, use o botão de resposta do seu e-mail.'
-    ].join('\n');
+      ].join('\n');
+
+    await updateStore((data) => {
+      data.inbox ||= [];
+      data.inbox.unshift(inboxItem);
+      data.inbox = data.inbox.slice(0, 500);
+    });
 
     if (!apiKey) {
       return res.status(503).json({
@@ -1310,17 +1375,135 @@ app.post(
       if (!brevoResponse.ok) {
         const details = (await brevoResponse.text()).slice(0, 300);
         console.error(`Brevo recusou o formulário (${brevoResponse.status}): ${details}`);
+        await updateStore((data) => {
+          const entry = data.inbox?.find((item) => item.id === inboxItem.id);
+          if (entry) {
+            entry.deliveryStatus = 'failed';
+            entry.deliveryError = `Brevo recusou o envio (${brevoResponse.status}).`;
+          }
+        }).catch(() => { });
         return res.status(502).json({
           error: 'O serviço de e-mail não aceitou a mensagem. Tente novamente ou use o e-mail exibido na página.'
         });
       }
 
+      await updateStore((data) => {
+        const entry = data.inbox?.find((item) => item.id === inboxItem.id);
+        if (entry) {
+          entry.deliveryStatus = 'sent';
+          entry.deliveredAt = new Date().toISOString();
+        }
+      });
+
       return res.json({ ok: true });
     } catch (error) {
       console.error('Falha ao enviar formulário pelo Brevo:', error.message);
+      await updateStore((data) => {
+        const entry = data.inbox?.find((item) => item.id === inboxItem.id);
+        if (entry) {
+          entry.deliveryStatus = 'failed';
+          entry.deliveryError = 'Falha de comunicação com o serviço de e-mail.';
+        }
+      }).catch(() => { });
       return res.status(502).json({
         error: 'Não foi possível enviar agora. Tente novamente em alguns instantes.'
       });
+    }
+  }
+);
+
+app.patch(
+  '/api/admin/inbox/:id',
+  requireAdmin,
+  async (req, res) => {
+    const requestedStatus = String(req.body?.status || '').trim().toLowerCase();
+    const nextStatus = requestedStatus === 'unread' ? 'unread' : 'read';
+    let updated = null;
+
+    await updateStore((data) => {
+      const entry = data.inbox?.find((item) => item.id === req.params.id);
+      if (!entry) return;
+
+      entry.status = nextStatus;
+      entry.readAt = nextStatus === 'read' ? (entry.readAt || new Date().toISOString()) : null;
+      updated = { ...entry, replies: Array.isArray(entry.replies) ? entry.replies : [] };
+    });
+
+    if (!updated) return res.status(404).json({ error: 'Mensagem não encontrada.' });
+    res.json({ ok: true, message: updated });
+  }
+);
+
+app.post(
+  '/api/admin/inbox/:id/reply',
+  requireAdmin,
+  async (req, res) => {
+    const replyMessage = String(req.body?.message || '').trim();
+    if (replyMessage.length < 1 || replyMessage.length > 4000) {
+      return res.status(400).json({ error: 'Escreva uma resposta entre 1 e 4.000 caracteres.' });
+    }
+
+    const store = await readStore();
+    const { config } = store;
+    const inbox = store.inbox || [];
+    const entry = inbox.find((item) => item.id === req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Mensagem não encontrada.' });
+
+    const apiKey = String(process.env.BREVO_API_KEY || '').trim();
+    const senderEmail = String(process.env.BREVO_SENDER_EMAIL || config.contactEmail || '').trim();
+    const senderName = String(process.env.BREVO_SENDER_NAME || config.brandName || 'PromoShop').trim();
+
+    if (!apiKey || !senderEmail) {
+      return res.status(503).json({ error: 'Configure a chave e o remetente da Brevo no Render antes de responder.' });
+    }
+
+    try {
+      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: entry.email, name: entry.name }],
+          replyTo: { email: senderEmail, name: senderName },
+          subject: 'Resposta do PromoShop',
+          textContent: `Olá, ${entry.name}!\n\n${replyMessage}\n\nObrigado por entrar em contato com o PromoShop.`,
+          htmlContent: buildContactReplyHtml({ name: entry.name, message: replyMessage })
+        })
+      });
+
+      if (!brevoResponse.ok) {
+        const details = (await brevoResponse.text()).slice(0, 300);
+        console.error(`Brevo recusou a resposta do inbox (${brevoResponse.status}): ${details}`);
+        return res.status(502).json({ error: 'A Brevo recusou a resposta. Confira o remetente, a chave e os IPs autorizados.' });
+      }
+
+      let updated = null;
+      await updateStore((data) => {
+        const current = data.inbox?.find((item) => item.id === entry.id);
+        if (!current) return;
+        current.status = 'replied';
+        current.readAt ||= new Date().toISOString();
+        current.repliedAt = new Date().toISOString();
+        current.replies ||= [];
+        current.replies.push({
+          id: createId('reply'),
+          message: replyMessage,
+          createdAt: new Date().toISOString(),
+          status: 'sent'
+        });
+        current.replies = current.replies.slice(-20);
+        updated = { ...current };
+      });
+
+      await addLog(`Resposta enviada pelo inbox para ${entry.email}.`, 'success');
+      res.json({ ok: true, message: updated });
+    } catch (error) {
+      console.error('Falha ao responder pelo inbox:', error.message);
+      res.status(502).json({ error: 'Não foi possível enviar a resposta agora. Tente novamente.' });
     }
   }
 );

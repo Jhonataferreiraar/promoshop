@@ -3337,6 +3337,373 @@ button {
 }
 
 /* =========================================================
+   CAIXA DE ENTRADA DO FORMULÁRIO
+   ========================================================= */
+
+.inbox-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.inbox-list-panel,
+.inbox-detail-panel {
+  min-width: 0;
+  min-height: 650px;
+}
+
+.inbox-heading {
+  align-items: flex-start;
+}
+
+.inbox-count {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #175cd3;
+  background: #eff6ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.inbox-list {
+  display: grid;
+  gap: 7px;
+  max-height: 570px;
+  overflow-y: auto;
+}
+
+.inbox-list-item {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+  padding: 13px 11px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #344054;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inbox-list-item:hover {
+  border-color: #dbe7ff;
+  background: #f8fbff;
+}
+
+.inbox-list-item.active {
+  border-color: #b2ccff;
+  background: #eff6ff;
+}
+
+.inbox-list-item.unread .inbox-list-copy strong {
+  color: #101828;
+}
+
+.inbox-list-item.unread::before {
+  width: 6px;
+  height: 6px;
+  position: absolute;
+  margin: 3px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--primary);
+  content: '';
+}
+
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-badge {
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: #e5484d;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.inbox-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #175cd3;
+  background: #dbeafe;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.inbox-list-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.inbox-list-copy strong,
+.inbox-list-copy small,
+.inbox-list-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-list-copy strong {
+  color: #475467;
+  font-size: 13px;
+}
+
+.inbox-list-copy small,
+.inbox-list-copy span,
+.inbox-list-item time {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.inbox-list-item time {
+  white-space: nowrap;
+}
+
+.inbox-detail-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.inbox-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.inbox-detail-head h2 {
+  margin: 4px 0 4px;
+  color: #101828;
+  font-size: 21px;
+}
+
+.inbox-detail-head a {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.inbox-detail-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.inbox-status {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #475467;
+  background: #f2f4f7;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.inbox-status.unread {
+  color: #175cd3;
+  background: #eff6ff;
+}
+
+.inbox-status.replied {
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.inbox-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 14px 0;
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.inbox-delivery-error {
+  color: #b54708;
+  font-weight: 700;
+}
+
+.inbox-message-body {
+  min-height: 130px;
+  padding: 18px;
+  border: 1px solid #eaecf0;
+  border-radius: 12px;
+  color: #344054;
+  background: #fcfcfd;
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inbox-replies {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.inbox-replies h3 {
+  margin: 0;
+  color: #475467;
+  font-size: 13px;
+}
+
+.inbox-replies article {
+  padding: 13px 15px;
+  border: 1px solid #dbe7ff;
+  border-radius: 11px;
+  background: #f8fbff;
+}
+
+.inbox-replies article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #175cd3;
+  font-size: 12px;
+}
+
+.inbox-replies article time {
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.inbox-replies article p {
+  margin: 8px 0 0;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inbox-reply-form {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.inbox-reply-form label {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.inbox-reply-form textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 13px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  color: #101828;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.inbox-reply-form textarea:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.inbox-reply-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.inbox-reply-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #fecdca;
+  border-radius: 9px;
+  color: #b42318;
+  background: #fff5f4;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inbox-reply-footer small {
+  color: #98a2b3;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.inbox-empty {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .inbox-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-list-panel,
+  .inbox-detail-panel {
+    min-height: auto;
+  }
+
+  .inbox-list {
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 600px) {
+  .inbox-detail-head,
+  .inbox-reply-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inbox-detail-actions {
+    justify-content: flex-start;
+  }
+
+  .inbox-reply-footer .button {
+    width: 100%;
+  }
+}
+
+/* =========================================================
    CORREÇÃO DOS NOMES DOS GRUPOS DO WHATSAPP
    ========================================================= */
 

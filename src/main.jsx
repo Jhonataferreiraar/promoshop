@@ -599,7 +599,7 @@ const publicInfoPages = {
     intro: 'Esta página explica, em linguagem simples, quais informações o PromoShop utiliza para funcionar e melhorar o serviço.',
     sections: [
       { title: '1. Dados de navegação', paragraphs: ['Para medir o alcance do site, criamos um identificador anônimo no navegador. Ele não contém seu nome, e-mail, telefone ou endereço e é usado apenas para contar visitantes, visualizações e sessões.', 'O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas. Se você limpar os dados do navegador ou trocar de dispositivo, poderá ser contado como um novo visitante.'] },
-      { title: '2. Formulário de contato', paragraphs: ['Quando você envia uma mensagem pelo formulário, recebemos seu nome, e-mail e o conteúdo da mensagem para responder à solicitação. Esses dados são enviados ao Brevo, nosso serviço de entrega de e-mails, e podem permanecer na caixa de entrada e no histórico da conta pelo tempo necessário para atender e organizar o contato.', 'Não usamos esses dados para vender listas ou enviar publicidade sem uma base adequada. Você pode solicitar informações sobre o uso dos seus dados pelo canal de contato indicado nesta página.'] },
+      { title: '2. Formulário de contato', paragraphs: ['Quando você envia uma mensagem pelo formulário, recebemos seu nome, e-mail e o conteúdo da mensagem para responder à solicitação. Esses dados são armazenados no painel administrativo do PromoShop e enviados ao Brevo, nosso serviço de entrega de e-mails, podendo permanecer nesses sistemas pelo tempo necessário para atender e organizar o contato.', 'Não usamos esses dados para vender listas ou enviar publicidade sem uma base adequada. Você pode solicitar informações sobre o uso dos seus dados pelo canal de contato indicado nesta página.'] },
       { title: '3. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp, o Brevo ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
       { title: '4. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. As métricas anônimas são mantidas para gerar relatórios de alcance e são resumidas no painel administrativo. Não vendemos dados pessoais.'] },
       { title: '5. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
@@ -916,6 +916,11 @@ function AdminApp() {
     const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
+  useEffect(() => {
+    if (!token || tab !== 'inbox') return undefined;
+    const interval = window.setInterval(() => load({ preserveConfig: true }), 15000);
+    return () => window.clearInterval(interval);
+  }, [token, tab]);
   if (!token) return <Login onLogin={setToken} />;
 
   async function saveConfig(event) {
@@ -1154,6 +1159,26 @@ function AdminApp() {
       setMessage(`Não foi possível excluir as falhas: ${error.message}`);
     }
   }
+  async function markInboxMessage(id, status = 'read') {
+    try {
+      await authApi(`/admin/inbox/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      await load({ preserveConfig: true });
+    } catch (error) {
+      setMessage(`Não foi possível atualizar a mensagem: ${error.message}`);
+    }
+  }
+  async function replyInboxMessage(id, replyText) {
+    const result = await authApi(`/admin/inbox/${id}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ message: replyText })
+    });
+    await load({ preserveConfig: true });
+    setMessage('Resposta enviada pelo Brevo.');
+    return result;
+  }
   function activateOffer(offer) {
     setDialog({
       type: 'affiliate-link',
@@ -1329,22 +1354,23 @@ function AdminApp() {
   }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja o alcance do site com métricas anônimas e consistentes.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja o alcance do site com métricas anônimas e consistentes.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
-    { label: 'Operação', items: ['overview', 'offers', 'coupons', 'queue'] },
+    { label: 'Operação', items: ['overview', 'offers', 'coupons', 'inbox', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp'] },
     { label: 'Sistema', items: ['analytics', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
+  const unreadInboxCount = (data.inbox || []).filter((item) => item.status === 'unread').length;
   const statusLabels = { offline: 'Desconectado', starting: 'Iniciando', qr: 'Aguardando leitura do QR Code', pairing: 'Código gerado', authenticated: 'Autenticado', connected: 'Conectado', error: 'Erro' };
   const formattedPairingCode = String(whatsapp.pairingCode || '').replace(/\s/g, '').match(/.{1,4}/g)?.join(' ') || '';
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
 
-  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i>{tabLabels[id]}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
+  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{Number(data.config.enableMercadoLivre) + Number(data.config.enableShopee) + Number(data.config.enableAliexpress)}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
@@ -1818,6 +1844,7 @@ function AdminApp() {
       </form>
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
+    {tab === 'inbox' && <InboxPanel messages={data.inbox || []} onMarkRead={markInboxMessage} onReply={replyInboxMessage} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
@@ -2462,6 +2489,67 @@ function AdminApp() {
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
+}
+
+function InboxPanel({ messages = [], onMarkRead, onReply }) {
+  const sortedMessages = [...messages].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const [selectedId, setSelectedId] = useState(sortedMessages[0]?.id || '');
+  const [replyText, setReplyText] = useState('');
+  const [replyError, setReplyError] = useState('');
+  const [sending, setSending] = useState(false);
+  const selected = sortedMessages.find((item) => item.id === selectedId) || sortedMessages[0] || null;
+  const unreadCount = sortedMessages.filter((item) => item.status === 'unread').length;
+
+  useEffect(() => {
+    if (!selectedId || !sortedMessages.some((item) => item.id === selectedId)) {
+      setSelectedId(sortedMessages[0]?.id || '');
+    }
+  }, [selectedId, messages]);
+
+  useEffect(() => {
+    setReplyText('');
+    setReplyError('');
+  }, [selectedId]);
+
+  function selectMessage(item) {
+    setSelectedId(item.id);
+    if (item.status === 'unread') onMarkRead(item.id, 'read');
+  }
+
+  async function submitReply(event) {
+    event.preventDefault();
+    if (!selected || !replyText.trim() || sending) return;
+
+    setSending(true);
+    setReplyError('');
+    try {
+      await onReply(selected.id, replyText.trim());
+      setReplyText('');
+    } catch (error) {
+      setReplyError(error.message || 'Não foi possível enviar a resposta.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return <div className="inbox-layout">
+    <section className="panel inbox-list-panel">
+      <div className="panel-heading inbox-heading">
+        <div><span className="section-step">ATENDIMENTO</span><h2>Mensagens recebidas</h2><p>{sortedMessages.length} mensagem(ns) · {unreadCount} não lida(s)</p></div>
+        <span className="inbox-count">{unreadCount}</span>
+      </div>
+      {sortedMessages.length ? <div className="inbox-list">{sortedMessages.map((item) => <button type="button" className={`inbox-list-item ${selected?.id === item.id ? 'active' : ''} ${item.status === 'unread' ? 'unread' : ''}`} key={item.id} onClick={() => selectMessage(item)}><span className="inbox-avatar">{String(item.name || '?').slice(0, 1).toUpperCase()}</span><span className="inbox-list-copy"><strong>{item.name || 'Visitante'}</strong><small>{item.email}</small><span>{String(item.message || '').replace(/\s+/g, ' ').slice(0, 90)}{String(item.message || '').length > 90 ? '…' : ''}</span></span><time>{item.createdAt ? new Date(item.createdAt).toLocaleDateString('pt-BR') : ''}</time></button>)}</div> : <div className="empty inbox-empty"><strong>Nenhuma mensagem ainda</strong><p>As mensagens enviadas pelo formulário da página de contato aparecerão aqui.</p></div>}
+    </section>
+    <section className="panel inbox-detail-panel">
+      {selected ? <>
+        <div className="inbox-detail-head"><div><span className="section-step">MENSAGEM</span><h2>{selected.name || 'Visitante'}</h2><a href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="inbox-detail-actions"><span className={`inbox-status ${selected.status}`}>{selected.status === 'unread' ? 'Não lida' : selected.status === 'replied' ? 'Respondida' : 'Lida'}</span><button className="text-button" type="button" onClick={() => onMarkRead(selected.id, selected.status === 'unread' ? 'read' : 'unread')}>{selected.status === 'unread' ? 'Marcar como lida' : 'Marcar como não lida'}</button></div></div>
+        <div className="inbox-meta"><span>Recebida em {selected.createdAt ? new Date(selected.createdAt).toLocaleString('pt-BR') : '—'}</span>{selected.deliveryStatus === 'failed' && <span className="inbox-delivery-error">A notificação por e-mail falhou, mas a mensagem foi salva aqui.</span>}</div>
+        <div className="inbox-message-body">{selected.message}</div>
+        {(selected.replies || []).length > 0 && <div className="inbox-replies"><h3>Respostas enviadas</h3>{selected.replies.map((reply) => <article key={reply.id}><div><strong>Você</strong><time>{reply.createdAt ? new Date(reply.createdAt).toLocaleString('pt-BR') : ''}</time></div><p>{reply.message}</p></article>)}</div>}
+        <form className="inbox-reply-form" onSubmit={submitReply}><label>Responder para {selected.name || 'visitante'}<textarea required minLength={1} maxLength={4000} rows={6} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Escreva sua resposta…" /></label>{replyError && <p className="inbox-reply-error" role="alert">{replyError}</p>}<div className="inbox-reply-footer"><small>A resposta será enviada pelo remetente configurado na Brevo.</small><button className="button primary" type="submit" disabled={sending || !replyText.trim()}>{sending ? 'Enviando…' : 'Enviar resposta'}</button></div></form>
+      </> : <div className="empty inbox-empty"><strong>Selecione uma mensagem</strong><p>Escolha uma mensagem na lista para ler e responder.</p></div>}
+    </section>
+  </div>;
 }
 
 function AnalyticsDashboard({ analytics = {} }) {
