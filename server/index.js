@@ -691,6 +691,27 @@ function sanitizeAssistantHistory(value) {
   })).filter((entry) => entry.content);
 }
 
+function assistantConversationReply(value) {
+  const message = normalizeSearchText(value);
+  if (!message) return '';
+  if (/^(?:nao )?(?:obrigad[oa]|muito obrigad[oa]|valeu|agradeco|brigad[oa])$/.test(message)) {
+    return 'Por nada! 😊 Quando quiser procurar outro produto ou descobrir um grupo de ofertas, é só me chamar.';
+  }
+  if (/^(?:oi|ola|opa|bom dia|boa tarde|boa noite|e ai)$/.test(message)) {
+    return 'Olá! 👋 Que bom ter você aqui. O que você está procurando hoje? Posso ajudar com produtos, preços e grupos de ofertas.';
+  }
+  if (/^(?:tchau|ate mais|ate logo|falou|fui)$/.test(message)) {
+    return 'Até mais! 👋 Volte quando quiser encontrar uma oferta ou um grupo da PromoShop.';
+  }
+  if (/^(?:tudo bem|como vai|como voce esta)$/.test(message)) {
+    return 'Tudo bem por aqui! 😊 E com você? Quando quiser, me diga qual produto ou tipo de oferta está procurando.';
+  }
+  if (/^(?:ok|okay|beleza|entendi|certo|perfeito|show)$/.test(message)) {
+    return 'Perfeito! Se quiser continuar, pode pedir outro produto, mudar o orçamento ou escolher um tipo de grupo.';
+  }
+  return '';
+}
+
 function parseAssistantAmount(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return 0;
@@ -6797,6 +6818,16 @@ app.post(
             error:
               'Sua mensagem está muito longa.'
           });
+      }
+
+      const conversationReply = assistantConversationReply(message);
+      if (conversationReply) {
+        return res.json({
+          status: 'chat',
+          message: conversationReply,
+          products: [],
+          audiences: []
+        });
       }
 
       const data = await readStore();

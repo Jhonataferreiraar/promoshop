@@ -178,6 +178,24 @@ try {
   assert.equal(assistantResult.status, 'result');
   assert.equal(assistantResult.products[0].title, 'Fone Bluetooth Teste Premium');
   assert.equal(assistantResult.audiences[0].code, 'G02');
+
+  const assistantThanks = await fetch(`${origin}/api/assistant/recommend`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: 'Obrigado!',
+      history: [
+        { role: 'user', content: 'Quero um fone bluetooth' },
+        { role: 'assistant', content: assistantQuestion.message },
+        { role: 'user', content: '200' },
+        { role: 'assistant', content: assistantResult.message }
+      ],
+      seenProductIds: assistantResult.products.map((product) => product.id)
+    })
+  }).then((response) => response.json());
+  assert.equal(assistantThanks.status, 'chat');
+  assert.equal(assistantThanks.products.length, 0);
+  assert.equal(assistantThanks.audiences.length, 0);
   const favoritesPage = await fetch(`${origin}/favoritos`).then((response) => response.text());
   assert.match(favoritesPage, /noindex, nofollow/);
 
