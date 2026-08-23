@@ -485,7 +485,7 @@ function mailboxName(value) {
 }
 
 const analyticsSessionWindowMs = 30 * 60 * 1000;
-const privacyPolicyVersion = '2026-08-23-v2';
+const privacyPolicyVersion = '2026-08-23-v3';
 
 function boundedNumber(value, fallback, minimum, maximum) {
   const number = Number(value);
@@ -567,6 +567,55 @@ function publicOfferAllowed(offer, config, nowMs = Date.now()) {
   return quality.score >= boundedNumber(config.qualityMinimumScore, 55, 0, 100);
 }
 
+function catalogSlug(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+}
+
+function offerPublicSlug(offer) {
+  return `${catalogSlug(offer?.title) || 'oferta'}-${String(offer?.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-10).toLowerCase()}`;
+}
+
+const productStopWords = new Set(['com','para','por','de','da','do','das','dos','em','e','ou','um','uma','kit','novo','nova','original','produto']);
+function productFingerprint(offer) {
+  return String(offer?.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((word) => word.length > 2 && !productStopWords.has(word)).slice(0, 7).sort().join('-');
+}
+
+function offerDiscount(offer) {
+  const price = Number(offer?.price || 0);
+  const original = Number(offer?.originalPrice || 0);
+  return original > price && price > 0 ? Math.round((1 - price / original) * 100) : 0;
+}
+
+function smartOfferScore(offer, config, analytics = {}, nowMs = Date.now()) {
+  const ageDays = Math.max(0, (nowMs - new Date(offer?.updatedAt || offer?.createdAt || 0).getTime()) / 86400000);
+  const freshness = Math.max(0, 100 - ageDays * 3);
+  const quality = offerQuality(offer, config).score;
+  const clicks = Number(analytics?.clicksByTarget?.[`offer:${offer.id}`]?.count || 0);
+  const clickScore = Math.min(100, Math.log2(clicks + 1) * 18);
+  const weights = {
+    discount: boundedNumber(config.rankingDiscountWeight, 35, 0, 100),
+    freshness: boundedNumber(config.rankingFreshnessWeight, 25, 0, 100),
+    quality: boundedNumber(config.rankingQualityWeight, 25, 0, 100),
+    clicks: boundedNumber(config.rankingClicksWeight, 15, 0, 100)
+  };
+  const total = Math.max(1, Object.values(weights).reduce((sum, value) => sum + value, 0));
+  return Math.round((Math.min(100, offerDiscount(offer)) * weights.discount + freshness * weights.freshness + quality * weights.quality + clickScore * weights.clicks) / total);
+}
+
+function diversifyOffers(offers) {
+  const remaining = [...offers];
+  const result = [];
+  while (remaining.length) {
+    const previousStore = result.at(-1)?.store;
+    const index = remaining.findIndex((offer) => offer.store !== previousStore);
+    result.push(remaining.splice(index >= 0 ? index : 0, 1)[0]);
+  }
+  return result;
+}
+
 function analyticsDay(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
@@ -603,7 +652,7 @@ function summarizeAnalytics(analytics = {}) {
     : {};
   const todayKey = analyticsDay();
   const dates = Object.keys(daily).sort();
-  const recentDates = dates.slice(-14);
+  const mapDates = (amount) => dates.slice(-amount).map((date) => analyticsDaySummary({ ...(daily[date] || {}), date }));
 
   return {
     totalPageViews: Number(analytics.totalPageViews || 0),
@@ -619,10 +668,9 @@ function summarizeAnalytics(analytics = {}) {
       ...(daily[todayKey] || {}),
       date: todayKey
     }),
-    last14Days: recentDates.map((date) => analyticsDaySummary({
-      ...(daily[date] || {}),
-      date
-    }))
+    last14Days: mapDates(14),
+    last30Days: mapDates(30),
+    last90Days: mapDates(90)
   };
 }
 
@@ -1513,6 +1561,11 @@ app.get(
       seoIndexingEnabled,
       seoStructuredDataEnabled,
       publicOfferPageSize,
+      smartRankingEnabled,
+      duplicateGroupingEnabled,
+      rankingDiversityEnabled,
+      publicAdvancedFiltersEnabled,
+      favoritesEnabled,
       showOfferUpdatedAt,
       affiliateDisclosureLabel,
       mobileCompactMenu,
@@ -1559,6 +1612,11 @@ app.get(
       seoIndexingEnabled,
       seoStructuredDataEnabled,
       publicOfferPageSize,
+      smartRankingEnabled,
+      duplicateGroupingEnabled,
+      rankingDiversityEnabled,
+      publicAdvancedFiltersEnabled,
+      favoritesEnabled,
       showOfferUpdatedAt,
       affiliateDisclosureLabel,
       mobileCompactMenu,
@@ -1594,7 +1652,7 @@ app.get(
     req,
     res
   ) => {
-    const { offers, config } = await readStore();
+    const { offers, config, analytics } = await readStore();
     const nowMs = Date.now();
     const eligible = (Array.isArray(offers) ? offers : [])
       .filter((offer) => publicOfferAllowed(offer, config, nowMs));
@@ -1605,38 +1663,100 @@ app.get(
 
     const query = String(req.query?.query || '').trim().toLocaleLowerCase('pt-BR').slice(0, 120);
     const store = String(req.query?.store || '').trim().slice(0, 80);
-    const sort = ['discount', 'recent', 'price'].includes(String(req.query?.sort)) ? String(req.query.sort) : 'discount';
+    const sort = ['smart', 'discount', 'recent', 'price'].includes(String(req.query?.sort)) ? String(req.query.sort) : (config.smartRankingEnabled === false ? 'discount' : 'smart');
     const limit = Math.round(boundedNumber(req.query?.limit, config.publicOfferPageSize || 24, 6, 60));
     const offset = Math.round(boundedNumber(req.query?.offset, 0, 0, 100000));
-    const discountValue = (offer) => {
-      const price = Number(offer?.price || 0);
-      const original = Number(offer?.originalPrice || 0);
-      return original > price && price > 0 ? Math.round((1 - price / original) * 100) : 0;
-    };
+    const category = String(req.query?.category || '').trim().slice(0, 100);
+    const minPrice = String(req.query?.minPrice || '').trim() ? boundedNumber(req.query.minPrice, 0, 0, 10000000) : 0;
+    const maxPrice = String(req.query?.maxPrice || '').trim() ? boundedNumber(req.query.maxPrice, 10000000, 0, 10000000) : 10000000;
+    const minDiscount = String(req.query?.minDiscount || '').trim() ? boundedNumber(req.query.minDiscount, 0, 0, 95) : 0;
+    const freeShipping = String(req.query?.freeShipping || '') === '1';
+    const requestedIds = new Set(String(req.query?.ids || '').split(',').map((id) => id.trim()).filter(Boolean).slice(0, 100));
     const stores = [...new Set(eligible.map((offer) => String(offer.store || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    const filtered = eligible.filter((offer) => {
+    const categories = [...new Set(eligible.map((offer) => String(offer.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    let filtered = eligible.filter((offer) => {
       const searchable = `${offer.title || ''} ${offer.store || ''} ${offer.category || ''}`.toLocaleLowerCase('pt-BR');
-      return (!query || searchable.includes(query)) && (!store || store === 'Todas' || offer.store === store);
+      const price = Number(offer.price || 0);
+      return (!query || searchable.includes(query))
+        && (!requestedIds.size || requestedIds.has(offer.id))
+        && (!store || store === 'Todas' || offer.store === store || catalogSlug(offer.store) === store)
+        && (!category || offer.category === category || catalogSlug(offer.category) === category)
+        && price >= minPrice && price <= maxPrice
+        && offerDiscount(offer) >= minDiscount
+        && (!freeShipping || offer.freeShipping === true);
     }).sort((a, b) => {
       if (sort === 'price') return Number(a.price || 0) - Number(b.price || 0);
       if (sort === 'recent') return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
-      return discountValue(b) - discountValue(a) || Number(b.featured) - Number(a.featured);
+      if (sort === 'smart') return smartOfferScore(b, config, analytics, nowMs) - smartOfferScore(a, config, analytics, nowMs);
+      return offerDiscount(b) - offerDiscount(a) || Number(b.featured) - Number(a.featured);
     });
+
+    if (config.duplicateGroupingEnabled !== false) {
+      const seen = new Set();
+      filtered = filtered.filter((offer) => {
+        const key = productFingerprint(offer) || offer.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    if (sort === 'smart' && config.rankingDiversityEnabled !== false) filtered = diversifyOffers(filtered);
 
     res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     return res.json({
       offers: filtered.slice(offset, offset + limit).map((offer) => ({
         ...offer,
-        qualityScore: offerQuality(offer, config).score
+        publicSlug: offerPublicSlug(offer),
+        qualityScore: offerQuality(offer, config).score,
+        rankingScore: smartOfferScore(offer, config, analytics, nowMs)
       })),
       total: filtered.length,
       offset,
       limit,
       stores,
-      topDiscount: Math.max(0, ...eligible.map(discountValue))
+      categories,
+      topDiscount: Math.max(0, ...eligible.map(offerDiscount))
     });
   }
 );
+
+app.get('/api/catalog/meta', async (_req, res) => {
+  const { offers, config } = await readStore();
+  const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
+  const countBy = (key) => Object.values(eligible.reduce((map, offer) => {
+    const name = String(offer[key] || '').trim();
+    if (!name) return map;
+    map[name] ||= { name, slug: catalogSlug(name), count: 0 };
+    map[name].count += 1;
+    return map;
+  }, {})).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR'));
+  res.set('Cache-Control', 'public, max-age=120');
+  res.json({ stores: countBy('store'), categories: countBy('category') });
+});
+
+app.get('/api/search/suggestions', async (req, res) => {
+  const query = String(req.query?.q || '').trim().toLocaleLowerCase('pt-BR').slice(0, 80);
+  if (query.length < 2) return res.json([]);
+  const { offers, config } = await readStore();
+  const suggestions = (offers || []).filter((offer) => publicOfferAllowed(offer, config) && `${offer.title} ${offer.store} ${offer.category}`.toLocaleLowerCase('pt-BR').includes(query))
+    .slice(0, 8).map((offer) => ({ title: offer.title, store: offer.store, slug: offerPublicSlug(offer) }));
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json(suggestions);
+});
+
+app.get('/api/offer/:slug', async (req, res) => {
+  const { offers, config, analytics } = await readStore();
+  const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
+  const offer = eligible.find((entry) => offerPublicSlug(entry) === req.params.slug);
+  if (!offer) return res.status(404).json({ error: 'Oferta não encontrada ou não está mais disponível.' });
+  const fingerprint = productFingerprint(offer);
+  const comparisons = eligible.filter((entry) => entry.id !== offer.id && productFingerprint(entry) === fingerprint)
+    .sort((a, b) => Number(a.price || 0) - Number(b.price || 0)).slice(0, 6);
+  const related = eligible.filter((entry) => entry.id !== offer.id && entry.category === offer.category && !comparisons.some((item) => item.id === entry.id))
+    .sort((a, b) => smartOfferScore(b, config, analytics) - smartOfferScore(a, config, analytics)).slice(0, 6);
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  res.json({ offer: { ...offer, publicSlug: offerPublicSlug(offer), qualityScore: offerQuality(offer, config).score }, comparisons: comparisons.map((entry) => ({ ...entry, publicSlug: offerPublicSlug(entry) })), related: related.map((entry) => ({ ...entry, publicSlug: offerPublicSlug(entry) })) });
+});
 
 app.get(
   '/api/coupons',
@@ -2272,7 +2392,7 @@ app.post(
     const targetId = String(req.body?.targetId || '').trim().slice(0, 120);
     const label = String(req.body?.label || '').trim().slice(0, 180);
     const store = String(req.body?.store || '').trim().slice(0, 80);
-    const allowedTypes = ['offer', 'coupon', 'whatsapp', 'group'];
+    const allowedTypes = ['offer', 'coupon', 'whatsapp', 'group', 'favorite'];
 
     if (!receiptId || !visitorId || !sessionId || !allowedTypes.includes(type) || !targetId) {
       return res.status(400).json({ error: 'Evento anônimo inválido.' });
@@ -2615,6 +2735,7 @@ app.get(
         const quality = offerQuality(offer, data.config);
         return {
           ...offer,
+          publicSlug: offerPublicSlug(offer),
           qualityScore: quality.score,
           qualityIssues: quality.issues,
           isStale: !offerIsFresh(offer, data.config)
@@ -2698,6 +2819,10 @@ app.put(
         const numericRules = {
           publicOfferPageSize: [24, 6, 60],
           publicOfferMaxAgeDays: [45, 1, 365],
+          rankingDiscountWeight: [35, 0, 100],
+          rankingFreshnessWeight: [25, 0, 100],
+          rankingQualityWeight: [25, 0, 100],
+          rankingClicksWeight: [15, 0, 100],
           qualityMinimumScore: [55, 0, 100],
           qualityMaxTitleLength: [180, 40, 500],
           linkCheckBatchSize: [20, 1, 50],
@@ -2725,10 +2850,12 @@ app.put(
         } catch {
           data.config.canonicalUrl = previousConfig.canonicalUrl || '';
         }
-        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText']) {
+        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri']) {
           const maximum = key.endsWith('CustomText') ? 3000 : key === 'heroText' || key === 'disclosure' || key === 'seoDescription' ? 1000 : 300;
           data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);
         }
+        if (!/^https:\/\//i.test(data.config.searchConsoleRedirectUri)) data.config.searchConsoleRedirectUri = previousConfig.searchConsoleRedirectUri || '';
+        if (!/^(?:sc-domain:|https?:\/\/)/i.test(data.config.searchConsoleSiteUrl)) data.config.searchConsoleSiteUrl = previousConfig.searchConsoleSiteUrl || '';
 
         if (audienceRoutingChanged) {
           for (const offer of data.offers) {
@@ -3435,6 +3562,67 @@ app.post(
   }
 );
 
+async function googleSearchConsoleAccessToken(secrets) {
+  const now = Date.now();
+  if (secrets.googleSearchConsoleAccessToken && Number(secrets.googleSearchConsoleTokenExpiresAt || 0) > now + 60_000) return secrets.googleSearchConsoleAccessToken;
+  if (!secrets.googleSearchConsoleRefreshToken) throw new Error('Conecte sua conta Google primeiro.');
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, refresh_token: secrets.googleSearchConsoleRefreshToken, grant_type: 'refresh_token' })
+  });
+  const body = await response.json();
+  if (!response.ok || !body.access_token) throw new Error(body.error_description || 'O Google não renovou o acesso ao Search Console.');
+  await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleTokenExpiresAt: now + Number(body.expires_in || 3600) * 1000 });
+  return body.access_token;
+}
+
+app.post('/api/admin/search-console/connect', requireAdmin, async (req, res) => {
+  const [{ config }, secrets] = await Promise.all([readStore(), readSecrets()]);
+  if (!secrets.googleSearchConsoleClientId || !secrets.googleSearchConsoleClientSecret) return res.status(400).json({ error: 'Informe o ID do cliente e a chave secreta do Google.' });
+  const redirectUri = String(config.searchConsoleRedirectUri || '').trim();
+  if (!/^https:\/\//i.test(redirectUri)) return res.status(400).json({ error: 'Configure uma URL de retorno HTTPS para o Search Console.' });
+  const state = crypto.randomBytes(24).toString('hex');
+  await updateSecrets({ googleSearchConsoleOAuthState: state });
+  const params = new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, redirect_uri: redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/webmasters.readonly', access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state });
+  res.json({ authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
+});
+
+app.get('/api/search-console/callback', async (req, res) => {
+  const [{ config }, secrets] = await Promise.all([readStore(), readSecrets()]);
+  const adminUrl = `${String(config.canonicalUrl || '').replace(/\/+$/, '')}/admin`;
+  if (!req.query.code || !req.query.state || req.query.state !== secrets.googleSearchConsoleOAuthState) return res.redirect(`${adminUrl}?searchconsole=error`);
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, code: String(req.query.code), redirect_uri: String(config.searchConsoleRedirectUri), grant_type: 'authorization_code' }) });
+    const body = await response.json();
+    if (!response.ok || !body.access_token) throw new Error(body.error_description || 'Falha ao autorizar.');
+    await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleRefreshToken: body.refresh_token || secrets.googleSearchConsoleRefreshToken, googleSearchConsoleTokenExpiresAt: Date.now() + Number(body.expires_in || 3600) * 1000, googleSearchConsoleOAuthState: '' });
+    await addLog('Google Search Console conectado.', 'success');
+    res.redirect(`${adminUrl}?searchconsole=connected`);
+  } catch (error) {
+    await addLog(`Falha ao conectar Search Console: ${error.message}`, 'error');
+    res.redirect(`${adminUrl}?searchconsole=error`);
+  }
+});
+
+app.get('/api/admin/search-console/summary', requireAdmin, async (_req, res) => {
+  try {
+    const [{ config }, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const accessToken = await googleSearchConsoleAccessToken(secrets);
+    const endDate = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const startDate = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const endpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(config.searchConsoleSiteUrl || 'sc-domain:jhonatafaraujo.com.br')}/searchAnalytics/query`;
+    const request = async (dimensions, rowLimit = 20) => {
+      const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ startDate, endDate, dimensions, rowLimit }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || 'Search Console não respondeu.');
+      return body.rows || [];
+    };
+    const [totals, queries, pages] = await Promise.all([request([], 1), request(['query'], 10), request(['page'], 10)]);
+    res.json({ period: { startDate, endDate }, totals: totals[0] || { clicks: 0, impressions: 0, ctr: 0, position: 0 }, queries, pages });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 app.get(
   '/api/admin/backup',
   requireAdmin,
@@ -3620,6 +3808,24 @@ app.put(
     return res.json(updated);
   }
 );
+
+app.post('/api/admin/offers/bulk', requireAdmin, async (req, res) => {
+  const ids = new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).slice(0, 200));
+  const action = String(req.body?.action || '');
+  if (!ids.size || !['pause', 'activate'].includes(action)) return res.status(400).json({ error: 'Seleção ou ação inválida.' });
+  let updated = 0;
+  await updateStore((data) => {
+    for (const offer of data.offers || []) {
+      if (!ids.has(String(offer.id))) continue;
+      if (action === 'activate' && !/^https:\/\//i.test(String(offer.affiliateUrl || '').trim())) continue;
+      offer.status = action === 'activate' ? 'active' : 'paused';
+      offer.updatedAt = new Date().toISOString();
+      updated += 1;
+    }
+  });
+  await addLog(`${updated} oferta(s) ${action === 'activate' ? 'ativadas' : 'pausadas'} na revisão.`, 'success');
+  res.json({ ok: true, updated });
+});
 
 app.delete(
   '/api/admin/coupons/:id',
@@ -6404,28 +6610,46 @@ function xmlEscape(value) {
   }[character]));
 }
 
-function pageSeo(config, pathname, origin) {
+function pageSeo(config, pathname, origin, offers = []) {
   const pages = {
     '/sobre': ['Sobre o PromoShop', 'Conheça o PromoShop, sua curadoria independente de ofertas e cupons de lojas parceiras.'],
     '/contato': ['Fale Conosco — PromoShop', 'Entre em contato com o PromoShop sobre ofertas, cupons, parcerias ou privacidade.'],
     '/termos-de-uso': ['Termos de Uso — PromoShop', 'Consulte as condições de uso, responsabilidades e transparência do PromoShop.'],
     '/privacidade': ['Política de Privacidade — PromoShop', 'Saiba como o PromoShop trata dados, consentimento, métricas e solicitações de privacidade.']
   };
-  const page = pages[pathname];
+  const offerMatch = pathname.match(/^\/oferta\/([^/]+)$/);
+  const offer = offerMatch ? offers.find((entry) => offerPublicSlug(entry) === offerMatch[1]) : null;
+  const categoryMatch = pathname.match(/^\/ofertas\/([^/]+)$/);
+  const storeMatch = pathname.match(/^\/loja\/([^/]+)$/);
+  const categoryName = categoryMatch ? offers.find((entry) => catalogSlug(entry.category) === categoryMatch[1])?.category : '';
+  const storeName = storeMatch ? offers.find((entry) => catalogSlug(entry.store) === storeMatch[1])?.store : '';
+  const page = offer
+    ? [`${offer.title} — oferta no ${offer.store}`, `Confira preço, desconto e condições de ${offer.title}. A compra é concluída diretamente no ${offer.store}.`]
+    : categoryName ? [`Ofertas de ${categoryName} — PromoShop`, `Compare ofertas selecionadas de ${categoryName} em lojas parceiras.`]
+      : storeName ? [`Ofertas do ${storeName} — PromoShop`, `Veja ofertas e cupons selecionados do ${storeName}. Confirme as condições diretamente na loja.`]
+        : pages[pathname];
   return {
     title: page?.[0] || String(config.seoTitle || `${config.brandName || 'PromoShop'} — Ofertas e cupons`),
     description: page?.[1] || String(config.seoDescription || ''),
     canonical: `${origin}${pathname === '/' ? '' : pathname}`,
-    image: String(config.seoImageUrl || '').trim()
+    image: String(offer?.image || config.seoImageUrl || '').trim(),
+    offer
   };
 }
 
-function injectSeo(html, config, req) {
+function injectSeo(html, data, req) {
+  const config = data.config || {};
   const pathname = req.path.replace(/\/+$/, '') || '/';
   const origin = publicSiteOrigin(config, req);
-  const seo = pageSeo(config, pathname, origin);
-  const noIndex = pathname.startsWith('/admin') || config.seoIndexingEnabled === false;
-  const structuredData = config.seoStructuredDataEnabled === false || noIndex ? '' : `<script type="application/ld+json">${JSON.stringify({
+  const seo = pageSeo(config, pathname, origin, data.offers || []);
+  const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || config.seoIndexingEnabled === false;
+  const schema = seo.offer ? {
+    '@context': 'https://schema.org', '@type': 'Product', name: seo.offer.title,
+    image: seo.offer.image ? [seo.offer.image] : undefined,
+    description: seo.description,
+    category: seo.offer.category || undefined,
+    offers: { '@type': 'Offer', url: seo.canonical, priceCurrency: 'BRL', price: Number(seo.offer.price || 0).toFixed(2), availability: 'https://schema.org/InStock', seller: { '@type': 'Organization', name: seo.offer.store || 'Loja parceira' } }
+  } : {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: config.brandName || 'PromoShop',
@@ -6437,7 +6661,8 @@ function injectSeo(html, config, req) {
       url: origin,
       email: config.contactEmail || undefined
     }
-  }).replace(/</g, '\\u003c')}</script>`;
+  };
+  const structuredData = config.seoStructuredDataEnabled === false || noIndex ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`;
   const tags = [
     `<meta name="description" content="${escapeHtml(seo.description)}">`,
     `<meta name="keywords" content="${escapeHtml(config.seoKeywords || '')}">`,
@@ -6472,12 +6697,18 @@ app.get('/robots.txt', async (req, res) => {
 });
 
 app.get('/sitemap.xml', async (req, res) => {
-  const { config } = await readStore();
+  const { config, offers } = await readStore();
   if (config.seoIndexingEnabled === false) return res.status(404).end();
   const origin = publicSiteOrigin(config, req);
   const lastmod = String(config.legalPolicyVersion || privacyPolicyVersion).slice(0, 10);
+  const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
   const paths = ['/', '/sobre', '/contato', '/termos-de-uso', '/privacidade'];
-  const urls = paths.map((pathname) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
+  const catalogPaths = [
+    ...new Set(eligible.map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
+    ...new Set(eligible.map((offer) => `/loja/${catalogSlug(offer.store)}`).filter((path) => !path.endsWith('/'))),
+    ...eligible.slice(0, 450).map((offer) => `/oferta/${offerPublicSlug(offer)}`)
+  ];
+  const urls = [...paths, ...catalogPaths].map((pathname) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
 });
 
@@ -6527,11 +6758,11 @@ app.use(
     }
 
     try {
-      const [html, { config }] = await Promise.all([
+      const [html, data] = await Promise.all([
         fs.readFile(path.join(root, 'dist', 'index.html'), 'utf8'),
         readStore()
       ]);
-      res.type('html').send(injectSeo(html, config, req));
+      res.type('html').send(injectSeo(html, data, req));
     } catch (error) {
       next(error);
     }

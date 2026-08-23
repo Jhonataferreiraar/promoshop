@@ -90,6 +90,12 @@ async function defaults() {
     magaluApiKey: '',
     netshoesAffiliateId: '',
     netshoesApiKey: '',
+    googleSearchConsoleClientId: '',
+    googleSearchConsoleClientSecret: '',
+    googleSearchConsoleAccessToken: '',
+    googleSearchConsoleRefreshToken: '',
+    googleSearchConsoleTokenExpiresAt: 0,
+    googleSearchConsoleOAuthState: '',
     brevoInboundToken: crypto.randomBytes(32).toString('hex'),
     aiApiKey: '',
     geminiApiKey: '',
@@ -185,6 +191,13 @@ async function updateSecretsUnlocked(changes) {
   if (typeof changes.netshoesApiKey === 'string' && changes.netshoesApiKey.trim()) next.netshoesApiKey = changes.netshoesApiKey.trim();
   if (changes.clearMagaluCredentials) { next.magaluAffiliateId = ''; next.magaluApiKey = ''; }
   if (changes.clearNetshoesCredentials) { next.netshoesAffiliateId = ''; next.netshoesApiKey = ''; }
+  if (typeof changes.googleSearchConsoleClientId === 'string' && changes.googleSearchConsoleClientId.trim()) next.googleSearchConsoleClientId = changes.googleSearchConsoleClientId.trim();
+  if (typeof changes.googleSearchConsoleClientSecret === 'string' && changes.googleSearchConsoleClientSecret.trim()) next.googleSearchConsoleClientSecret = changes.googleSearchConsoleClientSecret.trim();
+  if (typeof changes.googleSearchConsoleAccessToken === 'string') next.googleSearchConsoleAccessToken = changes.googleSearchConsoleAccessToken.trim();
+  if (typeof changes.googleSearchConsoleRefreshToken === 'string' && changes.googleSearchConsoleRefreshToken.trim()) next.googleSearchConsoleRefreshToken = changes.googleSearchConsoleRefreshToken.trim();
+  if (Number.isFinite(Number(changes.googleSearchConsoleTokenExpiresAt))) next.googleSearchConsoleTokenExpiresAt = Number(changes.googleSearchConsoleTokenExpiresAt);
+  if (typeof changes.googleSearchConsoleOAuthState === 'string') next.googleSearchConsoleOAuthState = changes.googleSearchConsoleOAuthState.trim();
+  if (changes.clearGoogleSearchConsoleConnection) { next.googleSearchConsoleAccessToken = ''; next.googleSearchConsoleRefreshToken = ''; next.googleSearchConsoleTokenExpiresAt = 0; next.googleSearchConsoleOAuthState = ''; }
   if (
     typeof changes.aiApiKey === 'string' &&
     normalizeApiKey(changes.aiApiKey)
@@ -248,6 +261,9 @@ export function secretStatus(secrets) {
   return {
     adminUser: secrets.adminUser,
     adminSetupRequired: !secrets.adminPasswordHash && !process.env.ADMIN_PASSWORD,
+    googleSearchConsoleClientIdConfigured: Boolean(secrets.googleSearchConsoleClientId),
+    googleSearchConsoleClientSecretConfigured: Boolean(secrets.googleSearchConsoleClientSecret),
+    googleSearchConsoleConnected: Boolean(secrets.googleSearchConsoleAccessToken || secrets.googleSearchConsoleRefreshToken),
     mercadoLivreClientIdConfigured: Boolean(secrets.mercadoLivreClientId),
     mercadoLivreClientSecretConfigured: Boolean(secrets.mercadoLivreClientSecret),
     mercadoLivreClientId: secrets.mercadoLivreClientId || '',

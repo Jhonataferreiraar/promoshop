@@ -60,7 +60,7 @@ try {
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v2' })
+    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v3' })
   });
   assert.equal(privacyReceipt.status, 200);
   const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
@@ -105,6 +105,21 @@ try {
   const sitemap = await fetch(`${origin}/sitemap.xml`).then((response) => response.text());
   assert.match(sitemap, /<urlset/);
   assert.match(sitemap, /\/privacidade/);
+  assert.doesNotMatch(sitemap, /\/favoritos/);
+
+  const createdOfferResponse = await fetch(`${origin}/api/admin/offers`, {
+    method: 'POST', headers: authorization,
+    body: JSON.stringify({ title: 'Fone Bluetooth Teste Premium', store: 'Loja Teste', category: 'Tecnologia', price: 99.9, originalPrice: 199.9, image: 'https://example.com/fone.jpg', affiliateUrl: 'https://example.com/produto', freeShipping: true, status: 'active' })
+  });
+  assert.equal(createdOfferResponse.status, 201);
+  const publicOffers = await fetch(`${origin}/api/offers?paged=1&sort=smart`).then((response) => response.json());
+  assert.equal(publicOffers.total, 1);
+  assert.equal(publicOffers.categories[0], 'Tecnologia');
+  assert.match(publicOffers.offers[0].publicSlug, /fone-bluetooth/);
+  const productPage = await fetch(`${origin}/api/offer/${publicOffers.offers[0].publicSlug}`).then((response) => response.json());
+  assert.equal(productPage.offer.title, 'Fone Bluetooth Teste Premium');
+  const favoritesPage = await fetch(`${origin}/favoritos`).then((response) => response.text());
+  assert.match(favoritesPage, /noindex, nofollow/);
 
   const invalidContact = await fetch(`${origin}/api/contact`, {
     method: 'POST',

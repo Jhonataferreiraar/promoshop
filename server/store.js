@@ -29,6 +29,17 @@ const initialData = {
     seoStructuredDataEnabled: true,
     publicOfferPageSize: 24,
     publicOfferMaxAgeDays: 45,
+    smartRankingEnabled: true,
+    rankingDiscountWeight: 35,
+    rankingFreshnessWeight: 25,
+    rankingQualityWeight: 25,
+    rankingClicksWeight: 15,
+    duplicateGroupingEnabled: true,
+    rankingDiversityEnabled: true,
+    publicAdvancedFiltersEnabled: true,
+    favoritesEnabled: true,
+    searchConsoleSiteUrl: 'sc-domain:jhonatafaraujo.com.br',
+    searchConsoleRedirectUri: 'https://promoshop.jhonatafaraujo.com.br/api/search-console/callback',
     showOfferUpdatedAt: true,
     affiliateDisclosureLabel: 'Publicidade · Link de afiliado',
     mobileCompactMenu: true,
@@ -60,7 +71,7 @@ const initialData = {
     legalContactRetentionMonths: 12,
     legalConsentRetentionYears: 5,
     legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
-    legalPolicyVersion: '2026-08-23-v2',
+    legalPolicyVersion: '2026-08-23-v3',
     legalAboutCustomText: '',
     legalContactCustomText: '',
     legalTermsCustomText: '',
@@ -231,7 +242,7 @@ export async function readStore() {
     data.config.heroText = initialData.config.heroText;
   }
 
-  if (data.config.legalPolicyVersion === '2026-08-23') {
+  if (['2026-08-23', '2026-08-23-v2'].includes(data.config.legalPolicyVersion)) {
     data.config.legalPolicyVersion = initialData.config.legalPolicyVersion;
   }
 

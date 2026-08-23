@@ -25,6 +25,15 @@ const fallbackConfig = {
   seoStructuredDataEnabled: true,
   publicOfferPageSize: 24,
   publicOfferMaxAgeDays: 45,
+  smartRankingEnabled: true,
+  rankingDiscountWeight: 35,
+  rankingFreshnessWeight: 25,
+  rankingQualityWeight: 25,
+  rankingClicksWeight: 15,
+  duplicateGroupingEnabled: true,
+  rankingDiversityEnabled: true,
+  publicAdvancedFiltersEnabled: true,
+  favoritesEnabled: true,
   showOfferUpdatedAt: true,
   affiliateDisclosureLabel: 'Publicidade · Link de afiliado',
   mobileCompactMenu: true,
@@ -56,7 +65,7 @@ const fallbackConfig = {
   legalContactRetentionMonths: 12,
   legalConsentRetentionYears: 5,
   legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
-  legalPolicyVersion: '2026-08-23-v2',
+  legalPolicyVersion: '2026-08-23-v3',
   legalAboutCustomText: '',
   legalContactCustomText: '',
   legalTermsCustomText: '',
@@ -132,7 +141,7 @@ function anonymousStorageId(storage, key) {
 const analyticsConsentKey = 'promoshop_analytics_consent';
 const analyticsConsentEvent = 'promoshop:analytics-consent';
 const privacyOpenEvent = 'promoshop:privacy-open';
-const privacyPolicyVersion = '2026-08-23-v2';
+const privacyPolicyVersion = '2026-08-23-v3';
 const privacyReceiptKey = 'promoshop_privacy_receipt';
 const privacyReceiptSyncKey = 'promoshop_privacy_receipt_synced';
 
@@ -312,18 +321,41 @@ function Logo({ name }) {
   return <a className="logo" href="/" aria-label={`${name} - início`}><span className="logo-mark">%</span>{name}</a>;
 }
 
+const favoritesStorageKey = 'promoshop_favorites';
+function readFavorites() {
+  try { return JSON.parse(localStorage.getItem(favoritesStorageKey) || '[]').filter(Boolean); } catch { return []; }
+}
+
+function OfferCard({ offer, config, favorite = false, onFavorite }) {
+  return <article className="offer-card">
+    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={offer.image} alt={offer.title} loading="lazy" referrerPolicy="no-referrer" /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
+    <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3><a href={`/oferta/${offer.publicSlug || offer.id}`}>{offer.title}</a></h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
+  </article>;
+}
+
 function PublicSite() {
   const [config, setConfig] = useState(fallbackConfig);
   const [offers, setOffers] = useState([]);
   const [offerTotal, setOfferTotal] = useState(0);
   const [offerStores, setOfferStores] = useState([]);
+  const [offerCategories, setOfferCategories] = useState([]);
   const [topDiscount, setTopDiscount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [coupons, setCoupons] = useState([]);
   const [couponCopied, setCouponCopied] = useState('');
-  const [query, setQuery] = useState('');
-  const [store, setStore] = useState('Todas');
-  const [sort, setSort] = useState('discount');
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const initialParams = new URLSearchParams(window.location.search);
+  const [query, setQuery] = useState(initialParams.get('q') || '');
+  const [store, setStore] = useState(pathParts[0] === 'loja' ? pathParts[1] : (initialParams.get('loja') || 'Todas'));
+  const [category, setCategory] = useState(pathParts[0] === 'ofertas' ? pathParts[1] : (initialParams.get('categoria') || ''));
+  const [sort, setSort] = useState(initialParams.get('ordem') || 'smart');
+  const [minPrice, setMinPrice] = useState(initialParams.get('min') || '');
+  const [maxPrice, setMaxPrice] = useState(initialParams.get('max') || '');
+  const [minDiscount, setMinDiscount] = useState(initialParams.get('desconto') || '');
+  const [freeShipping, setFreeShipping] = useState(initialParams.get('frete') === '1');
+  const [favorites, setFavorites] = useState(readFavorites);
+  const [suggestions, setSuggestions] = useState([]);
+  const favoritesOnly = window.location.pathname === '/favoritos';
   const [loading, setLoading] = useState(true);
   const [audiences, setAudiences] = useState([]);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -377,7 +409,13 @@ function PublicSite() {
         offset: String(append ? offers.length : 0),
         query,
         store: store === 'Todas' ? '' : store,
-        sort
+        category,
+        sort,
+        minPrice,
+        maxPrice,
+        minDiscount,
+        freeShipping: freeShipping ? '1' : '',
+        ids: favoritesOnly ? favorites.slice(0, 100).join(',') : ''
       });
       const result = await api(`/offers?${params.toString()}`, { cache: 'no-store' });
       if (requestId !== offerRequestRef.current) return;
@@ -385,6 +423,7 @@ function PublicSite() {
       setOffers((current) => append ? [...current, ...nextOffers] : nextOffers);
       setOfferTotal(Number(result.total || 0));
       setOfferStores(Array.isArray(result.stores) ? result.stores : []);
+      setOfferCategories(Array.isArray(result.categories) ? result.categories : []);
       setTopDiscount(Number(result.topDiscount || 0));
     } catch {
       if (!append) {
@@ -402,7 +441,27 @@ function PublicSite() {
   useEffect(() => {
     const timeout = window.setTimeout(() => loadOfferPage(), 280);
     return () => window.clearTimeout(timeout);
-  }, [query, store, sort, config.publicOfferPageSize]);
+  }, [query, store, category, sort, minPrice, maxPrice, minDiscount, freeShipping, favoritesOnly, favorites.join(','), config.publicOfferPageSize]);
+
+  useEffect(() => {
+    if (query.trim().length < 2) return setSuggestions([]);
+    const timeout = window.setTimeout(() => api(`/search/suggestions?q=${encodeURIComponent(query.trim())}`).then(setSuggestions).catch(() => setSuggestions([])), 180);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+
+  useEffect(() => {
+    if (pathParts[0] === 'loja' || pathParts[0] === 'ofertas' || favoritesOnly) return;
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (store !== 'Todas') params.set('loja', store);
+    if (category) params.set('categoria', category);
+    if (sort !== 'smart') params.set('ordem', sort);
+    if (minPrice) params.set('min', minPrice);
+    if (maxPrice) params.set('max', maxPrice);
+    if (minDiscount) params.set('desconto', minDiscount);
+    if (freeShipping) params.set('frete', '1');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`);
+  }, [query, store, category, sort, minPrice, maxPrice, minDiscount, freeShipping]);
 
   useEffect(() => {
     const refreshCoupons = () => {
@@ -429,10 +488,12 @@ function PublicSite() {
 
   useEffect(() => {
     document.documentElement.style.setProperty('--primary', config.primaryColor || fallbackConfig.primaryColor);
-    document.title = config.seoTitle || `${config.brandName} — Ofertas de verdade`;
+    const categoryName = offerCategories.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === category);
+    const storeName = offerStores.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === store);
+    document.title = favoritesOnly ? `Favoritos — ${config.brandName}` : categoryName ? `Ofertas de ${categoryName} — ${config.brandName}` : storeName ? `Ofertas do ${storeName} — ${config.brandName}` : (config.seoTitle || `${config.brandName} — Ofertas de verdade`);
     const description = document.querySelector('meta[name="description"]');
     if (description && config.seoDescription) description.setAttribute('content', config.seoDescription);
-  }, [config]);
+  }, [config, category, store, favoritesOnly, offerCategories.join(','), offerStores.join(',')]);
 
   useEffect(() => {
     if (!config.assistantAvailable) {
@@ -443,7 +504,16 @@ function PublicSite() {
   }, [config.assistantAvailable]);
 
   const stores = ['Todas', ...offerStores];
-  const visibleOffers = offers;
+  const favoriteSet = new Set(favorites);
+  const visibleOffers = favoritesOnly ? offers.filter((offer) => favoriteSet.has(offer.id)) : offers;
+  function toggleFavorite(offer) {
+    setFavorites((current) => {
+      const next = current.includes(offer.id) ? current.filter((id) => id !== offer.id) : [...current, offer.id];
+      localStorage.setItem(favoritesStorageKey, JSON.stringify(next));
+      if (!current.includes(offer.id) && config.clickAnalyticsEnabled !== false) trackPublicEvent('favorite', { id: offer.id, label: offer.title, store: offer.store });
+      return next;
+    });
+  }
 
   async function askAssistant(event) {
     event.preventDefault();
@@ -496,6 +566,7 @@ function PublicSite() {
           {coupons.length > 0 && <a href="#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a>}
           <a href="#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a>
           <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a>
+          {config.favoritesEnabled !== false && <a href="/favoritos" onClick={() => setMobileMenuOpen(false)}>Favoritos ({favorites.length})</a>}
         </nav>
         <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'header', label: 'Grupo no WhatsApp' })}>Grupo no WhatsApp</a></div>
       </div>
@@ -520,23 +591,23 @@ function PublicSite() {
       </section>
 
       <section className="search-panel container" aria-label="Filtros de ofertas">
-        <label className="search-control"><small>O que você procura?</small><span className="search-box"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Busque por produto, marca ou loja" /></span></label>
+        <label className="search-control"><small>O que você procura?</small><span className="search-box"><span aria-hidden="true">⌕</span><input list="offer-suggestions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Busque por produto, marca ou loja" /><datalist id="offer-suggestions">{suggestions.map((item) => <option value={item.title} key={item.slug}>{item.store}</option>)}</datalist></span></label>
         <div className="store-filter"><small>Filtrar por loja</small><div>{stores.map((item) => <button type="button" className={store === item ? 'active' : ''} key={item} onClick={() => setStore(item)}>{item}</button>)}</div></div>
-        <label className="sort-filter"><small>Ordenar por</small><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Ordenar ofertas"><option value="discount">Maior desconto</option><option value="recent">Mais recentes</option><option value="price">Menor preço</option></select></label>
-        {(query || store !== 'Todas') && <button type="button" className="clear-filters" onClick={() => { setQuery(''); setStore('Todas'); }}>Limpar filtros</button>}
+        <label className="sort-filter"><small>Ordenar por</small><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Ordenar ofertas"><option value="smart">Recomendadas</option><option value="discount">Maior desconto</option><option value="recent">Mais recentes</option><option value="price">Menor preço</option></select></label>
+        {config.publicAdvancedFiltersEnabled !== false && <div className="advanced-filters"><label>Preço mínimo<input type="number" min="0" value={minPrice} onChange={(event) => setMinPrice(event.target.value)} placeholder="R$ 0" /></label><label>Preço máximo<input type="number" min="0" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="Sem limite" /></label><label>Desconto mínimo<select value={minDiscount} onChange={(event) => setMinDiscount(event.target.value)}><option value="">Qualquer</option><option value="10">10% OFF</option><option value="20">20% OFF</option><option value="30">30% OFF</option><option value="40">40% OFF</option><option value="50">50% OFF</option></select></label><label className="shipping-filter"><input type="checkbox" checked={freeShipping} onChange={(event) => setFreeShipping(event.target.checked)} /> Frete grátis</label></div>}
+        {(query || store !== 'Todas' || category || minPrice || maxPrice || minDiscount || freeShipping) && <button type="button" className="clear-filters" onClick={() => { setQuery(''); setStore('Todas'); setCategory(''); setMinPrice(''); setMaxPrice(''); setMinDiscount(''); setFreeShipping(false); }}>Limpar filtros</button>}
       </section>
 
+      {!!offerCategories.length && <nav className="category-links container" aria-label="Categorias">{offerCategories.slice(0, 12).map((item) => <a className={category === item || category === String(item).toLowerCase().replace(/[^a-z0-9]+/g, '-') ? 'active' : ''} href={`/ofertas/${String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`} key={item}>{item}</a>)}</nav>}
+
       <section className="offers-section container" id="ofertas">
-        <div className="section-heading"><div><span className="eyebrow dark">OPORTUNIDADES SELECIONADAS</span><h2>Ofertas que valem a pena</h2><p>Compare preços e escolha sua próxima economia.</p></div><span className="results-count"><strong>{offerTotal}</strong> ofertas encontradas</span></div>
+        <div className="section-heading"><div><span className="eyebrow dark">OPORTUNIDADES SELECIONADAS</span><h2>{favoritesOnly ? 'Seus produtos favoritos' : category ? `Ofertas de ${offerCategories.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === category) || category}` : store !== 'Todas' ? `Ofertas do ${offerStores.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === store) || store}` : 'Ofertas que valem a pena'}</h2><p>Compare preços e escolha sua próxima economia.</p></div><span className="results-count"><strong>{favoritesOnly ? visibleOffers.length : offerTotal}</strong> ofertas encontradas</span></div>
         {loading && <p className="notice">Atualizando ofertas…</p>}
         <div className="offer-grid">
-          {visibleOffers.map((offer) => <article className="offer-card" key={offer.id}>
-            <div className="offer-image"><img src={offer.image} alt={offer.title} loading="lazy" referrerPolicy="no-referrer" />{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${offer.store.toLowerCase().includes('shopee') ? 'shopee' : offer.store.toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span></div>
-            <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3>{offer.title}</h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
-          </article>)}
+          {visibleOffers.map((offer) => <OfferCard offer={offer} config={config} favorite={favoriteSet.has(offer.id)} onFavorite={toggleFavorite} key={offer.id} />)}
         </div>
         {visibleOffers.length < offerTotal && <div className="load-more"><button className="button subtle" type="button" disabled={loadingMore} onClick={() => loadOfferPage({ append: true })}>{loadingMore ? 'Carregando…' : 'Mostrar mais ofertas'}</button><small>Exibindo {visibleOffers.length} de {offerTotal}</small></div>}
-        {!loading && !offerTotal && <div className="empty"><strong>Nenhuma oferta encontrada</strong><p>Tente remover algum filtro.</p></div>}
+        {!loading && !(favoritesOnly ? visibleOffers.length : offerTotal) && <div className="empty"><strong>{favoritesOnly ? 'Você ainda não salvou ofertas' : 'Nenhuma oferta encontrada'}</strong><p>{favoritesOnly ? 'Toque no coração de uma oferta para encontrá-la aqui.' : 'Tente remover algum filtro.'}</p></div>}
       </section>
 
       {coupons.length > 0 && (
@@ -761,6 +832,41 @@ function PublicSite() {
   </div>;
 }
 
+function ProductDetail({ slug }) {
+  const [config, setConfig] = useState(fallbackConfig);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [favorites, setFavorites] = useState(readFavorites);
+  usePublicAnalytics();
+
+  useEffect(() => {
+    Promise.all([api('/config/public'), api(`/offer/${encodeURIComponent(slug)}`)])
+      .then(([nextConfig, offerData]) => { setConfig({ ...fallbackConfig, ...nextConfig }); setData(offerData); })
+      .catch((nextError) => setError(nextError.message || 'Oferta não encontrada.'));
+  }, [slug]);
+
+  function toggleFavorite(offer) {
+    setFavorites((current) => {
+      const next = current.includes(offer.id) ? current.filter((id) => id !== offer.id) : [...current, offer.id];
+      localStorage.setItem(favoritesStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  if (error) return <div className="site-shell"><header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /></div></header><main className="product-page container"><div className="empty"><strong>{error}</strong><p>Esta oferta pode ter expirado ou sido removida.</p><a className="button primary" href="/">Ver ofertas atuais</a></div></main><SiteFooter config={config} /></div>;
+  if (!data?.offer) return <div className="site-shell"><main className="product-page container"><p className="notice">Carregando oferta…</p></main></div>;
+  const { offer, comparisons = [], related = [] } = data;
+  return <div className="site-shell">
+    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/favoritos">Favoritos ({favorites.length})</a></nav></div></header>
+    <main className="product-page container">
+      <nav className="breadcrumbs" aria-label="Navegação"><a href="/">Início</a><span>›</span><a href={`/ofertas/${String(offer.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>{offer.category}</a><span>›</span><span>{offer.title}</span></nav>
+      <section className="product-hero"><div className="product-image"><img src={offer.image} alt={offer.title} referrerPolicy="no-referrer" /></div><div className="product-copy"><span className="eyebrow dark">{offer.store} · {offer.category}</span><h1>{offer.title}</h1>{discount(offer) > 0 && <span className="product-discount">{discount(offer)}% de desconto</span>}<div className="product-price"><s>{offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong></div>{offer.freeShipping && <span className="shipping">Frete grátis informado pela loja</span>}<p>Confira preço, estoque, frete e condições diretamente na loja antes de concluir a compra.</p><small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><div className="product-actions"><a className="button primary" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ver oferta no {offer.store} ↗</a>{config.favoritesEnabled !== false && <button className="button subtle" type="button" onClick={() => toggleFavorite(offer)}>{favorites.includes(offer.id) ? '♥ Salvo' : '♡ Salvar'}</button>}</div></div></section>
+      {!!comparisons.length && <section className="product-related"><div className="section-heading"><div><span className="eyebrow dark">COMPARE</span><h2>Ofertas parecidas</h2><p>Compare valores antes de escolher.</p></div></div><div className="offer-grid">{comparisons.map((item) => <OfferCard offer={item} config={config} favorite={favorites.includes(item.id)} onFavorite={toggleFavorite} key={item.id} />)}</div></section>}
+      {!!related.length && <section className="product-related"><div className="section-heading"><div><span className="eyebrow dark">VOCÊ TAMBÉM PODE GOSTAR</span><h2>Mais ofertas de {offer.category}</h2></div></div><div className="offer-grid">{related.map((item) => <OfferCard offer={item} config={config} favorite={favorites.includes(item.id)} onFavorite={toggleFavorite} key={item.id} />)}</div></section>}
+    </main><SiteFooter config={config} /><PrivacyConsent policyVersion={config.legalPolicyVersion} />
+  </div>;
+}
+
 function SiteFooter({ config = fallbackConfig }) {
   const brandName = config.brandName || fallbackConfig.brandName;
   const year = new Date().getFullYear();
@@ -843,9 +949,9 @@ const publicInfoPages = {
     updatedAt: '23 de agosto de 2026',
     sections: [
       { title: '1. Controlador e contato', paragraphs: ['O responsável pelo tratamento relacionado ao PromoShop é Jhonata Ferreira de Araujo, pessoa física, localizado em Brasília/DF. O canal para assuntos de privacidade é contatopromoshop.site@gmail.com ou o formulário Fale Conosco.', 'Buscamos enviar uma resposta inicial em até 5 dias úteis, sem prejuízo de prazos específicos previstos em lei.'] },
-      { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões, páginas vistas e cliques em ofertas, cupons, grupos e botões. Registramos totais agregados, tipo do clique, loja e nome resumido do destino; não guardamos nesse controle o endereço completo do link. Os identificadores não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
+      { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões, páginas vistas e cliques em ofertas, cupons, favoritos, grupos e botões. Registramos totais agregados, tipo do clique, loja e nome resumido do destino; não guardamos nesse controle o endereço completo do link. Os identificadores não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Favoritos: os identificadores das ofertas salvas ficam apenas no armazenamento local do seu navegador e não são sincronizados com uma conta. Você pode removê-los pelo próprio site ou apagando os dados do navegador.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
       { title: '3. Finalidades e bases legais', paragraphs: ['A medição de audiência e de interação ajuda a entender quais páginas, lojas, ofertas e cupons despertam interesse. Ela é realizada com consentimento e pode ser rejeitada ou revogada sem perda de funcionalidade. Guardamos apenas um comprovante anônimo da escolha, com data, versão desta política e decisão, sem nome ou IP.', 'Os dados do contato são usados para receber, organizar e responder à solicitação, com base em procedimentos solicitados pelo titular e, conforme o caso, legítimo interesse no atendimento e na segurança. Também poderemos conservar informações para cumprir obrigação legal ou exercer direitos em processo.'] },
-      { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem e a Brevo para entrega e recebimento de e-mails. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu e WhatsApp. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
+      { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem, a Brevo para entrega e recebimento de e-mails e o Google Search Console para consultar relatórios agregados de desempenho na pesquisa, como cliques, impressões, páginas e termos buscados. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu e WhatsApp. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
       { title: '5. Transferências internacionais', paragraphs: ['Alguns provedores de hospedagem, e-mail, mensageria e programas de afiliados podem processar dados fora do Brasil. Nesses casos, buscamos utilizar serviços reconhecidos e mecanismos contratuais e de segurança compatíveis com a legislação aplicável.'] },
       { title: '6. Retenção e eliminação', paragraphs: ['Mensagens e respostas do Fale Conosco são mantidas por até 12 meses após a última interação, salvo necessidade legal de conservação por prazo maior. Identificadores de audiência podem ser mantidos por até 365 dias e resumos diários por até 120 dias.', 'Comprovantes anônimos de consentimento podem ser mantidos por até 5 anos para demonstrar a escolha registrada. Quando a pessoa rejeita ou revoga a medição, o identificador individual conhecido por este navegador é removido dos registros ativos; totais estatísticos já agregados não permitem reidentificação e podem permanecer.'] },
       { title: '7. Seus direitos', paragraphs: ['Você pode solicitar confirmação de tratamento, acesso, correção, anonimização, bloqueio, eliminação, portabilidade quando aplicável, informação sobre compartilhamento, revisão, oposição e revogação do consentimento. Poderemos pedir informações mínimas para confirmar a legitimidade da solicitação.', 'Para mudar a medição, use “Preferências de privacidade” no rodapé. Para outras solicitações, use o Fale Conosco com o assunto “Privacidade e dados pessoais”.'] },
@@ -1033,6 +1139,8 @@ function AdminApp() {
     magaluApiKey: '',
     netshoesAffiliateId: '',
     netshoesApiKey: '',
+    googleSearchConsoleClientId: '',
+    googleSearchConsoleClientSecret: '',
 
     aiApiKey: '',
     geminiApiKey: '',
@@ -1044,6 +1152,9 @@ function AdminApp() {
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
   const [adminOfferStore, setAdminOfferStore] = useState('Todas');
+  const [reviewFilter, setReviewFilter] = useState('attention');
+  const [reviewSelected, setReviewSelected] = useState([]);
+  const [searchConsoleData, setSearchConsoleData] = useState(null);
   const [productSearch, setProductSearch] = useState({
     query: '',
     stores: ['mercadolivre', 'shopee', 'magalu'],
@@ -1221,6 +1332,13 @@ function AdminApp() {
     window.history.replaceState({}, '', '/admin');
   }, []);
   useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get('searchconsole');
+    if (!status) return;
+    setTab('analytics');
+    setMessage(status === 'connected' ? 'Google Search Console conectado com sucesso.' : 'Não foi possível conectar o Search Console. Confira as credenciais e o log.');
+    window.history.replaceState({}, '', '/admin');
+  }, []);
+  useEffect(() => {
     if (!token || tab !== 'whatsapp') return undefined;
     const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
     return () => window.clearInterval(interval);
@@ -1230,6 +1348,9 @@ function AdminApp() {
     const interval = window.setInterval(() => load({ preserveConfig: true }), 15000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
+  useEffect(() => {
+    if (token && tab === 'analytics' && data.secrets?.googleSearchConsoleConnected && !searchConsoleData) loadSearchConsole();
+  }, [token, tab, data.secrets?.googleSearchConsoleConnected]);
   if (!token) return <Login onLogin={setToken} />;
 
   async function saveConfig(event) {
@@ -1744,11 +1865,35 @@ function AdminApp() {
   }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
+  async function bulkReview(action) {
+    if (!reviewSelected.length) return setMessage('Selecione pelo menos uma oferta.');
+    try {
+      const result = await authApi('/admin/offers/bulk', { method: 'POST', body: JSON.stringify({ ids: reviewSelected, action }) });
+      setMessage(`${result.updated || 0} oferta(s) atualizada(s).`);
+      setReviewSelected([]);
+      await load();
+    } catch (error) { setMessage(error.message); }
+  }
+
+  async function loadSearchConsole() {
+    try { setSearchConsoleData(await authApi('/admin/search-console/summary')); }
+    catch (error) { setMessage(error.message); }
+  }
+
+  async function connectSearchConsole() {
+    try {
+      await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
+      await authApi('/admin/secrets', { method: 'PUT', body: JSON.stringify({ googleSearchConsoleClientId: secretForm.googleSearchConsoleClientId, googleSearchConsoleClientSecret: secretForm.googleSearchConsoleClientSecret }) });
+      const result = await authApi('/admin/search-console/connect', { method: 'POST', body: '{}' });
+      window.location.href = result.authorizationUrl;
+    } catch (error) { setMessage(error.message); }
+  }
+
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
-    { label: 'Operação', items: ['overview', 'offers', 'coupons', 'inbox', 'queue'] },
+    { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp'] },
     { label: 'Sistema', items: ['analytics', 'health', 'settings', 'security', 'logs'] }
   ];
@@ -1759,6 +1904,7 @@ function AdminApp() {
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
+  const reviewOffers = data.offers.filter((offer) => reviewFilter === 'all' || (reviewFilter === 'stale' ? offer.isStale : reviewFilter === 'low' ? Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) : reviewFilter === 'paused' ? offer.status !== 'active' : (offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) || (offer.qualityIssues || []).length)));
   const setConfigField = (key, value) => setData((current) => ({
     ...current,
     config: { ...current.config, [key]: value }
@@ -2227,6 +2373,10 @@ function AdminApp() {
         </div>
       </div>
     )}
+    {tab === 'review' && <div className="review-layout">
+      <section className="panel review-summary"><div><span className="section-step">CONTROLE DE QUALIDADE</span><h2>{reviewOffers.length} oferta(s) nesta revisão</h2><p>Revise itens antigos, incompletos ou abaixo da nota mínima antes que apareçam para o público.</p></div><div className="review-filters"><button className={reviewFilter === 'attention' ? 'active' : ''} type="button" onClick={() => setReviewFilter('attention')}>Precisam de atenção</button><button className={reviewFilter === 'stale' ? 'active' : ''} type="button" onClick={() => setReviewFilter('stale')}>Antigas</button><button className={reviewFilter === 'low' ? 'active' : ''} type="button" onClick={() => setReviewFilter('low')}>Baixa qualidade</button><button className={reviewFilter === 'paused' ? 'active' : ''} type="button" onClick={() => setReviewFilter('paused')}>Pausadas</button><button className={reviewFilter === 'all' ? 'active' : ''} type="button" onClick={() => setReviewFilter('all')}>Todas</button></div></section>
+      <section className="panel review-manager"><div className="panel-heading"><label className="review-select-all"><input type="checkbox" checked={reviewOffers.length > 0 && reviewOffers.every((offer) => reviewSelected.includes(offer.id))} onChange={(event) => setReviewSelected(event.target.checked ? reviewOffers.map((offer) => offer.id) : [])} /> Selecionar lista</label><div className="review-actions"><button className="button subtle" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('pause')}>Pausar selecionadas</button><button className="button primary" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('activate')}>Ativar selecionadas</button></div></div><div className="review-list">{reviewOffers.map((offer) => <article className="review-row" key={offer.id}><input type="checkbox" checked={reviewSelected.includes(offer.id)} onChange={(event) => setReviewSelected((current) => event.target.checked ? [...new Set([...current, offer.id])] : current.filter((id) => id !== offer.id))} /><img src={offer.image} alt="" /><div><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price || 0))} · {offer.status === 'active' ? 'Ativa' : 'Pausada'}</small><span className={`offer-quality ${offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) ? 'warning' : 'ok'}`}>Qualidade {Number(offer.qualityScore || 0)}/100{offer.isStale ? ' · antiga' : ''}{offer.qualityIssues?.length ? ` · ${offer.qualityIssues.join(', ')}` : ''}</span></div><a className="text-button" href={`/oferta/${offer.publicSlug || offer.id}`} target="_blank" rel="noreferrer">Visualizar ↗</a></article>)}{!reviewOffers.length && <div className="empty"><strong>Nenhuma oferta neste filtro</strong><p>O catálogo está limpo para este critério.</p></div>}</div></section>
+    </div>}
     {tab === 'coupons' && <div className="coupons-admin-layout">
       <form className="panel form-grid coupon-form" onSubmit={addCoupon}>
         <div className="panel-heading"><div><span className="section-step">{editingCouponId ? 'EDIÇÃO DE CUPOM' : 'CADASTRO MANUAL'}</span><h2>{editingCouponId ? 'Editar cupom' : 'Novo cupom'}</h2><p>O cupom aparece no site e pode ser disparado apenas para os grupos marcados.</p></div></div>
@@ -2245,7 +2395,7 @@ function AdminApp() {
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
-    {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} />}
+    {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
         <div className="section-title"><div><span className="section-step">REGRAS GERAIS</span><h2>Como selecionar as ofertas</h2><p>Estas regras valem para todas as plataformas ativas.</p></div></div>
@@ -2927,6 +3077,10 @@ function AdminApp() {
           <label>Nota mínima de qualidade<input type="number" min="0" max="100" value={data.config.qualityMinimumScore ?? 55} onChange={(event) => setConfigField('qualityMinimumScore', Number(event.target.value))} /></label>
           <label>Tamanho máximo do título<input type="number" min="40" max="500" value={data.config.qualityMaxTitleLength ?? 180} onChange={(event) => setConfigField('qualityMaxTitleLength', Number(event.target.value))} /></label>
           <label>Links por verificação<input type="number" min="1" max="50" value={data.config.linkCheckBatchSize ?? 20} onChange={(event) => setConfigField('linkCheckBatchSize', Number(event.target.value))} /></label>
+          <label>Peso do desconto<input type="number" min="0" max="100" value={data.config.rankingDiscountWeight ?? 35} onChange={(event) => setConfigField('rankingDiscountWeight', Number(event.target.value))} /></label>
+          <label>Peso da novidade<input type="number" min="0" max="100" value={data.config.rankingFreshnessWeight ?? 25} onChange={(event) => setConfigField('rankingFreshnessWeight', Number(event.target.value))} /></label>
+          <label>Peso da qualidade<input type="number" min="0" max="100" value={data.config.rankingQualityWeight ?? 25} onChange={(event) => setConfigField('rankingQualityWeight', Number(event.target.value))} /></label>
+          <label>Peso dos cliques<input type="number" min="0" max="100" value={data.config.rankingClicksWeight ?? 15} onChange={(event) => setConfigField('rankingClicksWeight', Number(event.target.value))} /></label>
           <label className="wide-field">Termos bloqueados<input value={data.config.qualityBlockedTerms ?? ''} onChange={(event) => setConfigField('qualityBlockedTerms', event.target.value)} /><small>Separe por vírgula. Itens com esses termos perdem qualidade.</small></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.qualityFilterEnabled !== false} onChange={(event) => setConfigField('qualityFilterEnabled', event.target.checked)} /><span><strong>Filtro de qualidade</strong><small>Oculta ofertas abaixo da nota mínima.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.staleOffersHidden !== false} onChange={(event) => setConfigField('staleOffersHidden', event.target.checked)} /><span><strong>Ocultar ofertas antigas</strong><small>Usa o limite de idade definido acima.</small></span></label>
@@ -2934,6 +3088,11 @@ function AdminApp() {
           <label className="toggle-card"><input type="checkbox" checked={data.config.qualityRequireHttpsLink !== false} onChange={(event) => setConfigField('qualityRequireHttpsLink', event.target.checked)} /><span><strong>Exigir link HTTPS</strong><small>Ajuda a evitar destinos inseguros.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.linkCheckEnabled !== false} onChange={(event) => setConfigField('linkCheckEnabled', event.target.checked)} /><span><strong>Verificação de links</strong><small>Habilita o monitor para domínios conhecidos.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.linkCheckAutoPause === true} onChange={(event) => setConfigField('linkCheckAutoPause', event.target.checked)} /><span><strong>Pausar link quebrado</strong><small>Só pausa após resposta definitiva 404 ou 410.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.smartRankingEnabled !== false} onChange={(event) => setConfigField('smartRankingEnabled', event.target.checked)} /><span><strong>Ordem inteligente</strong><small>Equilibra desconto, novidade, qualidade e interesse.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.duplicateGroupingEnabled !== false} onChange={(event) => setConfigField('duplicateGroupingEnabled', event.target.checked)} /><span><strong>Agrupar duplicados</strong><small>Evita repetir o mesmo produto na vitrine.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.rankingDiversityEnabled !== false} onChange={(event) => setConfigField('rankingDiversityEnabled', event.target.checked)} /><span><strong>Diversificar lojas</strong><small>Evita uma sequência longa da mesma loja.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.publicAdvancedFiltersEnabled !== false} onChange={(event) => setConfigField('publicAdvancedFiltersEnabled', event.target.checked)} /><span><strong>Filtros avançados</strong><small>Preço, desconto e frete grátis no site.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.favoritesEnabled !== false} onChange={(event) => setConfigField('favoritesEnabled', event.target.checked)} /><span><strong>Favoritos</strong><small>Salvos somente no navegador do visitante.</small></span></label>
         </div>
       </section>
 
@@ -2956,7 +3115,7 @@ function AdminApp() {
           <label>Cidade e estado<input value={data.config.legalCityState ?? ''} onChange={(event) => setConfigField('legalCityState', event.target.value)} /></label>
           <label>E-mail de privacidade<input type="email" value={data.config.legalPrivacyEmail ?? ''} onChange={(event) => setConfigField('legalPrivacyEmail', event.target.value)} /></label>
           <label>Prazo de resposta (dias úteis)<input type="number" min="1" max="30" value={data.config.legalResponseBusinessDays ?? 5} onChange={(event) => setConfigField('legalResponseBusinessDays', Number(event.target.value))} /></label>
-          <label>Versão das políticas<input value={data.config.legalPolicyVersion ?? ''} onChange={(event) => setConfigField('legalPolicyVersion', event.target.value)} placeholder="2026-08-23-v2" /><small>Use AAAA-MM-DD-vN. Uma nova versão pede nova escolha de privacidade.</small></label>
+          <label>Versão das políticas<input value={data.config.legalPolicyVersion ?? ''} onChange={(event) => setConfigField('legalPolicyVersion', event.target.value)} placeholder="2026-08-23-v3" /><small>Use AAAA-MM-DD-vN. Uma nova versão pede nova escolha de privacidade.</small></label>
           <label className="wide-field">Programas de afiliados<input value={data.config.legalAffiliatePrograms ?? ''} onChange={(event) => setConfigField('legalAffiliatePrograms', event.target.value)} /></label>
           <label className="wide-field">Texto adicional em Sobre nós<textarea maxLength={3000} value={data.config.legalAboutCustomText ?? ''} onChange={(event) => setConfigField('legalAboutCustomText', event.target.value)} placeholder="Opcional. O texto obrigatório de transparência permanece atualizado automaticamente." /></label>
           <label className="wide-field">Texto adicional em Fale Conosco<textarea maxLength={3000} value={data.config.legalContactCustomText ?? ''} onChange={(event) => setConfigField('legalContactCustomText', event.target.value)} /></label>
@@ -3070,11 +3229,22 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSe
   </div>;
 }
 
-function AnalyticsDashboard({ analytics = {} }) {
+function AnalyticsDashboard({ analytics = {}, config = {}, secrets = {}, secretForm = {}, setSecretForm, searchConsole, onConnect, onRefreshSearchConsole, setConfigField }) {
+  const [period, setPeriod] = useState(30);
   const today = analytics.today || {};
-  const days = Array.isArray(analytics.last14Days) ? analytics.last14Days : [];
+  const periodKey = period === 90 ? 'last90Days' : period === 30 ? 'last30Days' : 'last14Days';
+  const days = Array.isArray(analytics[periodKey]) ? analytics[periodKey] : [];
   const maxPageViews = Math.max(1, ...days.map((day) => Number(day.pageViews || 0)));
-  const clickTypes = { offer: 'Ofertas', coupon: 'Cupons', whatsapp: 'WhatsApp', group: 'Grupos' };
+  const clickTypes = { offer: 'Ofertas', coupon: 'Cupons', whatsapp: 'WhatsApp', group: 'Grupos', favorite: 'Favoritos' };
+  function exportAnalytics() {
+    const rows = [['data', 'visualizacoes', 'sessoes', 'visitantes_unicos', 'cliques'], ...days.map((day) => [day.date, day.pageViews, day.sessions, day.uniqueVisitors, day.clicks])];
+    const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    link.download = `promoshop-acessos-${period}-dias.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
 
   return <div className="analytics-layout">
     <div className="stats analytics-stats">
@@ -3085,8 +3255,10 @@ function AnalyticsDashboard({ analytics = {} }) {
       <div><span><i>◎</i>Cliques medidos</span><strong>{Number(analytics.totalClicks || 0).toLocaleString('pt-BR')}</strong><small>Interações autorizadas</small></div>
     </div>
 
+    <section className="panel search-console-panel"><div className="panel-heading"><div><span className="section-step">GOOGLE SEARCH CONSOLE</span><h2>Desempenho na pesquisa Google</h2><p>{secrets.googleSearchConsoleConnected ? 'A conexão está pronta. Atualize para buscar os últimos dados disponíveis.' : 'Conecte a propriedade verificada para acompanhar cliques, impressões e termos pesquisados.'}</p></div><div className="review-actions">{secrets.googleSearchConsoleConnected && <button className="button subtle" type="button" onClick={onRefreshSearchConsole}>Atualizar dados</button>}<button className="button primary" type="button" onClick={onConnect}>{secrets.googleSearchConsoleConnected ? 'Reconectar Google' : 'Conectar Google'}</button></div></div><div className="settings-grid"><label>Propriedade<input value={config.searchConsoleSiteUrl || ''} onChange={(event) => setConfigField('searchConsoleSiteUrl', event.target.value)} placeholder="sc-domain:jhonatafaraujo.com.br" /></label><label>URL de retorno<input value={config.searchConsoleRedirectUri || ''} onChange={(event) => setConfigField('searchConsoleRedirectUri', event.target.value)} /></label><label>ID do cliente OAuth<input value={secretForm.googleSearchConsoleClientId || ''} onChange={(event) => setSecretForm({ ...secretForm, googleSearchConsoleClientId: event.target.value.trim() })} placeholder={secrets.googleSearchConsoleClientIdConfigured ? 'ID configurado — deixe vazio para manter' : '...apps.googleusercontent.com'} /></label><label>Chave secreta OAuth<input type="password" value={secretForm.googleSearchConsoleClientSecret || ''} onChange={(event) => setSecretForm({ ...secretForm, googleSearchConsoleClientSecret: event.target.value })} placeholder={secrets.googleSearchConsoleClientSecretConfigured ? 'Chave configurada — deixe vazio para manter' : 'Cole a chave secreta'} /></label></div>{searchConsole && <><div className="stats search-console-stats"><div><span>Cliques no Google</span><strong>{Number(searchConsole.totals?.clicks || 0).toLocaleString('pt-BR')}</strong></div><div><span>Impressões</span><strong>{Number(searchConsole.totals?.impressions || 0).toLocaleString('pt-BR')}</strong></div><div><span>CTR</span><strong>{(Number(searchConsole.totals?.ctr || 0) * 100).toFixed(1)}%</strong></div><div><span>Posição média</span><strong>{Number(searchConsole.totals?.position || 0).toFixed(1)}</strong></div></div><div className="analytics-detail-grid"><div className="analytics-ranking-list">{searchConsole.queries?.map((row) => <div key={row.keys?.[0]}><span>{row.keys?.[0]}</span><strong>{Number(row.clicks || 0)} clique(s)</strong></div>)}</div><div className="analytics-ranking-list">{searchConsole.pages?.map((row) => <div key={row.keys?.[0]}><span>{String(row.keys?.[0] || '').replace(/^https?:\/\/[^/]+/, '') || '/'}</span><strong>{Number(row.clicks || 0)} clique(s)</strong></div>)}</div></div></>}</section>
+
     <section className="panel analytics-panel">
-      <div className="panel-heading"><div><span className="section-step">ALCANCE DO SITE</span><h2>Visualizações nos últimos dias</h2><p>Uma pessoa que retorna depois de 30 minutos inicia uma nova sessão.</p></div></div>
+      <div className="panel-heading"><div><span className="section-step">ALCANCE DO SITE</span><h2>Visualizações nos últimos {period} dias</h2><p>Uma pessoa que retorna depois de 30 minutos inicia uma nova sessão.</p></div><div className="analytics-toolbar"><select value={period} onChange={(event) => setPeriod(Number(event.target.value))} aria-label="Período"><option value="14">14 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select><button className="button subtle" type="button" onClick={exportAnalytics}>Exportar CSV</button></div></div>
       {days.length ? <div className="analytics-chart" aria-label="Gráfico de visualizações por dia">{days.map((day) => {
         const height = Math.max(8, Math.round((Number(day.pageViews || 0) / maxPageViews) * 100));
         return <div className="analytics-bar-group" key={day.date} title={`${day.date}: ${day.pageViews || 0} visualizações e ${day.uniqueVisitors || 0} visitantes`}><strong>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</strong><div className="analytics-bar" style={{ height: `${height}%` }}></div><small>{String(day.date || '').slice(8, 10)}/{String(day.date || '').slice(5, 7)}</small></div>;
@@ -3129,4 +3301,5 @@ function QueueTable({ queue, onRemove, onForce, onRetry }) {
 const isAdmin = window.location.pathname.startsWith('/admin');
 const normalizedPublicPath = window.location.pathname.replace(/\/+$/, '') || '/';
 const isInfoPage = Object.prototype.hasOwnProperty.call(publicInfoPages, normalizedPublicPath);
-createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : <PublicSite />}</React.StrictMode>);
+const productSlug = normalizedPublicPath.match(/^\/oferta\/([^/]+)$/)?.[1] || '';
+createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
