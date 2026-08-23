@@ -3399,6 +3399,8 @@ app.put(
     res
   ) => {
     let updated;
+    let found = false;
+    let validationError = '';
 
     await updateStore(
       (data) => {
@@ -3413,8 +3415,11 @@ app.put(
           return;
         }
 
+        found = true;
+
         const allowed = [
           'title',
+          'store',
           'category',
           'price',
           'originalPrice',
@@ -3425,6 +3430,8 @@ app.put(
           'status'
         ];
 
+        const candidate = { ...offer };
+
         for (
           const key
           of allowed
@@ -3432,28 +3439,47 @@ app.put(
           if (
             key in req.body
           ) {
-            offer[key] =
+            candidate[key] =
               req.body[key];
           }
         }
 
-        offer.targetAudienceCodes =
+        candidate.title = String(candidate.title || '').trim().slice(0, 300);
+        candidate.store = String(candidate.store || 'Outra').trim().slice(0, 80);
+        candidate.category = String(candidate.category || '').trim().slice(0, 100);
+        candidate.price = Number(candidate.price || 0);
+        candidate.originalPrice = Number(candidate.originalPrice || 0);
+        candidate.image = String(candidate.image || '').trim().slice(0, 2000);
+        candidate.affiliateUrl = String(candidate.affiliateUrl || '').trim().slice(0, 3000);
+        candidate.freeShipping = Boolean(candidate.freeShipping);
+        candidate.featured = Boolean(candidate.featured);
+
+        if (!candidate.title || !(candidate.price > 0) || !/^https:\/\//i.test(candidate.affiliateUrl)) {
+          validationError = 'Produto, preço válido e link HTTPS são obrigatórios.';
+          return;
+        }
+
+        candidate.targetAudienceCodes =
           getAudienceCodesForOffer(
-            offer,
+            candidate,
             data.config
               .whatsappAudiences
           );
 
-        offer.updatedAt =
+        candidate.updatedAt =
           new Date()
             .toISOString();
 
-        updated =
-          offer;
+        Object.assign(offer, candidate);
+        updated = { ...offer };
       }
     );
 
-    if (!updated) {
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    if (!found) {
       return res
         .status(404)
         .json({

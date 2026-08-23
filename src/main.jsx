@@ -1089,6 +1089,22 @@ function Login({ onLogin }) {
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };
 const defaultCoupon = { title: '', store: 'Magalu', code: '', description: '', discountType: 'percent', discountValue: '', minPurchase: '', expiresAt: '', link: 'https://www.magazinevoce.com.br/magazinepromoshopsite/', image: '', featured: true, active: true, targetAudienceCodes: ['G01'] };
 
+function offerFormFromOffer(offer) {
+  return {
+    ...defaultNewOffer,
+    title: offer?.title || '',
+    store: offer?.store || 'Outra',
+    category: offer?.category || '',
+    price: offer?.price ?? '',
+    originalPrice: offer?.originalPrice ?? '',
+    image: offer?.image || '',
+    affiliateUrl: offer?.affiliateUrl || offer?.productUrl || '',
+    freeShipping: Boolean(offer?.freeShipping),
+    featured: Boolean(offer?.featured),
+    status: offer?.status || 'active'
+  };
+}
+
 function couponDateTimeLocal(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -1115,6 +1131,7 @@ function AdminApp() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
+  const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
   const [editingCouponId, setEditingCouponId] = useState('');
   const [secretForm, setSecretForm] = useState({
@@ -1564,7 +1581,36 @@ function AdminApp() {
     setSecretForm((current) => ({ ...current, adminPassword: '' }));
     setMessage('Acesso administrativo atualizado. Use os novos dados no próximo login.');
   }
-  async function addOffer(event) { event.preventDefault(); await authApi('/admin/offers', { method: 'POST', body: JSON.stringify(newOffer) }); setNewOffer(defaultNewOffer); await load(); setMessage('Oferta adicionada.'); }
+  async function addOffer(event) {
+    event.preventDefault();
+    try {
+      const isEditing = Boolean(editingOfferId);
+      await authApi(isEditing ? `/admin/offers/${editingOfferId}` : '/admin/offers', {
+        method: isEditing ? 'PUT' : 'POST',
+        body: JSON.stringify(newOffer)
+      });
+      setNewOffer(defaultNewOffer);
+      setEditingOfferId('');
+      await load();
+      setMessage(isEditing ? 'Oferta atualizada e revisada.' : 'Oferta adicionada.');
+    } catch (error) {
+      setMessage(`Não foi possível ${editingOfferId ? 'atualizar' : 'adicionar'} a oferta: ${error.message}`);
+    }
+  }
+
+  function editOffer(offer) {
+    setEditingOfferId(offer.id);
+    setNewOffer(offerFormFromOffer(offer));
+    setTab('offers');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setMessage('Oferta carregada para edição. Corrija os dados e clique em Salvar alterações.');
+  }
+
+  function cancelOfferEdit() {
+    setEditingOfferId('');
+    setNewOffer(defaultNewOffer);
+    setMessage('Edição da oferta cancelada.');
+  }
   async function addCoupon(event) {
     event.preventDefault();
     if (!couponForm.targetAudienceCodes.length) {
@@ -1850,6 +1896,7 @@ function AdminApp() {
     }
   }
   function useSearchResult(offer) {
+    setEditingOfferId('');
     setNewOffer({
       title: offer.title || '',
       store: offer.store || 'Mercado Livre',
@@ -2191,14 +2238,15 @@ function AdminApp() {
             <div className="panel-heading">
               <div>
                 <span className="section-step">
-                  CADASTRO MANUAL
+                  {editingOfferId ? 'EDIÇÃO DE OFERTA' : 'CADASTRO MANUAL'}
                 </span>
 
-                <h2>Adicionar oferta</h2>
+                <h2>{editingOfferId ? 'Editar oferta' : 'Adicionar oferta'}</h2>
 
                 <p>
-                  Use uma oferta encontrada acima ou preencha
-                  manualmente.
+                  {editingOfferId
+                    ? 'Confira os dados, corrija o que for necessário e salve a revisão.'
+                    : 'Use uma oferta encontrada acima ou preencha manualmente.'}
                 </p>
               </div>
             </div>
@@ -2268,9 +2316,10 @@ function AdminApp() {
               Frete grátis
             </label>
 
-            <button className="button primary full">
-              Adicionar oferta
-            </button>
+            <div className="offer-form-actions">
+              {editingOfferId && <button className="button subtle" type="button" onClick={cancelOfferEdit}>Cancelar edição</button>}
+              <button className="button primary" type="submit">{editingOfferId ? 'Salvar alterações' : 'Adicionar oferta'}</button>
+            </div>
           </form>
 
 
@@ -2344,6 +2393,7 @@ function AdminApp() {
                   </span>
 
                   <div className="offer-row-actions">
+                    <button onClick={() => editOffer(offer)}>Editar</button>
                     {offer.status === 'active' ? (
                       <>
                         <button
@@ -2391,8 +2441,8 @@ function AdminApp() {
       </div>
     )}
     {tab === 'review' && <div className="review-layout">
-      <section className="panel review-summary"><div><span className="section-step">CONTROLE DE QUALIDADE</span><h2>{reviewOffers.length} oferta(s) nesta revisão</h2><p>Revise itens antigos, incompletos ou abaixo da nota mínima antes que apareçam para o público.</p></div><div className="review-filters"><button className={reviewFilter === 'attention' ? 'active' : ''} type="button" onClick={() => setReviewFilter('attention')}>Precisam de atenção</button><button className={reviewFilter === 'stale' ? 'active' : ''} type="button" onClick={() => setReviewFilter('stale')}>Antigas</button><button className={reviewFilter === 'low' ? 'active' : ''} type="button" onClick={() => setReviewFilter('low')}>Baixa qualidade</button><button className={reviewFilter === 'paused' ? 'active' : ''} type="button" onClick={() => setReviewFilter('paused')}>Pausadas</button><button className={reviewFilter === 'all' ? 'active' : ''} type="button" onClick={() => setReviewFilter('all')}>Todas</button></div></section>
-      <section className="panel review-manager"><div className="panel-heading"><label className="review-select-all"><input type="checkbox" checked={reviewOffers.length > 0 && reviewOffers.every((offer) => reviewSelected.includes(offer.id))} onChange={(event) => setReviewSelected(event.target.checked ? reviewOffers.map((offer) => offer.id) : [])} /> Selecionar lista</label><div className="review-actions"><button className="button subtle" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('pause')}>Pausar selecionadas</button><button className="button primary" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('activate')}>Ativar selecionadas</button></div></div><div className="review-list">{reviewOffers.map((offer) => <article className="review-row" key={offer.id}><input type="checkbox" checked={reviewSelected.includes(offer.id)} onChange={(event) => setReviewSelected((current) => event.target.checked ? [...new Set([...current, offer.id])] : current.filter((id) => id !== offer.id))} /><img src={offer.image} alt="" /><div><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price || 0))} · {offer.status === 'active' ? 'Ativa' : 'Pausada'}</small><span className={`offer-quality ${offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) ? 'warning' : 'ok'}`}>Qualidade {Number(offer.qualityScore || 0)}/100{offer.isStale ? ' · antiga' : ''}{offer.qualityIssues?.length ? ` · ${offer.qualityIssues.join(', ')}` : ''}</span></div><a className="text-button" href={`/oferta/${offer.publicSlug || offer.id}`} target="_blank" rel="noreferrer">Visualizar ↗</a></article>)}{!reviewOffers.length && <div className="empty"><strong>Nenhuma oferta neste filtro</strong><p>O catálogo está limpo para este critério.</p></div>}</div></section>
+      <section className="panel review-summary"><div><span className="section-step">CONTROLE DE QUALIDADE</span><h2>{reviewOffers.length} oferta(s) nesta revisão</h2><p>Use Editar para corrigir preço, título, imagem ou link. Pause o que não for confiável e só aprove depois de conferir a oferta na loja.</p></div><div className="review-filters"><button className={reviewFilter === 'attention' ? 'active' : ''} type="button" onClick={() => setReviewFilter('attention')}>Precisam de atenção</button><button className={reviewFilter === 'stale' ? 'active' : ''} type="button" onClick={() => setReviewFilter('stale')}>Antigas</button><button className={reviewFilter === 'low' ? 'active' : ''} type="button" onClick={() => setReviewFilter('low')}>Baixa qualidade</button><button className={reviewFilter === 'paused' ? 'active' : ''} type="button" onClick={() => setReviewFilter('paused')}>Pausadas</button><button className={reviewFilter === 'all' ? 'active' : ''} type="button" onClick={() => setReviewFilter('all')}>Todas</button></div></section>
+      <section className="panel review-manager"><div className="panel-heading"><label className="review-select-all"><input type="checkbox" checked={reviewOffers.length > 0 && reviewOffers.every((offer) => reviewSelected.includes(offer.id))} onChange={(event) => setReviewSelected(event.target.checked ? reviewOffers.map((offer) => offer.id) : [])} /> Selecionar lista</label><div className="review-actions"><button className="button subtle" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('pause')}>Pausar selecionadas</button><button className="button primary" type="button" disabled={!reviewSelected.length} onClick={() => bulkReview('activate')}>Aprovar e ativar</button></div></div><div className="review-list">{reviewOffers.map((offer) => <article className="review-row" key={offer.id}><input type="checkbox" checked={reviewSelected.includes(offer.id)} onChange={(event) => setReviewSelected((current) => event.target.checked ? [...new Set([...current, offer.id])] : current.filter((id) => id !== offer.id))} /><img src={offer.image} alt="" /><div><strong>{offer.title}</strong><small>{offer.store} · {money.format(Number(offer.price || 0))} · {offer.status === 'active' ? 'Ativa' : 'Pausada'}</small><span className={`offer-quality ${offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) ? 'warning' : 'ok'}`}>Qualidade {Number(offer.qualityScore || 0)}/100{offer.isStale ? ' · antiga' : ''}{offer.qualityIssues?.length ? ` · ${offer.qualityIssues.join(', ')}` : ''}</span></div><div className="review-row-actions"><button className="button subtle" type="button" onClick={() => editOffer(offer)}>Editar</button><a className="button subtle" href={`/oferta/${offer.publicSlug || offer.id}`} target="_blank" rel="noreferrer">Visualizar ↗</a></div></article>)}{!reviewOffers.length && <div className="empty"><strong>Nenhuma oferta neste filtro</strong><p>O catálogo está limpo para este critério.</p></div>}</div></section>
     </div>}
     {tab === 'coupons' && <div className="coupons-admin-layout">
       <form className="panel form-grid coupon-form" onSubmit={addCoupon}>
