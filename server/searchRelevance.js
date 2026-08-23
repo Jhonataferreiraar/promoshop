@@ -1,7 +1,7 @@
 const stopWords = new Set(['a', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'o', 'os', 'para', 'por', 'um', 'uma']);
 
 const intents = [
-  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'livro', 'memoria', 'mesa', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela', 'transmissor'] },
+  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'lente', 'lentes', 'limpa', 'livro', 'memoria', 'mesa', 'microfibra', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela', 'telas', 'transmissor'] },
   { aliases: ['skincare'], matchTerms: ['skincare', 'hidratante', 'serum', 'niacinamida', 'retinol', 'retinal', 'acnezil', 'esfoliante', 'demaquilante', 'protetor', 'limpeza', 'mascara', 'acne'], accessories: ['cabo', 'capa', 'case', 'pelicula', 'suporte', 'tela'], alwaysExcludeAccessories: true },
   { aliases: ['celular', 'smartphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
@@ -94,6 +94,7 @@ export function rankProductSearchResults(query, offers, { strict = true, limitPe
     relevance: productSearchRelevance(query, offer, { strict })
   })).filter((offer) => offer.relevance.accepted).map((offer) => ({
     ...offer,
+    hasPromotion: Number(offer.score || 0) > 0,
     platformRelevanceScore: Math.round((
       offer.relevance.score +
       Math.min(40, Math.log10(Math.max(0, Number(offer.sales || 0)) + 1) * 10) +
@@ -101,9 +102,12 @@ export function rankProductSearchResults(query, offers, { strict = true, limitPe
       Math.min(5, Math.max(0, Number(offer.score || 0)) * 0.05)
     ) * 10) / 10
   })).sort((a, b) =>
+    Number(b.hasPromotion) - Number(a.hasPromotion) ||
+    Number(b.sales || 0) - Number(a.sales || 0) ||
     b.platformRelevanceScore - a.platformRelevanceScore ||
-    Number(a.sourceRank || Number.MAX_SAFE_INTEGER) - Number(b.sourceRank || Number.MAX_SAFE_INTEGER) ||
-    b.relevance.score - a.relevance.score
+    Number(b.rating || 0) - Number(a.rating || 0) ||
+    Number(b.score || 0) - Number(a.score || 0) ||
+    Number(a.sourceRank || Number.MAX_SAFE_INTEGER) - Number(b.sourceRank || Number.MAX_SAFE_INTEGER)
   );
 
   const storeCounts = new Map();

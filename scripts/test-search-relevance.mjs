@@ -11,6 +11,7 @@ assert.equal(relevant('notebook', 'Suporte Ergonômico para Notebook', 'Acessór
 assert.equal(relevant('notebook', 'Carregador Fonte Universal para Laptop', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Mochla Executiva Reforçada para Notebook', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Adaptador Bluetooth USB para Notebook', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Kit Limpa Telas com Lenço de Microfibra para Notebook', 'Acessórios'), false);
 assert.equal(relevant('suporte notebook', 'Suporte Ergonômico para Notebook', 'Acessórios'), true);
 assert.equal(relevant('iphone 15 128gb', 'Apple iPhone 15 128GB Preto', 'Celulares'), true);
 assert.equal(relevant('iphone 15 128gb', 'Capinha Transparente para iPhone 15', 'Acessórios'), false);
@@ -35,6 +36,13 @@ const skincareRanked = rankProductSearchResults('skincare', [
   { id: 'popular', title: 'Hidratante Facial com Niacinamida', store: 'Shopee', sales: 15000, rating: 4.9, score: 10, sourceRank: 1 }
 ], { strict: true, limitPerStore: 10 });
 assert.equal(skincareRanked[0].id, 'popular');
+
+const promotedBestSellers = rankProductSearchResults('notebook', [
+  { id: 'full-price', title: 'Notebook Mais Vendido sem Desconto', store: 'Shopee', sales: 5000, score: 0, price: 3000, originalPrice: 3000 },
+  { id: 'promo-popular', title: 'Notebook em Oferta Muito Vendido', store: 'Shopee', sales: 900, score: 15, price: 2550, originalPrice: 3000 },
+  { id: 'promo-small', title: 'Notebook em Oferta com Poucas Vendas', store: 'Shopee', sales: 20, score: 40, price: 1800, originalPrice: 3000 }
+], { strict: true, limitPerStore: 10 });
+assert.deepEqual(promotedBestSellers.map((item) => item.id), ['promo-popular', 'promo-small', 'full-price']);
 
 assert.deepEqual(buildSearchQueryVariants('Notebook Gamer'), ['notebook gamer', 'laptop gamer', 'ultrabook gamer']);
 assert.deepEqual(buildSearchQueryVariants('iPhone 15'), ['iphone 15']);
