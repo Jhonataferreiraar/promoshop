@@ -752,19 +752,39 @@ function assistantStoreFromText(value) {
   return '';
 }
 
-function assistantAudienceRecommendations(query, products, audiences) {
+function assistantAudienceRecommendations(interestText, products, audiences) {
   const codes = [];
+  const normalizedInterest = normalizeSearchText(interestText);
+  const interestMatches = (audiences || []).filter((audience) =>
+    audience && audience.enabled !== false && !['G01', 'G10'].includes(String(audience.code || '').toUpperCase())
+  ).map((audience) => {
+    const keywordScore = (Array.isArray(audience.keywords) ? audience.keywords : []).reduce((total, keyword) => {
+      const normalizedKeyword = normalizeSearchText(keyword);
+      return total + (normalizedKeyword && (` ${normalizedInterest} `).includes(` ${normalizedKeyword} `) ? Math.max(1, normalizedKeyword.split(' ').length) : 0);
+    }, 0);
+    const nameScore = normalizeSearchText(audience.name).split(/\s+/).filter((word) => word.length >= 3)
+      .reduce((total, word) => total + ((` ${normalizedInterest} `).includes(` ${word} `) ? 2 : 0), 0);
+    return { code: String(audience.code || '').toUpperCase(), score: keywordScore + nameScore };
+  }).filter((match) => match.score > 0).sort((a, b) => b.score - a.score);
+
+  for (const match of interestMatches) if (!codes.includes(match.code)) codes.push(match.code);
   for (const product of products) {
     const productCodes = Array.isArray(product.targetAudienceCodes) && product.targetAudienceCodes.length
       ? product.targetAudienceCodes
       : getAudienceCodesForOffer(product, audiences);
     for (const code of productCodes) if (!codes.includes(code)) codes.push(code);
   }
-  if (!codes.length && query) {
-    codes.push(...getAudienceCodesForOffer({ title: query, category: query, price: 1, originalPrice: 1 }, audiences));
+  if (!codes.length && normalizedInterest) {
+    codes.push(...getAudienceCodesForOffer({ title: interestText, category: interestText, price: 1, originalPrice: 1 }, audiences));
+  }
+  if (/\bimperdivel\b|\bgrande desconto\b|\bmaior desconto\b/.test(normalizedInterest) && !codes.includes('G10')) {
+    codes.push('G10');
+  }
+  if (/\bgeral\b|\btodos os produtos\b|\bqualquer oferta\b/.test(normalizedInterest) && !codes.includes('G01')) {
+    codes.push('G01');
   }
   const thematic = codes.filter((code) => !['G01', 'G10'].includes(String(code).toUpperCase()));
-  const selectedCodes = [...thematic, ...codes.filter((code) => !thematic.includes(code))].slice(0, 2);
+  const selectedCodes = [...thematic, ...codes.filter((code) => !thematic.includes(code))].slice(0, 3);
   return selectedCodes.map((code) => (audiences || []).find((audience) =>
     String(audience.code || '').toUpperCase() === String(code || '').toUpperCase()
   )).filter((audience) => audience && audience.enabled !== false).map((audience) => ({
@@ -6793,8 +6813,17 @@ app.post(
       const requestedStore = assistantStoreFromText(userContext);
       const seenProductIds = new Set((Array.isArray(req.body?.seenProductIds) ? req.body.seenProductIds : [])
         .map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100));
+      const interestAudiences = assistantAudienceRecommendations(userContext, [], audiences);
 
       if (!query) {
+        if (interestAudiences.length) {
+          return res.json({
+            status: 'result',
+            message: 'Encontrei os grupos que mais combinam com o que você gosta. Se quiser, também posso procurar um produto específico e perguntar sua faixa de preço.',
+            products: [],
+            audiences: interestAudiences
+          });
+        }
         return res.json({
           status: 'question',
           message: 'Claro! Qual produto você está procurando? Se puder, conte também para que vai usar e quanto pretende gastar.',
@@ -6808,7 +6837,7 @@ app.post(
           status: 'question',
           message: `Entendi: você procura ${query}. Qual é o valor máximo que pretende gastar? Você também pode responder “sem limite”.`,
           products: [],
-          audiences: []
+          audiences: interestAudiences
         });
       }
 
@@ -6837,11 +6866,11 @@ app.post(
           status: 'question',
           message: `Não encontrei uma oferta pública de ${query}${priceText}${requestedStore ? ` na ${requestedStore}` : ''} agora. Quer tentar outro valor, loja, marca ou modelo?`,
           products: [],
-          audiences: assistantAudienceRecommendations(query, [], audiences)
+          audiences: assistantAudienceRecommendations(userContext, [], audiences)
         });
       }
 
-      const recommendedAudiences = assistantAudienceRecommendations(query, products, audiences);
+      const recommendedAudiences = assistantAudienceRecommendations(userContext, products, audiences);
       const productPayload = products.map((offer) => ({
         id: String(offer.id || ''),
         title: String(offer.title || ''),

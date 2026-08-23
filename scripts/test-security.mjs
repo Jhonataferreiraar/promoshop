@@ -152,6 +152,17 @@ try {
   }).then((response) => response.json());
   assert.equal(assistantQuestion.status, 'question');
   assert.equal(assistantQuestion.products.length, 0);
+  assert.equal(assistantQuestion.audiences[0].code, 'G02');
+
+  const assistantGroups = await fetch(`${origin}/api/assistant/recommend`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Gosto de maquiagem, perfumes e produtos pet' })
+  }).then((response) => response.json());
+  assert.equal(assistantGroups.status, 'result');
+  assert.equal(assistantGroups.products.length, 0);
+  assert.equal(assistantGroups.audiences.some((audience) => audience.code === 'G04'), true);
+  assert.equal(assistantGroups.audiences.some((audience) => audience.code === 'G06'), true);
 
   const assistantResult = await fetch(`${origin}/api/assistant/recommend`, {
     method: 'POST',
