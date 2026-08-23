@@ -480,34 +480,7 @@ export async function collectMercadoLivre(config, secrets) {
   return uniqueOffers;
 }
 
-export async function searchMercadoLivreProducts(query, limit = 10) {
-  const cleanQuery = String(query || '').trim();
-
-  if (!cleanQuery) {
-    throw new Error('Informe o produto que deseja buscar.');
-  }
-
-  const token = await getMercadoLivreAccessToken();
-
-  const headers = token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
-
-  const searchUrl =
-    `https://api.mercadolibre.com/products/search` +
-    `?status=active` +
-    `&site_id=MLB` +
-    `&q=${encodeURIComponent(cleanQuery)}` +
-    `&limit=${Math.min(Math.max(Number(limit) || 10, 1), 20)}`;
-
-  const search = await fetchJson(searchUrl, { headers });
-
-  const products = search.results || [];
-
-  if (!products.length) {
-    return [];
-  }
-
+async function hydrateMercadoLivreCatalogProducts(products, headers) {
   const detailResults = await Promise.allSettled(
     products.map(async (product) => {
       const productId = encodeURIComponent(product.id);
@@ -557,6 +530,93 @@ export async function searchMercadoLivreProducts(query, limit = 10) {
       ...offer,
       searchSource: 'manual-search'
     }));
+}
+
+async function searchMercadoLivreCategoryHighlights(cleanQuery, headers, limit) {
+  const discovered = await fetchJson(
+    `https://api.mercadolibre.com/sites/MLB/domain_discovery/search?q=${encodeURIComponent(cleanQuery)}`,
+    { headers }
+  );
+  const categories = (Array.isArray(discovered) ? discovered : [])
+    .map((item) => item.category_id)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!categories.length) return [];
+
+  const highlightResults = await Promise.allSettled(categories.map((categoryId) => fetchJson(
+    `https://api.mercadolibre.com/highlights/MLB/category/${encodeURIComponent(categoryId)}`,
+    { headers }
+  )));
+  const entries = highlightResults
+    .filter((result) => result.status === 'fulfilled')
+    .flatMap((result) => result.value.content || [])
+    .slice(0, Math.max(20, limit));
+
+  const details = await Promise.allSettled(entries.map(async (entry) => {
+    if (entry.type === 'ITEM') {
+      const item = await fetchJson(
+        `https://api.mercadolibre.com/items/${encodeURIComponent(entry.id)}`,
+        { headers }
+      );
+      return normalizeMercadoLivre(item);
+    }
+    if (entry.type === 'PRODUCT') {
+      const product = await fetchJson(
+        `https://api.mercadolibre.com/products/${encodeURIComponent(entry.id)}`,
+        { headers }
+      );
+      const [offer] = await hydrateMercadoLivreCatalogProducts([product], headers);
+      return offer || null;
+    }
+    return null;
+  }));
+
+  return details
+    .filter((result) => result.status === 'fulfilled' && result.value)
+    .map((result) => ({
+      ...result.value,
+      searchSource: 'category-best-sellers'
+    }));
+}
+
+export async function searchMercadoLivreProducts(query, limit = 10) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) throw new Error('Informe o produto que deseja buscar.');
+
+  const token = await getMercadoLivreAccessToken();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 20);
+  let primaryError = null;
+  let catalogOffers = [];
+
+  try {
+    const search = await fetchJson(
+      `https://api.mercadolibre.com/products/search?status=active&site_id=MLB&q=${encodeURIComponent(cleanQuery)}&limit=${safeLimit}`,
+      { headers }
+    );
+    catalogOffers = await hydrateMercadoLivreCatalogProducts(search.results || [], headers);
+  } catch (error) {
+    primaryError = error;
+  }
+
+  let highlightOffers = [];
+  if (token && catalogOffers.length < safeLimit) {
+    try {
+      highlightOffers = await searchMercadoLivreCategoryHighlights(cleanQuery, headers, safeLimit);
+    } catch (error) {
+      if (!catalogOffers.length && !primaryError) primaryError = error;
+    }
+  }
+
+  const seen = new Set();
+  const combined = [...catalogOffers, ...highlightOffers].filter((offer) => {
+    const fingerprint = String(offer.externalId || offer.productUrl || '');
+    if (!fingerprint || seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
+  if (!combined.length && primaryError) throw primaryError;
+  return combined;
 }
 
 async function shopeeGraphQL(appId, appSecret, query) {
@@ -653,6 +713,8 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
     const graphqlQuery =
       `{ productOfferV2(` +
       `keyword: "${escapeGraphQL(variant)}", ` +
+      `listType: 0, ` +
+      `sortType: 1, ` +
       `page: ${page}, ` +
       `limit: 20` +
       `) { ` +
