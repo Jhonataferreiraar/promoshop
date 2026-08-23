@@ -13,7 +13,9 @@ const fallbackConfig = {
   whatsappAudiences: [],
   assistantAvailable: false,
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
-  contactEmail: 'contatopromoshop.site@gmail.com'
+  contactEmail: 'contatopromoshop.site@gmail.com',
+  inboxInboundEnabled: false,
+  inboxInboundDomain: 'reply.jhonatafaraujo.com.br'
 }
 
 const mercadoLivreCategories = [
@@ -1179,6 +1181,21 @@ function AdminApp() {
     setMessage('Resposta enviada pelo Brevo.');
     return result;
   }
+  async function setupInboxInbound(domain) {
+    setMessage('Configurando recebimento de respostas pela Brevo…');
+    try {
+      const result = await authApi('/admin/inbox/setup', {
+        method: 'POST',
+        body: JSON.stringify({ domain })
+      });
+      await load();
+      setMessage('Recebimento ativado. Agora adicione os registros MX exibidos na configuração do domínio.');
+      return result;
+    } catch (error) {
+      setMessage(error.message);
+      throw error;
+    }
+  }
   function activateOffer(offer) {
     setDialog({
       type: 'affiliate-link',
@@ -1844,7 +1861,7 @@ function AdminApp() {
       </form>
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
-    {tab === 'inbox' && <InboxPanel messages={data.inbox || []} onMarkRead={markInboxMessage} onReply={replyInboxMessage} />}
+    {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
@@ -2491,11 +2508,13 @@ function AdminApp() {
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
 }
 
-function InboxPanel({ messages = [], onMarkRead, onReply }) {
+function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSetup }) {
   const sortedMessages = [...messages].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const [selectedId, setSelectedId] = useState(sortedMessages[0]?.id || '');
   const [replyText, setReplyText] = useState('');
   const [replyError, setReplyError] = useState('');
+  const [inboundDomain, setInboundDomain] = useState(inboxConfig.inboxInboundDomain || 'reply.jhonatafaraujo.com.br');
+  const [setupBusy, setSetupBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const selected = sortedMessages.find((item) => item.id === selectedId) || sortedMessages[0] || null;
   const unreadCount = sortedMessages.filter((item) => item.status === 'unread').length;
@@ -2510,6 +2529,10 @@ function InboxPanel({ messages = [], onMarkRead, onReply }) {
     setReplyText('');
     setReplyError('');
   }, [selectedId]);
+
+  useEffect(() => {
+    if (inboxConfig.inboxInboundDomain) setInboundDomain(inboxConfig.inboxInboundDomain);
+  }, [inboxConfig.inboxInboundDomain]);
 
   function selectMessage(item) {
     setSelectedId(item.id);
@@ -2532,7 +2555,26 @@ function InboxPanel({ messages = [], onMarkRead, onReply }) {
     }
   }
 
-  return <div className="inbox-layout">
+  async function submitInboundSetup(event) {
+    event.preventDefault();
+    if (!inboundDomain.trim() || setupBusy) return;
+    setSetupBusy(true);
+    try {
+      await onSetup(inboundDomain.trim());
+    } catch {
+      // O painel principal exibe o erro retornado pela API.
+    } finally {
+      setSetupBusy(false);
+    }
+  }
+
+  return <div className="inbox-page">
+    <section className="panel inbox-setup-panel">
+      <div className="inbox-setup-copy"><span className="section-step">RESPOSTAS AUTOMÁTICAS</span><h2>{inboxConfig.inboxInboundEnabled ? 'Respostas por e-mail ativas' : 'Receba respostas nesta caixa'}</h2><p>{inboxConfig.inboxInboundEnabled ? `As respostas serão direcionadas para a conversa pelo subdomínio ${inboxConfig.inboxInboundDomain}.` : 'Para transformar o painel em uma caixa de entrada completa, use um subdomínio separado para receber as respostas.'}</p></div>
+      <form className="inbox-setup-form" onSubmit={submitInboundSetup}><label>Subdomínio de recebimento<input required type="text" value={inboundDomain} onChange={(event) => setInboundDomain(event.target.value)} placeholder="reply.jhonatafaraujo.com.br" /></label><button className="button primary" type="submit" disabled={setupBusy}>{setupBusy ? 'Ativando…' : inboxConfig.inboxInboundEnabled ? 'Atualizar configuração' : 'Ativar recebimento'}</button></form>
+      <div className="inbox-mx-hint"><strong>Antes ou depois de ativar, adicione no Registro.br:</strong><span><code>MX</code> prioridade <b>10</b> → <code>inbound1.sendinblue.com.</code></span><span><code>MX</code> prioridade <b>20</b> → <code>inbound2.sendinblue.com.</code></span><small>Use o host do subdomínio, por exemplo <code>reply</code>. A propagação pode levar algumas horas.</small></div>
+    </section>
+    <div className="inbox-layout">
     <section className="panel inbox-list-panel">
       <div className="panel-heading inbox-heading">
         <div><span className="section-step">ATENDIMENTO</span><h2>Mensagens recebidas</h2><p>{sortedMessages.length} mensagem(ns) · {unreadCount} não lida(s)</p></div>
@@ -2545,10 +2587,11 @@ function InboxPanel({ messages = [], onMarkRead, onReply }) {
         <div className="inbox-detail-head"><div><span className="section-step">MENSAGEM</span><h2>{selected.name || 'Visitante'}</h2><a href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="inbox-detail-actions"><span className={`inbox-status ${selected.status}`}>{selected.status === 'unread' ? 'Não lida' : selected.status === 'replied' ? 'Respondida' : 'Lida'}</span><button className="text-button" type="button" onClick={() => onMarkRead(selected.id, selected.status === 'unread' ? 'read' : 'unread')}>{selected.status === 'unread' ? 'Marcar como lida' : 'Marcar como não lida'}</button></div></div>
         <div className="inbox-meta"><span>Recebida em {selected.createdAt ? new Date(selected.createdAt).toLocaleString('pt-BR') : '—'}</span>{selected.deliveryStatus === 'failed' && <span className="inbox-delivery-error">A notificação por e-mail falhou, mas a mensagem foi salva aqui.</span>}</div>
         <div className="inbox-message-body">{selected.message}</div>
-        {(selected.replies || []).length > 0 && <div className="inbox-replies"><h3>Respostas enviadas</h3>{selected.replies.map((reply) => <article key={reply.id}><div><strong>Você</strong><time>{reply.createdAt ? new Date(reply.createdAt).toLocaleString('pt-BR') : ''}</time></div><p>{reply.message}</p></article>)}</div>}
+        {(selected.replies || []).length > 0 && <div className="inbox-replies"><h3>Histórico da conversa</h3>{selected.replies.map((reply) => <article className={reply.direction === 'inbound' ? 'inbound' : 'outbound'} key={reply.id}><div><strong>{reply.direction === 'inbound' ? (reply.name || selected.name || 'Visitante') : 'Você'}</strong><time>{reply.createdAt ? new Date(reply.createdAt).toLocaleString('pt-BR') : ''}</time></div><p>{reply.message}</p></article>)}</div>}
         <form className="inbox-reply-form" onSubmit={submitReply}><label>Responder para {selected.name || 'visitante'}<textarea required minLength={1} maxLength={4000} rows={6} value={replyText} onChange={(event) => setReplyText(event.target.value)} placeholder="Escreva sua resposta…" /></label>{replyError && <p className="inbox-reply-error" role="alert">{replyError}</p>}<div className="inbox-reply-footer"><small>A resposta será enviada pelo remetente configurado na Brevo.</small><button className="button primary" type="submit" disabled={sending || !replyText.trim()}>{sending ? 'Enviando…' : 'Enviar resposta'}</button></div></form>
       </> : <div className="empty inbox-empty"><strong>Selecione uma mensagem</strong><p>Escolha uma mensagem na lista para ler e responder.</p></div>}
     </section>
+    </div>
   </div>;
 }
 

@@ -20,6 +20,10 @@ const initialData = {
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     contactEmail: 'contatopromoshop.site@gmail.com',
+    inboxInboundEnabled: false,
+    inboxInboundDomain: 'reply.jhonatafaraujo.com.br',
+    inboxInboundWebhookId: '',
+    inboxInboundWebhookUrl: '',
     minDiscount: 20,
 
     maxPostsPerDay: 100,

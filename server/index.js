@@ -379,6 +379,53 @@ function buildContactReplyHtml({ name, message }) {
 </html>`;
 }
 
+function normalizeInboundDomain(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/\.$/, '');
+}
+
+function isValidInboundDomain(value) {
+  return /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(value);
+}
+
+function requestBaseUrl(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || req.protocol || 'https';
+  return `${protocol}://${req.get('host')}`;
+}
+
+function inboundWebhookUrl(req, token) {
+  return `${requestBaseUrl(req)}/api/webhooks/brevo/inbound?token=${encodeURIComponent(token)}`;
+}
+
+function inboundReplyAddress(config, inboxId) {
+  if (config.inboxInboundEnabled !== true) return '';
+  const domain = normalizeInboundDomain(config.inboxInboundDomain);
+  if (!isValidInboundDomain(domain)) return '';
+  const localPart = `ticket-${String(inboxId || '').replace(/[^a-z0-9-]/gi, '-').slice(-72)}`;
+  return `${localPart}@${domain}`;
+}
+
+function secretsMatch(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return leftBuffer.length > 0 && leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function mailboxAddress(value) {
+  if (typeof value === 'string') return value.trim().toLowerCase();
+  return String(value?.Address || value?.address || '').trim().toLowerCase();
+}
+
+function mailboxName(value) {
+  if (typeof value === 'string') return '';
+  return String(value?.Name || value?.name || '').trim();
+}
+
 const analyticsSessionWindowMs = 30 * 60 * 1000;
 const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
 const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
@@ -1311,11 +1358,13 @@ app.post(
     const copyToVisitor = email.toLowerCase() !== recipient.toLowerCase()
       ? [{ email, name }]
       : [];
+    const inboxId = createId('inbox');
     const inboxItem = {
-      id: createId('inbox'),
+      id: inboxId,
       name,
       email,
       message,
+      replyAddress: inboundReplyAddress(config, inboxId),
       status: 'unread',
       deliveryStatus: 'pending',
       createdAt: new Date().toISOString(),
@@ -1363,8 +1412,8 @@ app.post(
           to: [{ email: recipient, name: 'PromoShop' }],
           ...(copyToVisitor.length ? { cc: copyToVisitor } : {}),
           replyTo: {
-            email,
-            name
+            email: inboxItem.replyAddress || email,
+            name: inboxItem.replyAddress ? 'PromoShop atendimento' : name
           },
           subject: 'Mensagem recebida pelo PromoShop',
           textContent,
@@ -1387,11 +1436,13 @@ app.post(
         });
       }
 
+      const brevoResult = await brevoResponse.json().catch(() => ({}));
       await updateStore((data) => {
         const entry = data.inbox?.find((item) => item.id === inboxItem.id);
         if (entry) {
           entry.deliveryStatus = 'sent';
           entry.deliveredAt = new Date().toISOString();
+          entry.messageId = String(brevoResult.messageId || brevoResult.message_id || '').trim();
         }
       });
 
@@ -1468,7 +1519,7 @@ app.post(
         body: JSON.stringify({
           sender: { name: senderName, email: senderEmail },
           to: [{ email: entry.email, name: entry.name }],
-          replyTo: { email: senderEmail, name: senderName },
+          replyTo: { email: entry.replyAddress || senderEmail, name: senderName },
           subject: 'Resposta do PromoShop',
           textContent: `Olá, ${entry.name}!\n\n${replyMessage}\n\nObrigado por entrar em contato com o PromoShop.`,
           htmlContent: buildContactReplyHtml({ name: entry.name, message: replyMessage })
@@ -1481,6 +1532,7 @@ app.post(
         return res.status(502).json({ error: 'A Brevo recusou a resposta. Confira o remetente, a chave e os IPs autorizados.' });
       }
 
+      const brevoResult = await brevoResponse.json().catch(() => ({}));
       let updated = null;
       await updateStore((data) => {
         const current = data.inbox?.find((item) => item.id === entry.id);
@@ -1491,7 +1543,11 @@ app.post(
         current.replies ||= [];
         current.replies.push({
           id: createId('reply'),
+          direction: 'outbound',
+          name: senderName,
+          email: senderEmail,
           message: replyMessage,
+          messageId: String(brevoResult.messageId || brevoResult.message_id || '').trim(),
           createdAt: new Date().toISOString(),
           status: 'sent'
         });
@@ -1505,6 +1561,170 @@ app.post(
       console.error('Falha ao responder pelo inbox:', error.message);
       res.status(502).json({ error: 'Não foi possível enviar a resposta agora. Tente novamente.' });
     }
+  }
+);
+
+app.post(
+  '/api/webhooks/brevo/inbound',
+  async (req, res) => {
+    const secrets = await readSecrets();
+    if (!secretsMatch(req.query?.token, secrets.brevoInboundToken)) {
+      return res.status(401).json({ error: 'Webhook não autorizado.' });
+    }
+
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    let imported = 0;
+
+    await updateStore((data) => {
+      data.inbox ||= [];
+      const inboundDomain = normalizeInboundDomain(data.config?.inboxInboundDomain);
+
+      for (const item of items.slice(0, 20)) {
+        const messageId = String(item?.MessageId || item?.messageId || '').trim();
+        const fromAddress = mailboxAddress(item?.From || item?.from);
+        const fromName = mailboxName(item?.From || item?.from) || fromAddress;
+        const addresses = [
+          ...(Array.isArray(item?.To) ? item.To : []),
+          ...(Array.isArray(item?.Recipients) ? item.Recipients : []),
+          ...(Array.isArray(item?.Cc) ? item.Cc : [])
+        ].map(mailboxAddress).filter(Boolean);
+        const replyAddress = addresses.find((address) => inboundDomain && address.endsWith(`@${inboundDomain}`)) || '';
+        const message = String(item?.ExtractedMarkdownMessage || item?.RawTextBody || item?.RawHtmlBody || '').trim().slice(0, 8000);
+        const subject = String(item?.Subject || '').trim().slice(0, 240);
+
+        if (!fromAddress || !message) continue;
+
+        const alreadyImported = data.inbox.some((entry) => entry.messageId === messageId || entry.replies?.some((reply) => reply.messageId && reply.messageId === messageId));
+        if (alreadyImported) continue;
+
+        const original = data.inbox.find((entry) => (
+          (entry.replyAddress && addresses.includes(entry.replyAddress)) ||
+          (entry.messageId && item?.InReplyTo && entry.messageId === item.InReplyTo) ||
+          entry.replies?.some((reply) => reply.messageId && item?.InReplyTo && reply.messageId === item.InReplyTo)
+        ));
+
+        const inboundMessage = {
+          id: createId('reply'),
+          direction: 'inbound',
+          name: fromName,
+          email: fromAddress,
+          message,
+          subject,
+          messageId,
+          createdAt: new Date().toISOString(),
+          status: 'received'
+        };
+
+        if (original) {
+          original.replies ||= [];
+          original.replies.push(inboundMessage);
+          original.replies = original.replies.slice(-20);
+          original.status = 'unread';
+          original.lastInboundAt = inboundMessage.createdAt;
+        } else {
+          data.inbox.unshift({
+            id: createId('inbox'),
+            name: fromName,
+            email: fromAddress,
+            message,
+            subject,
+            replyAddress,
+            messageId,
+            status: 'unread',
+            deliveryStatus: 'inbound',
+            createdAt: inboundMessage.createdAt,
+            readAt: null,
+            repliedAt: null,
+            replies: []
+          });
+        }
+
+        imported += 1;
+      }
+
+      data.inbox = data.inbox.slice(0, 500);
+    });
+
+    if (imported) await addLog(`${imported} resposta(s) de e-mail recebida(s) no painel.`, 'success');
+    res.json({ ok: true, imported });
+  }
+);
+
+app.post(
+  '/api/admin/inbox/setup',
+  requireAdmin,
+  async (req, res) => {
+    const domain = normalizeInboundDomain(req.body?.domain);
+    if (!isValidInboundDomain(domain)) {
+      return res.status(400).json({ error: 'Informe um subdomínio válido, como reply.jhonatafaraujo.com.br.' });
+    }
+
+    const store = await readStore();
+    const secrets = await readSecrets();
+    const apiKey = String(process.env.BREVO_API_KEY || '').trim();
+    const senderEmail = String(process.env.BREVO_SENDER_EMAIL || store.config.contactEmail || '').trim().toLowerCase();
+    const senderDomain = senderEmail.split('@')[1] || '';
+
+    if (!apiKey) return res.status(503).json({ error: 'Configure BREVO_API_KEY no Render antes de ativar o recebimento.' });
+    if (senderDomain && domain === senderDomain) {
+      return res.status(400).json({ error: 'Use um subdomínio diferente do domínio usado para enviar, por exemplo reply.jhonatafaraujo.com.br.' });
+    }
+
+    const webhookUrl = inboundWebhookUrl(req, secrets.brevoInboundToken);
+    const payload = {
+      type: 'inbound',
+      events: ['inboundEmailProcessed'],
+      url: webhookUrl,
+      domain,
+      description: 'PromoShop — respostas da caixa de entrada'
+    };
+
+    let endpoint = 'https://api.brevo.com/v3/webhooks';
+    let method = 'POST';
+    if (store.config.inboxInboundWebhookId) {
+      endpoint = `${endpoint}/${encodeURIComponent(store.config.inboxInboundWebhookId)}`;
+      method = 'PUT';
+    }
+
+    let brevoResponse = await fetch(endpoint, {
+      method,
+      headers: { accept: 'application/json', 'api-key': apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!brevoResponse.ok && method === 'PUT' && brevoResponse.status === 404) {
+      brevoResponse = await fetch('https://api.brevo.com/v3/webhooks', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'api-key': apiKey, 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    if (!brevoResponse.ok) {
+      const details = (await brevoResponse.text()).slice(0, 300);
+      console.error(`Brevo recusou a configuração do inbound (${brevoResponse.status}): ${details}`);
+      return res.status(502).json({ error: 'A Brevo recusou a configuração. Confira a chave, os IPs autorizados e o domínio.' });
+    }
+
+    const brevoResult = await brevoResponse.json().catch(() => ({}));
+    await updateStore((data) => {
+      data.config.inboxInboundEnabled = true;
+      data.config.inboxInboundDomain = domain;
+      data.config.inboxInboundWebhookId = String(brevoResult.id || data.config.inboxInboundWebhookId || '').trim();
+      data.config.inboxInboundWebhookUrl = webhookUrl;
+    });
+    await addLog(`Recebimento de respostas por e-mail ativado em ${domain}.`, 'success');
+
+    res.json({
+      ok: true,
+      domain,
+      webhookUrl,
+      webhookId: String(brevoResult.id || '').trim(),
+      mxRecords: [
+        { host: domain, type: 'MX', priority: 10, value: 'inbound1.sendinblue.com.' },
+        { host: domain, type: 'MX', priority: 20, value: 'inbound2.sendinblue.com.' }
+      ]
+    });
   }
 );
 

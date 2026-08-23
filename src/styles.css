@@ -3340,6 +3340,104 @@ button {
    CAIXA DE ENTRADA DO FORMULÁRIO
    ========================================================= */
 
+.inbox-page {
+  display: grid;
+  gap: 20px;
+}
+
+.inbox-setup-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 20px;
+  align-items: start;
+}
+
+.inbox-setup-copy {
+  min-width: 0;
+}
+
+.inbox-setup-copy h2 {
+  margin: 5px 0 6px;
+  color: #101828;
+  font-size: 19px;
+}
+
+.inbox-setup-copy p {
+  max-width: 720px;
+  margin: 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.inbox-setup-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.inbox-setup-form label {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inbox-setup-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 11px;
+  border: 1px solid #d0d5dd;
+  border-radius: 9px;
+  color: #101828;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.inbox-setup-form input:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.inbox-mx-hint {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 15px;
+  padding: 13px 15px;
+  border: 1px solid #dbe7ff;
+  border-radius: 10px;
+  color: #475467;
+  background: #f8fbff;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.inbox-mx-hint strong {
+  width: 100%;
+  color: #344054;
+  font-size: 12px;
+}
+
+.inbox-mx-hint code {
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #175cd3;
+  background: #eff6ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.inbox-mx-hint small {
+  width: 100%;
+  color: #667085;
+}
+
 .inbox-layout {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
@@ -3582,6 +3680,15 @@ button {
   background: #f8fbff;
 }
 
+.inbox-replies article.inbound {
+  border-color: #eaecf0;
+  background: #fcfcfd;
+}
+
+.inbox-replies article.inbound > div {
+  color: #475467;
+}
+
 .inbox-replies article > div {
   display: flex;
   justify-content: space-between;
@@ -3673,6 +3780,10 @@ button {
 }
 
 @media (max-width: 900px) {
+  .inbox-setup-panel {
+    grid-template-columns: 1fr;
+  }
+
   .inbox-layout {
     grid-template-columns: 1fr;
   }
@@ -3688,6 +3799,15 @@ button {
 }
 
 @media (max-width: 600px) {
+  .inbox-setup-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inbox-setup-form .button {
+    width: 100%;
+  }
+
   .inbox-detail-head,
   .inbox-reply-footer {
     align-items: stretch;

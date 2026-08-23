@@ -90,6 +90,7 @@ async function defaults() {
     magaluApiKey: '',
     netshoesAffiliateId: '',
     netshoesApiKey: '',
+    brevoInboundToken: crypto.randomBytes(32).toString('hex'),
     aiApiKey: '',
     geminiApiKey: '',
     openaiApiKey: '',
@@ -99,7 +100,14 @@ async function defaults() {
 
 export async function readSecrets() {
   await fs.mkdir(dataDir, { recursive: true });
-  try { return await decrypt(await fs.readFile(secretsFile, 'utf8')); }
+  try {
+    const value = await decrypt(await fs.readFile(secretsFile, 'utf8'));
+    if (!value.brevoInboundToken) {
+      value.brevoInboundToken = crypto.randomBytes(32).toString('hex');
+      await writeSecrets(value);
+    }
+    return value;
+  }
   catch (error) {
     if (error?.code !== 'ENOENT') throw error;
     const value = await defaults();
