@@ -4734,6 +4734,8 @@ button {
 
 @media (max-width: 900px) {
   .coupons-admin-layout, .coupon-grid { grid-template-columns: 1fr; }
+  .coupon-admin-row { align-items: stretch; flex-direction: column; }
+  .coupon-row-actions { width: 100%; justify-content: flex-start; }
 }
 
 @media (max-width: 600px) {
