@@ -12,6 +12,7 @@
     "test:mercadolivre": "node scripts/test-mercadolivre-oauth.mjs",
     "test:security": "node scripts/test-security.mjs",
     "test:search": "node scripts/test-search-relevance.mjs",
+    "test:routing": "node scripts/test-audience-routing.mjs",
     "preview": "vite preview",
     "start": "node server/index.js",
     "whatsapp": "node worker/whatsapp.js"

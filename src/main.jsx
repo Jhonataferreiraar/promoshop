@@ -2966,8 +2966,28 @@ function AdminApp() {
 
                   {audience.code !== 'G01' &&
                     audience.code !== 'G10' && (
+                      <>
+                        <label>
+                          Perfil do público
 
-                      <label>
+                          <select
+                            value={audience.profile || 'general'}
+                            onChange={(event) =>
+                              updateAudience(index, {
+                                profile: event.target.value
+                              })
+                            }
+                          >
+                            <option value="general">Geral</option>
+                            <option value="female">Somente feminino</option>
+                          </select>
+
+                          <small>
+                            No perfil feminino, produtos masculinos são barrados mesmo que a IA os classifique neste grupo.
+                          </small>
+                        </label>
+
+                        <label>
                         Palavras-chave
 
                         <textarea
@@ -2991,7 +3011,33 @@ function AdminApp() {
                         <small>
                           Separe cada palavra ou produto por vírgula.
                         </small>
-                      </label>
+                        </label>
+
+                        <label>
+                          Termos bloqueados
+
+                          <textarea
+                            value={
+                              Array.isArray(audience.blockedKeywords)
+                                ? audience.blockedKeywords.join(', ')
+                                : ''
+                            }
+                            onChange={(event) =>
+                              updateAudience(index, {
+                                blockedKeywords: event.target.value
+                                  .split(',')
+                                  .map((word) => word.trim())
+                                  .filter(Boolean)
+                              })
+                            }
+                            placeholder="masculino, homem, barba, menino..."
+                          />
+
+                          <small>
+                            Se o anúncio contiver um destes termos, não será enviado para este público.
+                          </small>
+                        </label>
+                      </>
 
                     )}
 

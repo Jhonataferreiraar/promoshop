@@ -2,7 +2,8 @@ import { normalizeApiKey, readSecrets } from './secrets.js';
 import {
   calculateOfferDiscount,
   getAudienceCodesForOffer,
-  getAudienceRoutingCatalog
+  getAudienceRoutingCatalog,
+  isOfferAllowedForAudience
 } from './audienceRouting.js';
 
 /*
@@ -1055,7 +1056,7 @@ export async function classifyOfferAudience(
     thematicAudiences
       .map(
         (audience) =>
-          `${audience.code} - ${audience.name}`
+          `${audience.code} - ${audience.name} | perfil: ${audience.profile === 'female' ? 'somente público feminino' : 'geral'} | produtos: ${(audience.keywords || []).join(', ')} | bloqueios: ${(audience.blockedKeywords || []).join(', ')}`
       )
       .join('\n');
 
@@ -1089,6 +1090,9 @@ Notebook → G02
 Air Fryer → G03
 Panela → G03
 Shampoo → G04
+Vestido feminino → G04
+Roupa de corrida feminina → G04
+Produto masculino → nunca G04
 Tênis casual → G05
 Ração para cachorro → G06
 Brinquedo infantil → G07
@@ -1158,7 +1162,9 @@ RESPONDA APENAS JSON:
 
     const validCodes =
       new Set(
-        thematicAudiences.map(
+        thematicAudiences.filter(
+          (audience) => isOfferAllowedForAudience(offer, audience)
+        ).map(
           (audience) =>
             audience.code
         )

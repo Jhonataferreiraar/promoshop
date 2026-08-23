@@ -147,6 +147,20 @@ export const DEFAULT_WHATSAPP_AUDIENCES = [
     name: 'Beleza & Cabelo',
     whatsappLink: '',
     enabled: true,
+    profile: 'female',
+    blockedKeywords: [
+      'masculino',
+      'masculina para homem',
+      'homem',
+      'barba',
+      'barbeador',
+      'cueca',
+      'menino',
+      'menina',
+      'infantil',
+      'bebe',
+      'crianca'
+    ],
     keywords: [
       'shampoo',
       'condicionador',
@@ -172,9 +186,27 @@ export const DEFAULT_WHATSAPP_AUDIENCES = [
       'protetor solar',
       'serum',
       'creme facial',
-      'barbeador',
       'depilador',
-      'beleza'
+      'beleza',
+      'creme de cabelo',
+      'creme capilar',
+      'leave in',
+      'hidratante corporal',
+      'moda feminina',
+      'roupa feminina',
+      'camiseta feminina',
+      'blusa feminina',
+      'calca feminina',
+      'short feminino',
+      'vestido',
+      'saia',
+      'cropped',
+      'legging',
+      'top feminino',
+      'conjunto feminino',
+      'tenis feminino',
+      'roupa corrida feminina',
+      'conjunto fitness feminino'
     ]
   },
 
@@ -367,6 +399,29 @@ function getOfferSearchParts(offer) {
   };
 }
 
+const FEMALE_PROFILE_SIGNALS = [
+  'feminino', 'feminina', 'mulher', 'mulheres', 'vestido', 'saia',
+  'cropped', 'legging', 'sutia', 'lingerie', 'maquiagem', 'batom',
+  'base facial', 'rimel', 'mascara de cilios', 'shampoo', 'condicionador',
+  'mascara capilar', 'creme de cabelo', 'creme capilar', 'leave in',
+  'chapinha', 'escova secadora', 'babyliss', 'skincare', 'hidratante',
+  'serum', 'creme facial', 'depilador'
+];
+
+export function isOfferAllowedForAudience(offer, audience) {
+  const searchText = getOfferSearchText(offer);
+  const blockedKeywords = Array.isArray(audience?.blockedKeywords)
+    ? audience.blockedKeywords
+    : [];
+  if (blockedKeywords.some((keyword) => containsKeyword(searchText, keyword))) {
+    return false;
+  }
+  if (String(audience?.profile || 'general').toLowerCase() !== 'female') {
+    return true;
+  }
+  return FEMALE_PROFILE_SIGNALS.some((keyword) => containsKeyword(searchText, keyword));
+}
+
 function getKeywordMatchScore(
   text,
   audience
@@ -467,7 +522,8 @@ export function getAudienceCodesForOffer(
         code !== 'G01' &&
         code !== 'G10' &&
         audience.general !== true &&
-        audience.deals !== true
+        audience.deals !== true &&
+        isOfferAllowedForAudience(offer, audience)
       );
     });
 
@@ -652,7 +708,13 @@ export function getAudienceRoutingCatalog(
           audience.keywords
         )
           ? audience.keywords
-          : []
+          : [],
+
+      profile: String(audience.profile || 'general').toLowerCase(),
+
+      blockedKeywords: Array.isArray(audience.blockedKeywords)
+        ? audience.blockedKeywords
+        : []
     }))
     .filter(
       (audience) =>

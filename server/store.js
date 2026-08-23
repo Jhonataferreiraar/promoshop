@@ -262,6 +262,16 @@ export async function readStore() {
       }));
   }
 
+  const femaleDefault = DEFAULT_WHATSAPP_AUDIENCES.find((audience) => audience.code === 'G04');
+  const savedFemaleAudience = data.config.whatsappAudiences.find((audience) => audience.code === 'G04');
+  if (savedFemaleAudience && femaleDefault && !savedFemaleAudience.profile) {
+    savedFemaleAudience.profile = 'female';
+    savedFemaleAudience.keywords = [
+      ...new Set([...(savedFemaleAudience.keywords || []), ...(femaleDefault.keywords || [])])
+    ];
+    savedFemaleAudience.blockedKeywords = [...(femaleDefault.blockedKeywords || [])];
+  }
+
   if (
     data.config.aiProvider === 'gemini' &&
     data.config.aiModel === 'gemini-2.5-flash-lite'
