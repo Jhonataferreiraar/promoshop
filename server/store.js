@@ -21,8 +21,9 @@ const initialData = {
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     contactEmail: 'contatopromoshop.site@gmail.com',
     canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
-    seoTitle: 'PromoShop — Ofertas e cupons selecionados',
-    seoDescription: 'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Compare oportunidades e confirme as condições diretamente na loja.',
+    seoSiteName: 'PromoShop - Ofertas Diárias',
+    seoTitle: 'PromoShop - Ofertas Diárias',
+    seoDescription: 'Encontre ofertas diárias e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Confirme as condições diretamente na loja.',
     seoKeywords: 'ofertas, promoções, cupons, Mercado Livre, Shopee, AliExpress, Magalu',
     seoImageUrl: '',
     seoIndexingEnabled: true,
@@ -240,6 +241,21 @@ export async function readStore() {
 
   if (data.config.heroText === 'Promoções selecionadas e verificadas para você economizar sem perder tempo.') {
     data.config.heroText = initialData.config.heroText;
+  }
+
+  if ([
+    'PromoShop — Ofertas e cupons selecionados',
+    'PromoShop Afiliados — Ofertas e cupons selecionados',
+    'PromoShop — Ofertas de verdade'
+  ].includes(data.config.seoTitle)) {
+    data.config.seoTitle = initialData.config.seoTitle;
+  }
+
+  if ([
+    'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu.',
+    'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Compare oportunidades e confirme as condições diretamente na loja.'
+  ].includes(data.config.seoDescription)) {
+    data.config.seoDescription = initialData.config.seoDescription;
   }
 
   if (['2026-08-23', '2026-08-23-v2'].includes(data.config.legalPolicyVersion)) {

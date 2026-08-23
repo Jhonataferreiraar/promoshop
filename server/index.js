@@ -1549,6 +1549,7 @@ app.get(
       disclosure,
       contactEmail,
       canonicalUrl,
+      seoSiteName,
       seoTitle,
       seoDescription,
       seoKeywords,
@@ -1600,6 +1601,7 @@ app.get(
       disclosure,
       contactEmail,
       canonicalUrl,
+      seoSiteName,
       seoTitle,
       seoDescription,
       seoKeywords,
@@ -2845,7 +2847,7 @@ app.put(
         } catch {
           data.config.canonicalUrl = previousConfig.canonicalUrl || '';
         }
-        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri']) {
+        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri']) {
           const maximum = key.endsWith('CustomText') ? 3000 : key === 'heroText' || key === 'disclosure' || key === 'seoDescription' ? 1000 : 300;
           data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);
         }
@@ -6652,6 +6654,7 @@ function injectSeo(html, data, req) {
   const pathname = req.path.replace(/\/+$/, '') || '/';
   const origin = publicSiteOrigin(config, req);
   const seo = pageSeo(config, pathname, origin, data.offers || []);
+  const siteName = String(config.seoSiteName || config.brandName || 'PromoShop').trim();
   const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || config.seoIndexingEnabled === false;
   const schema = seo.offer ? {
     '@context': 'https://schema.org', '@type': 'Product', name: seo.offer.title,
@@ -6662,7 +6665,8 @@ function injectSeo(html, data, req) {
   } : {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: config.brandName || 'PromoShop',
+    name: siteName,
+    alternateName: config.brandName || 'PromoShop',
     url: origin,
     description: seo.description,
     publisher: {
@@ -6679,7 +6683,7 @@ function injectSeo(html, data, req) {
     `<meta name="robots" content="${noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}">`,
     `<link rel="canonical" href="${escapeHtml(seo.canonical)}">`,
     '<meta property="og:type" content="website">',
-    `<meta property="og:site_name" content="${escapeHtml(config.brandName || 'PromoShop')}">`,
+    `<meta property="og:site_name" content="${escapeHtml(siteName)}">`,
     `<meta property="og:title" content="${escapeHtml(seo.title)}">`,
     `<meta property="og:description" content="${escapeHtml(seo.description)}">`,
     `<meta property="og:url" content="${escapeHtml(seo.canonical)}">`,

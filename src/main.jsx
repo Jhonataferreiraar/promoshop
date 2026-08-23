@@ -17,8 +17,9 @@ const fallbackConfig = {
   inboxInboundEnabled: false,
   inboxInboundDomain: 'reply.jhonatafaraujo.com.br',
   canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
-  seoTitle: 'PromoShop — Ofertas e cupons selecionados',
-  seoDescription: 'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu.',
+  seoSiteName: 'PromoShop - Ofertas Diárias',
+  seoTitle: 'PromoShop - Ofertas Diárias',
+  seoDescription: 'Encontre ofertas diárias e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Confirme as condições diretamente na loja.',
   seoKeywords: 'ofertas, promoções, cupons, Mercado Livre, Shopee, AliExpress, Magalu',
   seoImageUrl: '',
   seoIndexingEnabled: true,
@@ -576,7 +577,7 @@ function PublicSite() {
       <section className="hero">
         <div className="container hero-grid">
           <div className="hero-copy">
-            <span className="eyebrow">CURADORIA DE OFERTAS TODOS OS DIAS</span>
+            <span className="eyebrow">OFERTAS E CUPONS ATUALIZADOS TODOS OS DIAS</span>
             <h1>{config.heroTitle}</h1>
             <p>{config.heroText}</p>
             <div className="hero-actions"><a className="button light" href="#ofertas">Explorar ofertas</a><a className="button ghost" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'hero', label: 'Receber no WhatsApp' })}>Receber no WhatsApp</a></div>
@@ -3122,6 +3123,7 @@ function AdminApp() {
         <div className="section-title"><div><span className="section-step">SEO</span><h2>Busca e compartilhamento</h2><p>Informações usadas pelo Google e pelas prévias de redes sociais.</p></div></div>
         <div className="settings-grid">
           <label className="wide-field">Endereço oficial do site<input type="url" value={data.config.canonicalUrl ?? ''} onChange={(event) => setConfigField('canonicalUrl', event.target.value)} placeholder="https://promoshop.jhonatafaraujo.com.br" /></label>
+          <label className="wide-field">Nome do site no Google<input maxLength={60} value={data.config.seoSiteName ?? ''} onChange={(event) => setConfigField('seoSiteName', event.target.value)} /><small>Nome preferido exibido acima do endereço. O Google pode levar algum tempo para atualizar.</small></label>
           <label className="wide-field">Título para buscadores<input maxLength={70} value={data.config.seoTitle ?? ''} onChange={(event) => setConfigField('seoTitle', event.target.value)} /><small>{String(data.config.seoTitle || '').length}/70 caracteres</small></label>
           <label className="wide-field">Descrição para buscadores<textarea maxLength={180} value={data.config.seoDescription ?? ''} onChange={(event) => setConfigField('seoDescription', event.target.value)} /><small>{String(data.config.seoDescription || '').length}/180 caracteres</small></label>
           <label className="wide-field">Palavras-chave<input value={data.config.seoKeywords ?? ''} onChange={(event) => setConfigField('seoKeywords', event.target.value)} /></label>
