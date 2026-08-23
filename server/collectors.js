@@ -701,20 +701,25 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
 
   const candidateLimit = Math.min(Math.max(Number(limit) || 40, 20), 80);
   const variants = buildSearchQueryVariants(cleanQuery, 3);
-  const searches = variants.flatMap((variant, index) => {
+  const relevanceSearches = variants.flatMap((variant, index) => {
     const pageCount = index === 0 ? 2 : 1;
     return Array.from({ length: pageCount }, (_, pageIndex) => ({
       variant,
-      page: pageIndex + 1
+      page: pageIndex + 1,
+      sortType: 1
     }));
   });
+  const searches = [
+    { variant: variants[0] || cleanQuery, page: 1, sortType: 2 },
+    ...relevanceSearches
+  ];
 
-  const responses = await Promise.allSettled(searches.map(({ variant, page }) => {
+  const responses = await Promise.allSettled(searches.map(({ variant, page, sortType }, searchIndex) => {
     const graphqlQuery =
       `{ productOfferV2(` +
       `keyword: "${escapeGraphQL(variant)}", ` +
       `listType: 0, ` +
-      `sortType: 1, ` +
+      `sortType: ${sortType}, ` +
       `page: ${page}, ` +
       `limit: 20` +
       `) { ` +
@@ -725,7 +730,11 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
       `} ` +
       `pageInfo { page limit hasNextPage } ` +
       `} }`;
-    return shopeeGraphQL(appId, appSecret, graphqlQuery);
+    return shopeeGraphQL(appId, appSecret, graphqlQuery).then((nodes) => nodes.map((item, itemIndex) => ({
+      ...item,
+      sourceRank: searchIndex * 20 + itemIndex + 1,
+      searchOrder: sortType === 2 ? 'popular' : 'relevance'
+    })));
   }));
 
   const successful = responses.filter((response) => response.status === 'fulfilled');
@@ -779,8 +788,11 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
       source: 'shopee-open-api',
       searchSource: 'manual-search',
       score: discountRate,
+      rating: Number(item.ratingStar || 0),
       commissionRate: Number(item.commissionRate || 0),
       sales: Number(item.sales || 0),
+      sourceRank: Number(item.sourceRank || 0),
+      searchOrder: item.searchOrder || 'relevance',
       createdAt: new Date().toISOString()
     };
   });

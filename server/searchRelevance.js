@@ -1,7 +1,8 @@
 const stopWords = new Set(['a', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'o', 'os', 'para', 'por', 'um', 'uma']);
 
 const intents = [
-  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'livro', 'memoria', 'mesa', 'mochila', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela'] },
+  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'livro', 'memoria', 'mesa', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela', 'transmissor'] },
+  { aliases: ['skincare'], matchTerms: ['skincare', 'hidratante', 'serum', 'niacinamida', 'retinol', 'retinal', 'acnezil', 'esfoliante', 'demaquilante', 'protetor', 'limpeza', 'mascara', 'acne'], accessories: ['cabo', 'capa', 'case', 'pelicula', 'suporte', 'tela'], alwaysExcludeAccessories: true },
   { aliases: ['celular', 'smartphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['airfryer', 'fritadeira'], accessories: ['cesta', 'forma', 'grade', 'papel', 'peca', 'protetor', 'tapete'] },
@@ -51,17 +52,18 @@ export function productSearchRelevance(query, offer, { strict = true } = {}) {
   if (!queryTokens.length || !titleTokens.length) return { accepted: false, score: 0, matched: [], missing: queryTokens, reason: 'Sem termos comparáveis' };
 
   const intent = intents.find((candidate) => candidate.aliases.some((alias) => queryTokens.includes(alias)));
+  const intentMatchTerms = intent?.matchTerms || intent?.aliases || [];
   const requestedAccessories = intent ? intent.accessories.filter((word) => queryTokens.includes(word)) : [];
   const wrongCatalogCategory = Boolean(intent && !requestedAccessories.length && /mercado-livre/i.test(String(offer?.source || '')) && tokens(categoryText).some((token) => ['acessorio', 'acessorios', 'componente', 'componentes', 'livro', 'livros', 'papelaria', 'peca', 'pecas'].includes(token)));
-  const intentPosition = intent ? Math.min(...intent.aliases.map((alias) => titleTokens.indexOf(alias)).filter((index) => index >= 0), Number.POSITIVE_INFINITY) : -1;
+  const intentPosition = intent ? Math.min(...intentMatchTerms.map((alias) => titleTokens.indexOf(alias)).filter((index) => index >= 0), Number.POSITIVE_INFINITY) : -1;
   const unwantedAccessories = intent && !requestedAccessories.length
     ? intent.accessories.filter((word) => {
       const position = titleTokens.indexOf(word);
       if (position < 0 || queryTokens.includes(word)) return false;
-      return position < intentPosition || intent.aliases.some((alias) => titleText.includes(`${word} para ${alias}`));
+      return intent.alwaysExcludeAccessories || position < intentPosition || intentMatchTerms.some((alias) => titleText.includes(`${word} para ${alias}`));
     })
     : [];
-  const intentMatched = !intent || intent.aliases.some((alias) => titleTokens.includes(alias));
+  const intentMatched = !intent || intentMatchTerms.some((alias) => titleTokens.includes(alias));
   const comparableTokens = queryTokens.filter((token) => !intent?.aliases.includes(token));
   const matched = comparableTokens.filter((token) => tokenMatches(titleTokens, token));
   const missing = comparableTokens.filter((token) => !matched.includes(token));
@@ -90,7 +92,19 @@ export function rankProductSearchResults(query, offers, { strict = true, limitPe
   const ranked = (Array.isArray(offers) ? offers : []).map((offer) => ({
     ...offer,
     relevance: productSearchRelevance(query, offer, { strict })
-  })).filter((offer) => offer.relevance.accepted).sort((a, b) => b.relevance.score - a.relevance.score || Number(b.score || 0) - Number(a.score || 0));
+  })).filter((offer) => offer.relevance.accepted).map((offer) => ({
+    ...offer,
+    platformRelevanceScore: Math.round((
+      offer.relevance.score +
+      Math.min(40, Math.log10(Math.max(0, Number(offer.sales || 0)) + 1) * 10) +
+      Math.min(10, Math.max(0, Number(offer.rating || 0)) * 2) +
+      Math.min(5, Math.max(0, Number(offer.score || 0)) * 0.05)
+    ) * 10) / 10
+  })).sort((a, b) =>
+    b.platformRelevanceScore - a.platformRelevanceScore ||
+    Number(a.sourceRank || Number.MAX_SAFE_INTEGER) - Number(b.sourceRank || Number.MAX_SAFE_INTEGER) ||
+    b.relevance.score - a.relevance.score
+  );
 
   const storeCounts = new Map();
   return ranked.filter((offer) => {
