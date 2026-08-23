@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
@@ -110,6 +111,10 @@ const contactWindowMs =
   15 * 60 * 1000;
 
 const contactMaxAttempts = 5;
+
+const analyticsAttempts = new Map();
+const analyticsWindowMs = 10 * 60 * 1000;
+const analyticsMaxAttempts = 180;
 
 app.set('trust proxy', 1);
 
@@ -250,6 +255,21 @@ function checkContactLimit(ip) {
     allowed: true,
     remaining: Math.max(0, contactMaxAttempts - current.count)
   };
+}
+
+function checkAnalyticsLimit(ip) {
+  const now = Date.now();
+  const current = analyticsAttempts.get(ip) || { count: 0, resetAt: now + analyticsWindowMs };
+  if (current.resetAt <= now) {
+    current.count = 0;
+    current.resetAt = now + analyticsWindowMs;
+  }
+  if (current.count >= analyticsMaxAttempts) {
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+  }
+  current.count += 1;
+  analyticsAttempts.set(ip, current);
+  return { allowed: true };
 }
 
 function escapeHtml(value) {
@@ -465,11 +485,12 @@ function mailboxName(value) {
 }
 
 const analyticsSessionWindowMs = 30 * 60 * 1000;
-const analyticsVisitorRetentionMs = 365 * 24 * 60 * 60 * 1000;
-const analyticsDailyRetentionMs = 120 * 24 * 60 * 60 * 1000;
-const privacyConsentRetentionMs = 5 * 365 * 24 * 60 * 60 * 1000;
-const contactRetentionMs = 365 * 24 * 60 * 60 * 1000;
-const privacyPolicyVersion = '2026-08-23';
+const privacyPolicyVersion = '2026-08-23-v2';
+
+function boundedNumber(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
 
 function normalizeAnalyticsId(value) {
   const id = String(value || '').trim();
@@ -477,13 +498,73 @@ function normalizeAnalyticsId(value) {
 }
 
 function pruneInboxEntries(data, nowMs = Date.now()) {
+  const retentionMs = boundedNumber(data.config?.contactRetentionMonths, 12, 1, 60) * 30.4375 * 24 * 60 * 60 * 1000;
   data.inbox = (Array.isArray(data.inbox) ? data.inbox : []).filter((entry) => {
     const activityDates = [entry?.createdAt, entry?.repliedAt, entry?.lastInboundAt, ...(entry?.replies || []).map((reply) => reply?.createdAt)]
       .map((value) => new Date(value || 0).getTime())
       .filter(Number.isFinite);
     const lastActivityAt = activityDates.length ? Math.max(...activityDates) : 0;
-    return lastActivityAt > 0 && nowMs - lastActivityAt <= contactRetentionMs;
+    return lastActivityAt > 0 && nowMs - lastActivityAt <= retentionMs;
   }).slice(0, 500);
+}
+
+function normalizedTerms(value) {
+  return String(value || '')
+    .split(',')
+    .map((term) => term.trim().toLocaleLowerCase('pt-BR'))
+    .filter(Boolean)
+    .slice(0, 100);
+}
+
+function offerQuality(offer, config = {}) {
+  const title = String(offer?.title || '').trim();
+  const price = Number(offer?.price || 0);
+  const originalPrice = Number(offer?.originalPrice || 0);
+  const image = String(offer?.image || '').trim();
+  const link = String(offer?.affiliateUrl || '').trim();
+  const category = String(offer?.category || '').trim();
+  const blocked = normalizedTerms(config.qualityBlockedTerms);
+  const maxTitleLength = boundedNumber(config.qualityMaxTitleLength, 180, 40, 500);
+  const issues = [];
+  let score = 0;
+
+  if (title.length >= 8 && title.length <= maxTitleLength) score += 20;
+  else issues.push(title.length > maxTitleLength ? 'Título muito longo' : 'Título incompleto');
+  if (image && /^https:\/\//i.test(image)) score += 15;
+  else if (config.qualityRequireImage !== false) issues.push('Imagem ausente ou insegura');
+  else score += 15;
+  if (link && /^https:\/\//i.test(link)) score += 20;
+  else if (config.qualityRequireHttpsLink !== false) issues.push('Link HTTPS ausente');
+  else if (link) score += 20;
+  if (price > 0) score += 20;
+  else issues.push('Preço inválido');
+  if (originalPrice > price && price > 0) score += 10;
+  if (category) score += 10;
+  if (offer?.store) score += 5;
+  if (blocked.some((term) => title.toLocaleLowerCase('pt-BR').includes(term))) {
+    score = Math.max(0, score - 45);
+    issues.push('Contém termo bloqueado');
+  }
+  if (offer?.linkStatus === 'broken') {
+    score = Math.max(0, score - 35);
+    issues.push('Link marcado com erro');
+  }
+
+  return { score: Math.min(100, score), issues };
+}
+
+function offerIsFresh(offer, config, nowMs = Date.now()) {
+  if (config.staleOffersHidden === false) return true;
+  const maxAgeDays = boundedNumber(config.publicOfferMaxAgeDays, 45, 1, 365);
+  const updatedAt = new Date(offer?.updatedAt || offer?.createdAt || 0).getTime();
+  return Number.isFinite(updatedAt) && updatedAt > 0 && nowMs - updatedAt <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function publicOfferAllowed(offer, config, nowMs = Date.now()) {
+  if (offer?.status !== 'active' || !offerIsFresh(offer, config, nowMs)) return false;
+  if (offer?.qualityOverride === true || config.qualityFilterEnabled === false) return true;
+  const quality = offerQuality(offer, config);
+  return quality.score >= boundedNumber(config.qualityMinimumScore, 55, 0, 100);
 }
 
 function analyticsDay(date = new Date()) {
@@ -507,7 +588,9 @@ function analyticsDaySummary(day) {
     date: String(day?.date || ''),
     pageViews: Number(day?.pageViews || 0),
     sessions: Number(day?.sessions || 0),
-    uniqueVisitors: Object.keys(visitors).length
+    uniqueVisitors: Object.keys(visitors).length,
+    clicks: Number(day?.clicks || 0),
+    uniqueClickers: Object.keys(day?.clickers || {}).length
   };
 }
 
@@ -526,6 +609,12 @@ function summarizeAnalytics(analytics = {}) {
     totalPageViews: Number(analytics.totalPageViews || 0),
     totalSessions: Number(analytics.totalSessions || 0),
     totalVisitors: Number(analytics.totalVisitors || Object.keys(visitors).length),
+    totalClicks: Number(analytics.totalClicks || 0),
+    clicksByType: analytics.clicksByType || {},
+    clicksByStore: analytics.clicksByStore || {},
+    topTargets: Object.values(analytics.clicksByTarget || {})
+      .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+      .slice(0, 12),
     today: analyticsDaySummary({
       ...(daily[todayKey] || {}),
       date: todayKey
@@ -535,6 +624,131 @@ function summarizeAnalytics(analytics = {}) {
       date
     }))
   };
+}
+
+function summarizeSystemHealth(data = {}) {
+  const config = data.config || {};
+  const nowMs = Date.now();
+  const whatsappLastSeen = new Date(data.meta?.whatsapp?.lastSeenAt || 0).getTime();
+  const collectionLastSeen = new Date(data.meta?.lastCollectionAt || 0).getTime();
+  const failedQueue = (data.queue || []).filter((item) => item.status === 'failed').length;
+  const activeOffers = (data.offers || []).filter((offer) => offer.status === 'active');
+  const staleOffers = activeOffers.filter((offer) => !offerIsFresh(offer, config, nowMs)).length;
+  const lowQualityOffers = activeOffers.filter((offer) => offerQuality(offer, config).score < boundedNumber(config.qualityMinimumScore, 55, 0, 100)).length;
+  const checks = [
+    {
+      id: 'whatsapp',
+      label: 'WhatsApp',
+      ok: data.meta?.whatsapp?.status === 'connected' && Number.isFinite(whatsappLastSeen) && nowMs - whatsappLastSeen <= boundedNumber(config.monitoringWhatsappMinutes, 5, 1, 120) * 60_000,
+      detail: data.meta?.whatsapp?.status === 'connected' ? 'Conectado e respondendo' : 'Publicador desconectado ou sem resposta'
+    },
+    {
+      id: 'collection',
+      label: 'Coleta automática',
+      ok: !config.enableMercadoLivre && !config.enableShopee && !config.enableAliexpress && !config.enableMagalu
+        ? true
+        : Number.isFinite(collectionLastSeen) && nowMs - collectionLastSeen <= boundedNumber(config.monitoringCollectionHours, 6, 1, 168) * 60 * 60_000,
+      detail: collectionLastSeen ? `Última coleta em ${new Date(collectionLastSeen).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : 'Nenhuma coleta registrada'
+    },
+    {
+      id: 'queue',
+      label: 'Fila de publicação',
+      ok: failedQueue < boundedNumber(config.monitoringFailedQueueLimit, 10, 1, 500),
+      detail: `${failedQueue} publicação(ões) com falha`
+    },
+    {
+      id: 'offers',
+      label: 'Qualidade das ofertas',
+      ok: lowQualityOffers === 0 && staleOffers === 0,
+      detail: `${lowQualityOffers} abaixo da nota e ${staleOffers} antiga(s)`
+    }
+  ];
+
+  return {
+    status: checks.every((check) => check.ok) ? 'healthy' : checks.some((check) => check.ok) ? 'attention' : 'critical',
+    checkedAt: new Date().toISOString(),
+    checks,
+    totals: { failedQueue, activeOffers: activeOffers.length, staleOffers, lowQualityOffers }
+  };
+}
+
+const affiliateHostSuffixes = [
+  'mercadolivre.com.br',
+  'mercadolivre.com',
+  'meli.la',
+  'shopee.com.br',
+  'shopee.com',
+  's.shopee.com.br',
+  'aliexpress.com',
+  'a.aliexpress.com',
+  'magazinevoce.com.br',
+  'magazineluiza.com.br'
+];
+
+function safeAffiliateDestination(value) {
+  try {
+    const parsed = new URL(String(value || ''));
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return null;
+    const hostname = parsed.hostname.toLowerCase();
+    if (!affiliateHostSuffixes.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`))) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function inspectAffiliateLink(value) {
+  const parsed = safeAffiliateDestination(value);
+  if (!parsed) return { status: 'unchecked', detail: 'Domínio não incluído na verificação segura' };
+  try {
+    const response = await fetch(parsed, {
+      method: 'HEAD',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8_000),
+      headers: { 'user-agent': 'PromoShop-LinkMonitor/1.0' }
+    });
+    if ((response.status >= 200 && response.status < 400) || [401, 403, 405, 429].includes(response.status)) {
+      return { status: 'ok', detail: `HTTP ${response.status}` };
+    }
+    if ([404, 410].includes(response.status)) return { status: 'broken', detail: `HTTP ${response.status}` };
+    return { status: 'unknown', detail: `HTTP ${response.status}` };
+  } catch (error) {
+    return { status: 'unknown', detail: String(error?.message || 'Falha temporária').slice(0, 160) };
+  }
+}
+
+async function runOfferLinkChecks() {
+  const data = await readStore();
+  const limit = boundedNumber(data.config?.linkCheckBatchSize, 20, 1, 50);
+  const candidates = (data.offers || [])
+    .filter((offer) => offer.status === 'active' && offer.affiliateUrl)
+    .sort((left, right) => new Date(left.lastLinkCheckAt || 0) - new Date(right.lastLinkCheckAt || 0))
+    .slice(0, limit);
+  const results = [];
+
+  for (const offer of candidates) {
+    const result = await inspectAffiliateLink(offer.affiliateUrl);
+    results.push({ id: offer.id, title: offer.title, ...result });
+  }
+
+  await updateStore((store) => {
+    for (const result of results) {
+      const offer = store.offers.find((entry) => entry.id === result.id);
+      if (!offer) continue;
+      offer.linkStatus = result.status;
+      offer.linkCheckDetail = result.detail;
+      offer.lastLinkCheckAt = new Date().toISOString();
+      if (result.status === 'broken' && store.config?.linkCheckAutoPause === true) {
+        offer.status = 'inactive';
+        offer.pausedReason = 'Link confirmado como indisponível pela verificação automática.';
+      }
+    }
+  });
+
+  const broken = results.filter((result) => result.status === 'broken').length;
+  const ok = results.filter((result) => result.status === 'ok').length;
+  await addLog(`Verificação de links: ${ok} funcionando, ${broken} indisponível(is) e ${results.length - ok - broken} inconclusivo(s).`, broken ? 'error' : 'success');
+  return { checked: results.length, ok, broken, unknown: results.length - ok - broken, results };
 }
 
 function whatsappAutoStartEnabled(
@@ -1290,7 +1504,34 @@ app.get(
       primaryColor,
       whatsappUrl,
       disclosure,
-      contactEmail
+      contactEmail,
+      canonicalUrl,
+      seoTitle,
+      seoDescription,
+      seoKeywords,
+      seoImageUrl,
+      seoIndexingEnabled,
+      seoStructuredDataEnabled,
+      publicOfferPageSize,
+      showOfferUpdatedAt,
+      affiliateDisclosureLabel,
+      mobileCompactMenu,
+      clickAnalyticsEnabled,
+      legalPolicyVersion,
+      analyticsVisitorRetentionDays,
+      analyticsDailyRetentionDays,
+      legalResponsibleName,
+      legalResponsibleType,
+      legalCityState,
+      legalPrivacyEmail,
+      legalResponseBusinessDays,
+      legalContactRetentionMonths,
+      legalConsentRetentionYears,
+      legalAffiliatePrograms,
+      legalAboutCustomText,
+      legalContactCustomText,
+      legalTermsCustomText,
+      legalPrivacyCustomText
     } = config;
 
     /*
@@ -1310,6 +1551,33 @@ app.get(
       whatsappUrl,
       disclosure,
       contactEmail,
+      canonicalUrl,
+      seoTitle,
+      seoDescription,
+      seoKeywords,
+      seoImageUrl,
+      seoIndexingEnabled,
+      seoStructuredDataEnabled,
+      publicOfferPageSize,
+      showOfferUpdatedAt,
+      affiliateDisclosureLabel,
+      mobileCompactMenu,
+      clickAnalyticsEnabled,
+      legalPolicyVersion,
+      analyticsVisitorRetentionDays,
+      analyticsDailyRetentionDays,
+      legalResponsibleName,
+      legalResponsibleType,
+      legalCityState,
+      legalPrivacyEmail,
+      legalResponseBusinessDays,
+      legalContactRetentionMonths,
+      legalConsentRetentionYears,
+      legalAffiliatePrograms,
+      legalAboutCustomText,
+      legalContactCustomText,
+      legalTermsCustomText,
+      legalPrivacyCustomText,
 
       assistantAvailable:
         Boolean(
@@ -1323,31 +1591,50 @@ app.get(
 app.get(
   '/api/offers',
   async (
-    _req,
+    req,
     res
   ) => {
-    const {
-      offers
-    } =
-      await readStore();
+    const { offers, config } = await readStore();
+    const nowMs = Date.now();
+    const eligible = (Array.isArray(offers) ? offers : [])
+      .filter((offer) => publicOfferAllowed(offer, config, nowMs));
 
-    res.json(
-      offers
-        .filter(
-          (offer) =>
-            offer.status ===
-            'active'
-        )
-        .sort(
-          (a, b) =>
-            Number(
-              b.featured
-            ) -
-            Number(
-              a.featured
-            )
-        )
-    );
+    if (String(req.query?.paged || '') !== '1') {
+      return res.json(eligible.sort((a, b) => Number(b.featured) - Number(a.featured)));
+    }
+
+    const query = String(req.query?.query || '').trim().toLocaleLowerCase('pt-BR').slice(0, 120);
+    const store = String(req.query?.store || '').trim().slice(0, 80);
+    const sort = ['discount', 'recent', 'price'].includes(String(req.query?.sort)) ? String(req.query.sort) : 'discount';
+    const limit = Math.round(boundedNumber(req.query?.limit, config.publicOfferPageSize || 24, 6, 60));
+    const offset = Math.round(boundedNumber(req.query?.offset, 0, 0, 100000));
+    const discountValue = (offer) => {
+      const price = Number(offer?.price || 0);
+      const original = Number(offer?.originalPrice || 0);
+      return original > price && price > 0 ? Math.round((1 - price / original) * 100) : 0;
+    };
+    const stores = [...new Set(eligible.map((offer) => String(offer.store || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const filtered = eligible.filter((offer) => {
+      const searchable = `${offer.title || ''} ${offer.store || ''} ${offer.category || ''}`.toLocaleLowerCase('pt-BR');
+      return (!query || searchable.includes(query)) && (!store || store === 'Todas' || offer.store === store);
+    }).sort((a, b) => {
+      if (sort === 'price') return Number(a.price || 0) - Number(b.price || 0);
+      if (sort === 'recent') return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+      return discountValue(b) - discountValue(a) || Number(b.featured) - Number(a.featured);
+    });
+
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    return res.json({
+      offers: filtered.slice(offset, offset + limit).map((offer) => ({
+        ...offer,
+        qualityScore: offerQuality(offer, config).score
+      })),
+      total: filtered.length,
+      offset,
+      limit,
+      stores,
+      topDiscount: Math.max(0, ...eligible.map(discountValue))
+    });
   }
 );
 
@@ -1835,13 +2122,17 @@ app.post(
     const choice = String(req.body?.choice || '').trim();
     const policyVersion = String(req.body?.policyVersion || '').trim();
 
-    if (!receiptId || !['accepted', 'rejected'].includes(choice) || policyVersion !== privacyPolicyVersion) {
+    if (!receiptId || !['accepted', 'rejected'].includes(choice) || !/^\d{4}-\d{2}-\d{2}(?:-v\d+)?$/.test(policyVersion)) {
       return res.status(400).json({ error: 'Comprovante de privacidade inválido.' });
     }
 
     const now = new Date();
     const nowMs = now.getTime();
+    let versionAccepted = false;
     await updateStore((data) => {
+      if (policyVersion !== String(data.config?.legalPolicyVersion || privacyPolicyVersion)) return;
+      versionAccepted = true;
+      const consentRetentionMs = boundedNumber(data.config?.consentReceiptRetentionYears, 5, 1, 10) * 365 * 24 * 60 * 60 * 1000;
       data.privacyConsents = data.privacyConsents && typeof data.privacyConsents === 'object'
         ? data.privacyConsents
         : {};
@@ -1854,7 +2145,7 @@ app.post(
 
       for (const [id, receipt] of Object.entries(data.privacyConsents)) {
         const updatedAt = new Date(receipt?.updatedAt || 0).getTime();
-        if (!Number.isFinite(updatedAt) || nowMs - updatedAt > privacyConsentRetentionMs) {
+        if (!Number.isFinite(updatedAt) || nowMs - updatedAt > consentRetentionMs) {
           delete data.privacyConsents[id];
         }
       }
@@ -1875,6 +2166,7 @@ app.post(
       }
     });
 
+    if (!versionAccepted) return res.status(409).json({ error: 'A política foi atualizada. Revise sua escolha.' });
     res.set('Cache-Control', 'no-store');
     return res.json({ ok: true });
   }
@@ -1883,10 +2175,16 @@ app.post(
 app.post(
   '/api/analytics/visit',
   async (req, res) => {
+    const limit = checkAnalyticsLimit(req.ip || req.socket.remoteAddress || 'unknown');
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfter));
+      return res.status(429).json({ error: 'Muitas medições em pouco tempo.' });
+    }
     const visitorId = normalizeAnalyticsId(req.body?.visitorId);
     const sessionId = normalizeAnalyticsId(req.body?.sessionId);
+    const receiptId = normalizeAnalyticsId(req.body?.receiptId);
 
-    if (!visitorId || !sessionId) {
+    if (!visitorId || !sessionId || !receiptId) {
       return res.status(400).json({
         error: 'Identificador anônimo inválido.'
       });
@@ -1897,8 +2195,14 @@ app.post(
     const dayKey = analyticsDay(now);
     let isNewVisitor = false;
     let isNewSession = false;
+    let authorized = false;
 
     await updateStore((data) => {
+      const consentReceipt = data.privacyConsents?.[receiptId];
+      if (consentReceipt?.choice !== 'accepted' || consentReceipt.policyVersion !== String(data.config?.legalPolicyVersion || privacyPolicyVersion)) return;
+      authorized = true;
+      const visitorRetentionMs = boundedNumber(data.config?.analyticsVisitorRetentionDays, 365, 1, 730) * 24 * 60 * 60 * 1000;
+      const dailyRetentionMs = boundedNumber(data.config?.analyticsDailyRetentionDays, 120, 7, 730) * 24 * 60 * 60 * 1000;
       data.analytics ||= {
         totalPageViews: 0,
         totalSessions: 0,
@@ -1935,18 +2239,90 @@ app.post(
       daily.visitors[visitorId] = true;
 
       for (const [id, visitor] of Object.entries(data.analytics.visitors)) {
-        if (!visitor?.lastSeenAt || nowMs - new Date(visitor.lastSeenAt).getTime() > analyticsVisitorRetentionMs) {
+        if (!visitor?.lastSeenAt || nowMs - new Date(visitor.lastSeenAt).getTime() > visitorRetentionMs) {
           delete data.analytics.visitors[id];
         }
       }
 
-      const dailyCutoff = nowMs - analyticsDailyRetentionMs;
+      const dailyCutoff = nowMs - dailyRetentionMs;
       for (const date of Object.keys(data.analytics.daily)) {
         const dateMs = new Date(`${date}T12:00:00-03:00`).getTime();
         if (!Number.isFinite(dateMs) || dateMs < dailyCutoff) delete data.analytics.daily[date];
       }
     });
 
+    if (!authorized) return res.status(403).json({ error: 'Medição não autorizada.' });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true });
+  }
+);
+
+app.post(
+  '/api/analytics/event',
+  async (req, res) => {
+    const limit = checkAnalyticsLimit(req.ip || req.socket.remoteAddress || 'unknown');
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfter));
+      return res.status(429).json({ error: 'Muitas medições em pouco tempo.' });
+    }
+    const receiptId = normalizeAnalyticsId(req.body?.receiptId);
+    const visitorId = normalizeAnalyticsId(req.body?.visitorId);
+    const sessionId = normalizeAnalyticsId(req.body?.sessionId);
+    const type = String(req.body?.type || '').trim().toLowerCase();
+    const targetId = String(req.body?.targetId || '').trim().slice(0, 120);
+    const label = String(req.body?.label || '').trim().slice(0, 180);
+    const store = String(req.body?.store || '').trim().slice(0, 80);
+    const allowedTypes = ['offer', 'coupon', 'whatsapp', 'group'];
+
+    if (!receiptId || !visitorId || !sessionId || !allowedTypes.includes(type) || !targetId) {
+      return res.status(400).json({ error: 'Evento anônimo inválido.' });
+    }
+
+    let accepted = false;
+    await updateStore((data) => {
+      if (data.config?.clickAnalyticsEnabled === false) return;
+      const receipt = data.privacyConsents?.[receiptId];
+      if (!receipt || receipt.choice !== 'accepted' || receipt.policyVersion !== String(data.config?.legalPolicyVersion || privacyPolicyVersion)) return;
+      accepted = true;
+      const now = new Date();
+      const dayKey = analyticsDay(now);
+      data.analytics ||= {};
+      data.analytics.totalClicks = Number(data.analytics.totalClicks || 0) + 1;
+      data.analytics.clicksByType ||= {};
+      data.analytics.clicksByStore ||= {};
+      data.analytics.clicksByTarget ||= {};
+      data.analytics.daily ||= {};
+      data.analytics.clicksByType[type] = Number(data.analytics.clicksByType[type] || 0) + 1;
+      if (store) data.analytics.clicksByStore[store] = Number(data.analytics.clicksByStore[store] || 0) + 1;
+      const targetKey = `${type}:${targetId}`;
+      const previousTarget = data.analytics.clicksByTarget[targetKey] || {};
+      data.analytics.clicksByTarget[targetKey] = {
+        id: targetId,
+        type,
+        label,
+        store,
+        count: Number(previousTarget.count || 0) + 1,
+        lastClickedAt: now.toISOString()
+      };
+      const targetKeys = Object.keys(data.analytics.clicksByTarget);
+      if (targetKeys.length > 2000) {
+        targetKeys
+          .sort((left, right) => new Date(data.analytics.clicksByTarget[left]?.lastClickedAt || 0) - new Date(data.analytics.clicksByTarget[right]?.lastClickedAt || 0))
+          .slice(0, targetKeys.length - 2000)
+          .forEach((key) => delete data.analytics.clicksByTarget[key]);
+      }
+      const day = data.analytics.daily[dayKey] ||= { pageViews: 0, sessions: 0, visitors: {} };
+      day.clicks = Number(day.clicks || 0) + 1;
+      day.clickers ||= {};
+      day.clickers[visitorId] = true;
+      const visitor = data.analytics.visitors?.[visitorId];
+      if (visitor) {
+        visitor.lastClickedAt = now.toISOString();
+        visitor.clicks = Number(visitor.clicks || 0) + 1;
+      }
+    });
+
+    if (!accepted) return res.status(403).json({ error: 'Medição não autorizada.' });
     res.set('Cache-Control', 'no-store');
     return res.json({ ok: true });
   }
@@ -2235,6 +2611,15 @@ app.get(
 
     res.json({
       ...data,
+      offers: (Array.isArray(data.offers) ? data.offers : []).map((offer) => {
+        const quality = offerQuality(offer, data.config);
+        return {
+          ...offer,
+          qualityScore: quality.score,
+          qualityIssues: quality.issues,
+          isStale: !offerIsFresh(offer, data.config)
+        };
+      }),
       coupons: (Array.isArray(data.coupons) ? data.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
@@ -2244,6 +2629,11 @@ app.get(
       analytics:
         summarizeAnalytics(
           data.analytics
+        ),
+
+      systemHealth:
+        summarizeSystemHealth(
+          data
         ),
 
       secrets:
@@ -2270,6 +2660,7 @@ app.put(
 
     await updateStore(
       (data) => {
+        const previousConfig = { ...data.config };
         const previousAudiences =
           Array.isArray(data.config.whatsappAudiences)
             ? data.config.whatsappAudiences
@@ -2303,6 +2694,41 @@ app.put(
           ...data.config,
           ...body
         };
+
+        const numericRules = {
+          publicOfferPageSize: [24, 6, 60],
+          publicOfferMaxAgeDays: [45, 1, 365],
+          qualityMinimumScore: [55, 0, 100],
+          qualityMaxTitleLength: [180, 40, 500],
+          linkCheckBatchSize: [20, 1, 50],
+          analyticsVisitorRetentionDays: [365, 1, 730],
+          analyticsDailyRetentionDays: [120, 7, 730],
+          contactRetentionMonths: [12, 1, 60],
+          consentReceiptRetentionYears: [5, 1, 10],
+          legalResponseBusinessDays: [5, 1, 30],
+          legalContactRetentionMonths: [12, 1, 60],
+          legalConsentRetentionYears: [5, 1, 10],
+          monitoringWhatsappMinutes: [5, 1, 120],
+          monitoringCollectionHours: [6, 1, 168],
+          monitoringFailedQueueLimit: [10, 1, 500]
+        };
+        for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
+          data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
+        }
+        if (!/^\d{4}-\d{2}-\d{2}(?:-v\d+)?$/.test(String(data.config.legalPolicyVersion || ''))) {
+          data.config.legalPolicyVersion = previousConfig.legalPolicyVersion || privacyPolicyVersion;
+        }
+        try {
+          const canonical = new URL(String(data.config.canonicalUrl || ''));
+          if (canonical.protocol !== 'https:') throw new Error('invalid');
+          data.config.canonicalUrl = canonical.origin;
+        } catch {
+          data.config.canonicalUrl = previousConfig.canonicalUrl || '';
+        }
+        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText']) {
+          const maximum = key.endsWith('CustomText') ? 3000 : key === 'heroText' || key === 'disclosure' || key === 'seoDescription' ? 1000 : 300;
+          data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);
+        }
 
         if (audienceRoutingChanged) {
           for (const offer of data.offers) {
@@ -2648,6 +3074,10 @@ app.post(
         new Date()
           .toISOString(),
 
+      updatedAt:
+        new Date()
+          .toISOString(),
+
       source:
         'manual'
     };
@@ -2877,6 +3307,10 @@ app.put(
               .whatsappAudiences
           );
 
+        offer.updatedAt =
+          new Date()
+            .toISOString();
+
         updated =
           offer;
       }
@@ -2998,6 +3432,57 @@ app.post(
       .json(
         queueItem
       );
+  }
+);
+
+app.get(
+  '/api/admin/backup',
+  requireAdmin,
+  async (_req, res) => {
+    const data = await readStore();
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `attachment; filename="promoshop-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.json({
+      kind: 'promoshop-safe-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      notice: 'Backup operacional sem senhas, chaves de API, sessões do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.',
+      config: data.config,
+      coupons: Array.isArray(data.coupons) ? data.coupons : []
+    });
+  }
+);
+
+app.post(
+  '/api/admin/backup/restore',
+  requireAdmin,
+  async (req, res) => {
+    const backup = req.body;
+    if (!backup || backup.kind !== 'promoshop-safe-backup' || Number(backup.version) !== 1) {
+      return res.status(400).json({ error: 'Arquivo de backup inválido ou incompatível.' });
+    }
+
+    await updateStore((data) => {
+      if (backup.config && typeof backup.config === 'object' && !Array.isArray(backup.config)) {
+        const allowedKeys = new Set(Object.keys(data.config || {}));
+        const restoredConfig = Object.fromEntries(Object.entries(backup.config).filter(([key]) => allowedKeys.has(key)));
+        data.config = { ...data.config, ...restoredConfig };
+      }
+      if (Array.isArray(backup.coupons)) {
+        data.coupons = backup.coupons.filter((coupon) => coupon && typeof coupon === 'object' && coupon.id && coupon.title && coupon.link).slice(0, 300);
+      }
+    });
+
+    await addLog('Backup operacional restaurado pelo painel.', 'success');
+    return res.json({ ok: true });
+  }
+);
+
+app.post(
+  '/api/admin/maintenance/check-links',
+  requireAdmin,
+  async (_req, res) => {
+    return res.json(await runOfferLinkChecks());
   }
 );
 
@@ -5904,17 +6389,131 @@ app.post(
  * ==========================================================
  */
 
+function publicSiteOrigin(config, req) {
+  const configured = String(config?.canonicalUrl || '').trim().replace(/\/+$/, '');
+  try {
+    const url = new URL(configured);
+    if (['http:', 'https:'].includes(url.protocol)) return url.origin;
+  } catch { }
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+function xmlEscape(value) {
+  return String(value || '').replace(/[<>&'\"]/g, (character) => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
+  }[character]));
+}
+
+function pageSeo(config, pathname, origin) {
+  const pages = {
+    '/sobre': ['Sobre o PromoShop', 'Conheça o PromoShop, sua curadoria independente de ofertas e cupons de lojas parceiras.'],
+    '/contato': ['Fale Conosco — PromoShop', 'Entre em contato com o PromoShop sobre ofertas, cupons, parcerias ou privacidade.'],
+    '/termos-de-uso': ['Termos de Uso — PromoShop', 'Consulte as condições de uso, responsabilidades e transparência do PromoShop.'],
+    '/privacidade': ['Política de Privacidade — PromoShop', 'Saiba como o PromoShop trata dados, consentimento, métricas e solicitações de privacidade.']
+  };
+  const page = pages[pathname];
+  return {
+    title: page?.[0] || String(config.seoTitle || `${config.brandName || 'PromoShop'} — Ofertas e cupons`),
+    description: page?.[1] || String(config.seoDescription || ''),
+    canonical: `${origin}${pathname === '/' ? '' : pathname}`,
+    image: String(config.seoImageUrl || '').trim()
+  };
+}
+
+function injectSeo(html, config, req) {
+  const pathname = req.path.replace(/\/+$/, '') || '/';
+  const origin = publicSiteOrigin(config, req);
+  const seo = pageSeo(config, pathname, origin);
+  const noIndex = pathname.startsWith('/admin') || config.seoIndexingEnabled === false;
+  const structuredData = config.seoStructuredDataEnabled === false || noIndex ? '' : `<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: config.brandName || 'PromoShop',
+    url: origin,
+    description: seo.description,
+    publisher: {
+      '@type': 'Organization',
+      name: config.brandName || 'PromoShop',
+      url: origin,
+      email: config.contactEmail || undefined
+    }
+  }).replace(/</g, '\\u003c')}</script>`;
+  const tags = [
+    `<meta name="description" content="${escapeHtml(seo.description)}">`,
+    `<meta name="keywords" content="${escapeHtml(config.seoKeywords || '')}">`,
+    `<meta name="robots" content="${noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}">`,
+    `<link rel="canonical" href="${escapeHtml(seo.canonical)}">`,
+    '<meta property="og:type" content="website">',
+    `<meta property="og:site_name" content="${escapeHtml(config.brandName || 'PromoShop')}">`,
+    `<meta property="og:title" content="${escapeHtml(seo.title)}">`,
+    `<meta property="og:description" content="${escapeHtml(seo.description)}">`,
+    `<meta property="og:url" content="${escapeHtml(seo.canonical)}">`,
+    seo.image ? `<meta property="og:image" content="${escapeHtml(seo.image)}">` : '',
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${escapeHtml(seo.title)}">`,
+    `<meta name="twitter:description" content="${escapeHtml(seo.description)}">`,
+    seo.image ? `<meta name="twitter:image" content="${escapeHtml(seo.image)}">` : '',
+    '<link rel="manifest" href="/manifest.webmanifest">',
+    structuredData
+  ].filter(Boolean).join('\n    ');
+
+  return html
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(seo.title)}</title>`)
+    .replace(/<meta\s+name="description"[^>]*>/i, '')
+    .replace('</head>', `    ${tags}\n  </head>`);
+}
+
+app.get('/robots.txt', async (req, res) => {
+  const { config } = await readStore();
+  const origin = publicSiteOrigin(config, req);
+  res.type('text/plain').send(config.seoIndexingEnabled === false
+    ? 'User-agent: *\nDisallow: /\n'
+    : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api\nSitemap: ${origin}/sitemap.xml\n`);
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  const { config } = await readStore();
+  if (config.seoIndexingEnabled === false) return res.status(404).end();
+  const origin = publicSiteOrigin(config, req);
+  const lastmod = String(config.legalPolicyVersion || privacyPolicyVersion).slice(0, 10);
+  const paths = ['/', '/sobre', '/contato', '/termos-de-uso', '/privacidade'];
+  const urls = paths.map((pathname) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+});
+
+app.get('/manifest.webmanifest', async (req, res) => {
+  const { config } = await readStore();
+  res.type('application/manifest+json').send({
+    name: config.brandName || 'PromoShop',
+    short_name: config.brandName || 'PromoShop',
+    description: config.seoDescription || '',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#ffffff',
+    theme_color: config.primaryColor || '#1269f3',
+    icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }]
+  });
+});
+
 app.use(
   express.static(
     path.join(
       root,
       'dist'
-    )
+    ),
+    {
+      index: false,
+      setHeaders(res, filePath) {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }
   )
 );
 
 app.use(
-  (
+  async (
     req,
     res,
     next
@@ -5927,13 +6526,15 @@ app.use(
       return next();
     }
 
-    res.sendFile(
-      path.join(
-        root,
-        'dist',
-        'index.html'
-      )
-    );
+    try {
+      const [html, { config }] = await Promise.all([
+        fs.readFile(path.join(root, 'dist', 'index.html'), 'utf8'),
+        readStore()
+      ]);
+      res.type('html').send(injectSeo(html, config, req));
+    } catch (error) {
+      next(error);
+    }
   }
 );
 
@@ -5948,6 +6549,15 @@ cron.schedule('15 3 * * *', async () => {
     await updateStore((data) => pruneInboxEntries(data));
   } catch (error) {
     console.error('Falha ao aplicar a retenção da caixa de entrada:', error.message);
+  }
+});
+
+cron.schedule('20 */6 * * *', async () => {
+  try {
+    const { config } = await readStore();
+    if (config.linkCheckEnabled !== false) await runOfferLinkChecks();
+  } catch (error) {
+    console.error('Falha na verificação programada de links:', error.message);
   }
 });
 

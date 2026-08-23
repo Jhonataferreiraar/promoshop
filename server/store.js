@@ -20,6 +20,51 @@ const initialData = {
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     contactEmail: 'contatopromoshop.site@gmail.com',
+    canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
+    seoTitle: 'PromoShop — Ofertas e cupons selecionados',
+    seoDescription: 'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Compare oportunidades e confirme as condições diretamente na loja.',
+    seoKeywords: 'ofertas, promoções, cupons, Mercado Livre, Shopee, AliExpress, Magalu',
+    seoImageUrl: '',
+    seoIndexingEnabled: true,
+    seoStructuredDataEnabled: true,
+    publicOfferPageSize: 24,
+    publicOfferMaxAgeDays: 45,
+    showOfferUpdatedAt: true,
+    affiliateDisclosureLabel: 'Publicidade · Link de afiliado',
+    mobileCompactMenu: true,
+    clickAnalyticsEnabled: true,
+    analyticsVisitorRetentionDays: 365,
+    analyticsDailyRetentionDays: 120,
+    contactRetentionMonths: 12,
+    consentReceiptRetentionYears: 5,
+    qualityFilterEnabled: true,
+    qualityMinimumScore: 55,
+    qualityRequireImage: true,
+    qualityRequireHttpsLink: true,
+    qualityMaxTitleLength: 180,
+    qualityBlockedTerms: 'réplica, falsificado, pirataria, produto surpresa',
+    staleOffersHidden: true,
+    linkCheckEnabled: true,
+    linkCheckAutoPause: false,
+    linkCheckBatchSize: 20,
+    monitoringEnabled: true,
+    monitoringEmail: 'contatopromoshop.site@gmail.com',
+    monitoringWhatsappMinutes: 5,
+    monitoringCollectionHours: 6,
+    monitoringFailedQueueLimit: 10,
+    legalResponsibleName: 'Jhonata Ferreira de Araujo',
+    legalResponsibleType: 'pessoa física',
+    legalCityState: 'Brasília/DF',
+    legalPrivacyEmail: 'contatopromoshop.site@gmail.com',
+    legalResponseBusinessDays: 5,
+    legalContactRetentionMonths: 12,
+    legalConsentRetentionYears: 5,
+    legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
+    legalPolicyVersion: '2026-08-23-v2',
+    legalAboutCustomText: '',
+    legalContactCustomText: '',
+    legalTermsCustomText: '',
+    legalPrivacyCustomText: '',
     inboxInboundEnabled: false,
     inboxInboundDomain: 'reply.jhonatafaraujo.com.br',
     inboxInboundWebhookId: '',
@@ -144,6 +189,10 @@ const initialData = {
     totalPageViews: 0,
     totalSessions: 0,
     totalVisitors: 0,
+    totalClicks: 0,
+    clicksByType: {},
+    clicksByStore: {},
+    clicksByTarget: {},
     visitors: {},
     daily: {}
   },
@@ -180,6 +229,10 @@ export async function readStore() {
 
   if (data.config.heroText === 'Promoções selecionadas e verificadas para você economizar sem perder tempo.') {
     data.config.heroText = initialData.config.heroText;
+  }
+
+  if (data.config.legalPolicyVersion === '2026-08-23') {
+    data.config.legalPolicyVersion = initialData.config.legalPolicyVersion;
   }
 
   data.config.aiModels = {

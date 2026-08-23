@@ -60,12 +60,51 @@ try {
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23' })
+    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v2' })
   });
   assert.equal(privacyReceipt.status, 200);
   const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   assert.equal(dashboardWithReceipt.privacyConsents[receiptId].choice, 'accepted');
   assert.equal(Object.hasOwn(dashboardWithReceipt.privacyConsents[receiptId], 'ip'), false);
+
+  const visitorId = 'anonymousvisitor1234567890';
+  const sessionId = 'anonymoussession1234567890';
+  const unauthorizedVisit = await fetch(`${origin}/api/analytics/visit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ visitorId, sessionId, receiptId: 'unknownreceipt123456789' })
+  });
+  assert.equal(unauthorizedVisit.status, 403);
+
+  const authorizedVisit = await fetch(`${origin}/api/analytics/visit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ visitorId, sessionId, receiptId })
+  });
+  assert.equal(authorizedVisit.status, 200);
+
+  const clickEvent = await fetch(`${origin}/api/analytics/event`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ receiptId, visitorId, sessionId, type: 'offer', targetId: 'offer-test-123456', label: 'Oferta de teste', store: 'Loja de teste' })
+  });
+  assert.equal(clickEvent.status, 200);
+  const analyticsDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  assert.equal(analyticsDashboard.analytics.totalClicks, 1);
+  assert.equal(analyticsDashboard.analytics.topTargets[0].label, 'Oferta de teste');
+
+  const safeBackup = await fetch(`${origin}/api/admin/backup`, { headers: authorization }).then((response) => response.json());
+  assert.equal(safeBackup.kind, 'promoshop-safe-backup');
+  assert.equal(Object.hasOwn(safeBackup, 'secrets'), false);
+  assert.equal(Object.hasOwn(safeBackup, 'analytics'), false);
+  assert.equal(Object.hasOwn(safeBackup, 'inbox'), false);
+
+  const robots = await fetch(`${origin}/robots.txt`).then((response) => response.text());
+  assert.match(robots, /Sitemap:/);
+  assert.match(robots, /Disallow: \/admin/);
+  const sitemap = await fetch(`${origin}/sitemap.xml`).then((response) => response.text());
+  assert.match(sitemap, /<urlset/);
+  assert.match(sitemap, /\/privacidade/);
 
   const invalidContact = await fetch(`${origin}/api/contact`, {
     method: 'POST',

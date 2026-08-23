@@ -15,8 +15,53 @@ const fallbackConfig = {
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
   contactEmail: 'contatopromoshop.site@gmail.com',
   inboxInboundEnabled: false,
-  inboxInboundDomain: 'reply.jhonatafaraujo.com.br'
-}
+  inboxInboundDomain: 'reply.jhonatafaraujo.com.br',
+  canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
+  seoTitle: 'PromoShop — Ofertas e cupons selecionados',
+  seoDescription: 'Ofertas e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu.',
+  seoKeywords: 'ofertas, promoções, cupons, Mercado Livre, Shopee, AliExpress, Magalu',
+  seoImageUrl: '',
+  seoIndexingEnabled: true,
+  seoStructuredDataEnabled: true,
+  publicOfferPageSize: 24,
+  publicOfferMaxAgeDays: 45,
+  showOfferUpdatedAt: true,
+  affiliateDisclosureLabel: 'Publicidade · Link de afiliado',
+  mobileCompactMenu: true,
+  clickAnalyticsEnabled: true,
+  analyticsVisitorRetentionDays: 365,
+  analyticsDailyRetentionDays: 120,
+  contactRetentionMonths: 12,
+  consentReceiptRetentionYears: 5,
+  qualityFilterEnabled: true,
+  qualityMinimumScore: 55,
+  qualityRequireImage: true,
+  qualityRequireHttpsLink: true,
+  qualityMaxTitleLength: 180,
+  qualityBlockedTerms: 'réplica, falsificado, pirataria, produto surpresa',
+  staleOffersHidden: true,
+  linkCheckEnabled: true,
+  linkCheckAutoPause: false,
+  linkCheckBatchSize: 20,
+  monitoringEnabled: true,
+  monitoringEmail: 'contatopromoshop.site@gmail.com',
+  monitoringWhatsappMinutes: 5,
+  monitoringCollectionHours: 6,
+  monitoringFailedQueueLimit: 10,
+  legalResponsibleName: 'Jhonata Ferreira de Araujo',
+  legalResponsibleType: 'pessoa física',
+  legalCityState: 'Brasília/DF',
+  legalPrivacyEmail: 'contatopromoshop.site@gmail.com',
+  legalResponseBusinessDays: 5,
+  legalContactRetentionMonths: 12,
+  legalConsentRetentionYears: 5,
+  legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
+  legalPolicyVersion: '2026-08-23-v2',
+  legalAboutCustomText: '',
+  legalContactCustomText: '',
+  legalTermsCustomText: '',
+  legalPrivacyCustomText: ''
+};
 
 const mercadoLivreCategories = [
   { id: 'MLB5672', name: 'Acessórios para Veículos' },
@@ -87,7 +132,7 @@ function anonymousStorageId(storage, key) {
 const analyticsConsentKey = 'promoshop_analytics_consent';
 const analyticsConsentEvent = 'promoshop:analytics-consent';
 const privacyOpenEvent = 'promoshop:privacy-open';
-const privacyPolicyVersion = '2026-08-23';
+const privacyPolicyVersion = '2026-08-23-v2';
 const privacyReceiptKey = 'promoshop_privacy_receipt';
 const privacyReceiptSyncKey = 'promoshop_privacy_receipt_synced';
 
@@ -108,7 +153,7 @@ function clearAnalyticsIdentifiers() {
   } catch { }
 }
 
-function recordAnalyticsConsent(value, previousVisitorId = '') {
+function recordAnalyticsConsent(value, previousVisitorId = '', policyVersion = privacyPolicyVersion) {
   const receiptId = anonymousStorageId(window.localStorage, privacyReceiptKey);
   api('/privacy/consent', {
     method: 'POST',
@@ -116,17 +161,17 @@ function recordAnalyticsConsent(value, previousVisitorId = '') {
     body: JSON.stringify({
       receiptId,
       choice: value,
-      policyVersion: privacyPolicyVersion,
+      policyVersion,
       previousVisitorId
     })
   }).then(() => {
     try {
-      window.localStorage.setItem(privacyReceiptSyncKey, `${privacyPolicyVersion}:${value}`);
+      window.localStorage.setItem(privacyReceiptSyncKey, `${policyVersion}:${value}`);
     } catch { }
   }).catch(() => { });
 }
 
-function saveAnalyticsConsent(value) {
+function saveAnalyticsConsent(value, policyVersion = privacyPolicyVersion) {
   let previousVisitorId = '';
   try {
     previousVisitorId = window.localStorage.getItem('promoshop_analytics_visitor') || '';
@@ -135,9 +180,32 @@ function saveAnalyticsConsent(value) {
     window.localStorage.setItem(analyticsConsentKey, value);
   } catch { }
   if (value === 'rejected') clearAnalyticsIdentifiers();
-  recordAnalyticsConsent(value, value === 'rejected' ? previousVisitorId : '');
+  recordAnalyticsConsent(value, value === 'rejected' ? previousVisitorId : '', policyVersion);
 
   window.dispatchEvent(new CustomEvent(analyticsConsentEvent, { detail: value }));
+}
+
+function trackPublicEvent(type, target = {}) {
+  if (readAnalyticsConsent() !== 'accepted') return;
+  let receiptId = '';
+  try { receiptId = window.localStorage.getItem(privacyReceiptKey) || ''; } catch { }
+  if (!receiptId) return;
+
+  const visitorId = anonymousStorageId(window.localStorage, 'promoshop_analytics_visitor');
+  const sessionId = anonymousStorageId(window.sessionStorage, 'promoshop_analytics_session');
+  api('/analytics/event', {
+    method: 'POST',
+    cache: 'no-store',
+    body: JSON.stringify({
+      receiptId,
+      visitorId,
+      sessionId,
+      type,
+      targetId: String(target.id || '').slice(0, 120),
+      label: String(target.label || '').slice(0, 180),
+      store: String(target.store || '').slice(0, 80)
+    })
+  }).catch(() => { });
 }
 
 function usePublicAnalytics() {
@@ -171,6 +239,7 @@ function usePublicAnalytics() {
 
     const visitorId = anonymousStorageId(window.localStorage, 'promoshop_analytics_visitor');
     const sessionId = anonymousStorageId(window.sessionStorage, 'promoshop_analytics_session');
+    const receiptId = anonymousStorageId(window.localStorage, privacyReceiptKey);
 
     api('/analytics/visit', {
       method: 'POST',
@@ -178,13 +247,14 @@ function usePublicAnalytics() {
       body: JSON.stringify({
         visitorId,
         sessionId,
+        receiptId,
         path: window.location.pathname
       })
     }).catch(() => { });
   }, [consent]);
 }
 
-function PrivacyConsent() {
+function PrivacyConsent({ policyVersion = privacyPolicyVersion }) {
   const [choice, setChoice] = useState(readAnalyticsConsent);
   const [open, setOpen] = useState(() => !readAnalyticsConsent());
 
@@ -193,7 +263,7 @@ function PrivacyConsent() {
     if (choice) {
       let synced = '';
       try { synced = window.localStorage.getItem(privacyReceiptSyncKey) || ''; } catch { }
-      if (synced !== `${privacyPolicyVersion}:${choice}`) recordAnalyticsConsent(choice);
+      if (synced !== `${policyVersion}:${choice}`) setOpen(true);
     }
 
     const showPreferences = () => setOpen(true);
@@ -209,10 +279,10 @@ function PrivacyConsent() {
       window.removeEventListener(privacyOpenEvent, showPreferences);
       window.removeEventListener('storage', syncChoice);
     };
-  }, [choice]);
+  }, [choice, policyVersion]);
 
   function choose(value) {
-    saveAnalyticsConsent(value);
+    saveAnalyticsConsent(value, policyVersion);
     setChoice(value);
     setOpen(false);
   }
@@ -223,7 +293,7 @@ function PrivacyConsent() {
     <div className="privacy-consent-icon" aria-hidden="true">✓</div>
     <div className="privacy-consent-copy">
       <strong>Privacidade e medição de acessos</strong>
-      <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitantes e melhorar a PromoShop. Não guardamos seu nome ou IP nessa medição. O site continua funcionando normalmente se você rejeitar.</p>
+      <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitas e interações com ofertas, cupons e grupos. Não guardamos seu nome ou IP nessa medição. O site continua funcionando normalmente se você rejeitar.</p>
       <span><a href="/privacidade">Política de Privacidade</a><a href="/termos-de-uso">Termos de Uso</a>{choice && <small>Escolha atual: {choice === 'accepted' ? 'medição aceita' : 'medição rejeitada'}.</small>}</span>
     </div>
     <div className="privacy-consent-actions">
@@ -244,13 +314,16 @@ function Logo({ name }) {
 
 function PublicSite() {
   const [config, setConfig] = useState(fallbackConfig);
-  const [offers, setOffers] = useState(fallbackOffers);
+  const [offers, setOffers] = useState([]);
+  const [offerTotal, setOfferTotal] = useState(0);
+  const [offerStores, setOfferStores] = useState([]);
+  const [topDiscount, setTopDiscount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [coupons, setCoupons] = useState([]);
   const [couponCopied, setCouponCopied] = useState('');
   const [query, setQuery] = useState('');
   const [store, setStore] = useState('Todas');
   const [sort, setSort] = useState('discount');
-  const [visibleCount, setVisibleCount] = useState(24);
   const [loading, setLoading] = useState(true);
   const [audiences, setAudiences] = useState([]);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -258,19 +331,19 @@ function PublicSite() {
   const [assistantReply, setAssistantReply] = useState('');
   const [assistantAudiences, setAssistantAudiences] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const offerRequestRef = useRef(0);
   usePublicAnalytics();
 
   useEffect(() => {
     Promise.all([
       api('/config/public'),
-      api('/offers'),
       api('/coupons'),
       api('/audiences/public')
     ])
       .then(
         ([
           configData,
-          offerData,
           couponData,
           audienceData
         ]) => {
@@ -280,7 +353,6 @@ function PublicSite() {
             ...configData
           });
 
-          setOffers(offerData);
           setCoupons(Array.isArray(couponData) ? couponData : []);
 
           setAudiences(
@@ -290,11 +362,47 @@ function PublicSite() {
           );
         }
       )
-      .catch(() => { })
-      .finally(() =>
-      setLoading(false)
-    );
+      .catch(() => { });
   }, []);
+
+  async function loadOfferPage({ append = false } = {}) {
+    const requestId = ++offerRequestRef.current;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        paged: '1',
+        limit: String(Math.max(6, Math.min(60, Number(config.publicOfferPageSize || 24)))),
+        offset: String(append ? offers.length : 0),
+        query,
+        store: store === 'Todas' ? '' : store,
+        sort
+      });
+      const result = await api(`/offers?${params.toString()}`, { cache: 'no-store' });
+      if (requestId !== offerRequestRef.current) return;
+      const nextOffers = Array.isArray(result.offers) ? result.offers : [];
+      setOffers((current) => append ? [...current, ...nextOffers] : nextOffers);
+      setOfferTotal(Number(result.total || 0));
+      setOfferStores(Array.isArray(result.stores) ? result.stores : []);
+      setTopDiscount(Number(result.topDiscount || 0));
+    } catch {
+      if (!append) {
+        setOffers([]);
+        setOfferTotal(0);
+      }
+    } finally {
+      if (requestId === offerRequestRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => loadOfferPage(), 280);
+    return () => window.clearTimeout(timeout);
+  }, [query, store, sort, config.publicOfferPageSize]);
 
   useEffect(() => {
     const refreshCoupons = () => {
@@ -321,7 +429,9 @@ function PublicSite() {
 
   useEffect(() => {
     document.documentElement.style.setProperty('--primary', config.primaryColor || fallbackConfig.primaryColor);
-    document.title = `${config.brandName} — Ofertas de verdade`;
+    document.title = config.seoTitle || `${config.brandName} — Ofertas de verdade`;
+    const description = document.querySelector('meta[name="description"]');
+    if (description && config.seoDescription) description.setAttribute('content', config.seoDescription);
   }, [config]);
 
   useEffect(() => {
@@ -332,15 +442,8 @@ function PublicSite() {
     }
   }, [config.assistantAvailable]);
 
-  const stores = ['Todas', ...new Set(offers.map((offer) => offer.store))];
-  const filtered = useMemo(() => offers.filter((offer) => {
-    const text = `${offer.title} ${offer.store} ${offer.category}`.toLowerCase();
-    return text.includes(query.toLowerCase()) && (store === 'Todas' || offer.store === store);
-  }).sort((a, b) => sort === 'price' ? Number(a.price) - Number(b.price) : sort === 'recent' ? new Date(b.createdAt || 0) - new Date(a.createdAt || 0) : discount(b) - discount(a)), [offers, query, store, sort]);
-  const visibleOffers = filtered.slice(0, visibleCount);
-  const topDiscount = Math.max(0, ...offers.map(discount));
-
-  useEffect(() => setVisibleCount(24), [query, store, sort]);
+  const stores = ['Todas', ...offerStores];
+  const visibleOffers = offers;
 
   async function askAssistant(event) {
     event.preventDefault();
@@ -384,16 +487,17 @@ function PublicSite() {
   }
 
   return <div className="site-shell">
-    <header className="topbar">
+    <header className={`topbar ${config.mobileCompactMenu !== false ? 'compact-mobile-nav' : ''}`}>
       <div className="container nav-wrap">
         <Logo name={config.brandName} />
-        <nav>
-          <a href="#ofertas">Ofertas</a>
-          {coupons.length > 0 && <a href="#cupons">Cupons</a>}
-          <a href="#grupos">Grupos</a>
-          <a href="#como-funciona">Como funciona</a>
+        {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label="Abrir menu" onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
+        <nav className={mobileMenuOpen ? 'mobile-open' : ''}>
+          <a href="#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a>
+          {coupons.length > 0 && <a href="#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a>}
+          <a href="#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a>
+          <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a>
         </nav>
-        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
+        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'header', label: 'Grupo no WhatsApp' })}>Grupo no WhatsApp</a></div>
       </div>
     </header>
 
@@ -404,8 +508,8 @@ function PublicSite() {
             <span className="eyebrow">CURADORIA DE OFERTAS TODOS OS DIAS</span>
             <h1>{config.heroTitle}</h1>
             <p>{config.heroText}</p>
-            <div className="hero-actions"><a className="button light" href="#ofertas">Explorar ofertas</a><a className="button ghost" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Receber no WhatsApp</a></div>
-            <div className="hero-metrics"><span><strong>{offers.length}</strong><small>ofertas disponíveis</small></span><span><strong>até {topDiscount}%</strong><small>de desconto</small></span><span><strong>3 lojas</strong><small>em um só lugar</small></span></div>
+            <div className="hero-actions"><a className="button light" href="#ofertas">Explorar ofertas</a><a className="button ghost" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'hero', label: 'Receber no WhatsApp' })}>Receber no WhatsApp</a></div>
+            <div className="hero-metrics"><span><strong>{offerTotal}</strong><small>ofertas disponíveis</small></span><span><strong>até {topDiscount}%</strong><small>de desconto</small></span><span><strong>{offerStores.length} lojas</strong><small>em um só lugar</small></span></div>
           </div>
           <div className="hero-art" aria-hidden="true">
             <div className="floating-card card-one"><span>OFERTAS</span><strong>Até {topDiscount}% OFF</strong><small>confirme na loja</small></div>
@@ -423,16 +527,16 @@ function PublicSite() {
       </section>
 
       <section className="offers-section container" id="ofertas">
-        <div className="section-heading"><div><span className="eyebrow dark">OPORTUNIDADES SELECIONADAS</span><h2>Ofertas que valem a pena</h2><p>Compare preços e escolha sua próxima economia.</p></div><span className="results-count"><strong>{filtered.length}</strong> ofertas encontradas</span></div>
+        <div className="section-heading"><div><span className="eyebrow dark">OPORTUNIDADES SELECIONADAS</span><h2>Ofertas que valem a pena</h2><p>Compare preços e escolha sua próxima economia.</p></div><span className="results-count"><strong>{offerTotal}</strong> ofertas encontradas</span></div>
         {loading && <p className="notice">Atualizando ofertas…</p>}
         <div className="offer-grid">
           {visibleOffers.map((offer) => <article className="offer-card" key={offer.id}>
             <div className="offer-image"><img src={offer.image} alt={offer.title} loading="lazy" referrerPolicy="no-referrer" />{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${offer.store.toLowerCase().includes('shopee') ? 'shopee' : offer.store.toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span></div>
-            <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3>{offer.title}</h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div><small className="affiliate-label">Publicidade · Link de afiliado</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer">Ir para a oferta <span>↗</span></a></div>
+            <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3>{offer.title}</h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
           </article>)}
         </div>
-        {visibleCount < filtered.length && <div className="load-more"><button className="button subtle" type="button" onClick={() => setVisibleCount((count) => count + 24)}>Mostrar mais ofertas</button><small>Exibindo {visibleOffers.length} de {filtered.length}</small></div>}
-        {!filtered.length && <div className="empty"><strong>Nenhuma oferta encontrada</strong><p>Tente remover algum filtro.</p></div>}
+        {visibleOffers.length < offerTotal && <div className="load-more"><button className="button subtle" type="button" disabled={loadingMore} onClick={() => loadOfferPage({ append: true })}>{loadingMore ? 'Carregando…' : 'Mostrar mais ofertas'}</button><small>Exibindo {visibleOffers.length} de {offerTotal}</small></div>}
+        {!loading && !offerTotal && <div className="empty"><strong>Nenhuma oferta encontrada</strong><p>Tente remover algum filtro.</p></div>}
       </section>
 
       {coupons.length > 0 && (
@@ -458,8 +562,8 @@ function PublicSite() {
                   <div className="coupon-card-actions">
                     {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
                     {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
-                    <small className="affiliate-label">Publicidade · Link de afiliado</small>
-                    <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
+                    <small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small>
+                    <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('coupon', { id: coupon.id, label: coupon.title, store: coupon.store })}>Ativar cupom <span>↗</span></a>
                   </div>
                 </article>
               ))}
@@ -520,6 +624,7 @@ function PublicSite() {
                     href={audience.whatsappLink}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('group', { id: audience.code, label: audience.name, store: 'WhatsApp' })}
                   >
                     Entrar no grupo
                   </a>
@@ -589,6 +694,7 @@ function PublicSite() {
                                 target="_blank"
                                 rel="noreferrer"
                                 className="assistant-group"
+                                onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('group', { id: audience.code, label: audience.name, store: 'WhatsApp' })}
                               >
                                 <span>
                                   <small>
@@ -647,11 +753,11 @@ function PublicSite() {
         </section>
 
       )}
-      <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Quero receber ofertas</a></div></section>
+      <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'footer-cta', label: 'Quero receber ofertas' })}>Quero receber ofertas</a></div></section>
     </main>
 
     <SiteFooter config={config} />
-    <PrivacyConsent />
+    <PrivacyConsent policyVersion={config.legalPolicyVersion} />
   </div>;
 }
 
@@ -737,20 +843,49 @@ const publicInfoPages = {
     updatedAt: '23 de agosto de 2026',
     sections: [
       { title: '1. Controlador e contato', paragraphs: ['O responsável pelo tratamento relacionado ao PromoShop é Jhonata Ferreira de Araujo, pessoa física, localizado em Brasília/DF. O canal para assuntos de privacidade é contatopromoshop.site@gmail.com ou o formulário Fale Conosco.', 'Buscamos enviar uma resposta inicial em até 5 dias úteis, sem prejuízo de prazos específicos previstos em lei.'] },
-      { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões e páginas vistas. Eles não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
-      { title: '3. Finalidades e bases legais', paragraphs: ['A medição de audiência é realizada com consentimento e pode ser rejeitada ou revogada sem perda de funcionalidade. Guardamos apenas um comprovante anônimo da escolha, com data, versão desta política e decisão, sem nome ou IP.', 'Os dados do contato são usados para receber, organizar e responder à solicitação, com base em procedimentos solicitados pelo titular e, conforme o caso, legítimo interesse no atendimento e na segurança. Também poderemos conservar informações para cumprir obrigação legal ou exercer direitos em processo.'] },
+      { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões, páginas vistas e cliques em ofertas, cupons, grupos e botões. Registramos totais agregados, tipo do clique, loja e nome resumido do destino; não guardamos nesse controle o endereço completo do link. Os identificadores não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
+      { title: '3. Finalidades e bases legais', paragraphs: ['A medição de audiência e de interação ajuda a entender quais páginas, lojas, ofertas e cupons despertam interesse. Ela é realizada com consentimento e pode ser rejeitada ou revogada sem perda de funcionalidade. Guardamos apenas um comprovante anônimo da escolha, com data, versão desta política e decisão, sem nome ou IP.', 'Os dados do contato são usados para receber, organizar e responder à solicitação, com base em procedimentos solicitados pelo titular e, conforme o caso, legítimo interesse no atendimento e na segurança. Também poderemos conservar informações para cumprir obrigação legal ou exercer direitos em processo.'] },
       { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem e a Brevo para entrega e recebimento de e-mails. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu e WhatsApp. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
       { title: '5. Transferências internacionais', paragraphs: ['Alguns provedores de hospedagem, e-mail, mensageria e programas de afiliados podem processar dados fora do Brasil. Nesses casos, buscamos utilizar serviços reconhecidos e mecanismos contratuais e de segurança compatíveis com a legislação aplicável.'] },
       { title: '6. Retenção e eliminação', paragraphs: ['Mensagens e respostas do Fale Conosco são mantidas por até 12 meses após a última interação, salvo necessidade legal de conservação por prazo maior. Identificadores de audiência podem ser mantidos por até 365 dias e resumos diários por até 120 dias.', 'Comprovantes anônimos de consentimento podem ser mantidos por até 5 anos para demonstrar a escolha registrada. Quando a pessoa rejeita ou revoga a medição, o identificador individual conhecido por este navegador é removido dos registros ativos; totais estatísticos já agregados não permitem reidentificação e podem permanecer.'] },
       { title: '7. Seus direitos', paragraphs: ['Você pode solicitar confirmação de tratamento, acesso, correção, anonimização, bloqueio, eliminação, portabilidade quando aplicável, informação sobre compartilhamento, revisão, oposição e revogação do consentimento. Poderemos pedir informações mínimas para confirmar a legitimidade da solicitação.', 'Para mudar a medição, use “Preferências de privacidade” no rodapé. Para outras solicitações, use o Fale Conosco com o assunto “Privacidade e dados pessoais”.'] },
       { title: '8. Crianças e adolescentes', paragraphs: ['O PromoShop é um site de promoções de uso geral e não é direcionado especificamente a crianças. Não buscamos criar perfis de menores. Solicitações que envolvam dados de menores devem ser realizadas com acompanhamento ou autorização de responsável legal.'] },
-      { title: '9. Segurança e incidentes', paragraphs: ['Adotamos controles de acesso, autenticação administrativa, limitação contra abuso e outras medidas razoáveis para proteger os dados. Nenhum sistema é totalmente livre de riscos; caso ocorra incidente relevante, serão adotadas as providências legais e técnicas cabíveis.'] },
+      { title: '9. Segurança, cópias e incidentes', paragraphs: ['Adotamos controles de acesso, autenticação administrativa, limitação contra abuso e outras medidas razoáveis para proteger os dados. Cópias técnicas do serviço podem conter dados ainda dentro dos prazos de retenção e seguem os controles do provedor de hospedagem. O backup operacional baixado pelo painel exclui mensagens, comprovantes de consentimento, identificadores de audiência, senhas, chaves e sessão do WhatsApp.', 'Nenhum sistema é totalmente livre de riscos; caso ocorra incidente relevante, serão adotadas as providências legais e técnicas cabíveis, inclusive comunicação quando exigida.'] },
       { title: '10. Atualizações e contato', paragraphs: ['Esta política pode ser atualizada quando houver mudanças no serviço, nos fornecedores ou na legislação. A versão vigente será publicada nesta página com a data da atualização.'] , contact: true }
     ]
   }
 };
 
-function ContactForm({ contactEmail }) {
+function legalText(text, config = fallbackConfig) {
+  const replacements = [
+    ['Jhonata Ferreira de Araujo', config.legalResponsibleName],
+    ['pessoa física', config.legalResponsibleType],
+    ['Brasília/DF', config.legalCityState],
+    ['contatopromoshop.site@gmail.com', config.legalPrivacyEmail || config.contactEmail],
+    ['Mercado Livre, Shopee, AliExpress e Magalu', config.legalAffiliatePrograms],
+    ['até 5 dias úteis', `até ${Number(config.legalResponseBusinessDays || 5)} dias úteis`],
+    ['até 12 meses', `até ${Number(config.legalContactRetentionMonths || config.contactRetentionMonths || 12)} meses`],
+    ['até 5 anos', `até ${Number(config.legalConsentRetentionYears || config.consentReceiptRetentionYears || 5)} anos`],
+    ['até 365 dias', `até ${Number(config.analyticsVisitorRetentionDays || 365)} dias`],
+    ['até 120 dias', `até ${Number(config.analyticsDailyRetentionDays || 120)} dias`]
+  ];
+
+  return replacements.reduce((result, [from, to]) => (
+    to ? result.replaceAll(from, String(to)) : result
+  ), String(text || ''));
+}
+
+function legalVersionLabel(version) {
+  const datePart = String(version || '').slice(0, 10);
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(datePart)
+    ? new Date(`${datePart}T12:00:00-03:00`)
+    : null;
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+    : String(version || 'não informada');
+}
+
+function ContactForm({ contactEmail, responseBusinessDays = 5 }) {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '', website: '' });
   const [status, setStatus] = useState({ type: '', text: '' });
   const [sending, setSending] = useState(false);
@@ -783,7 +918,7 @@ function ContactForm({ contactEmail }) {
     <label>Mensagem<textarea required minLength={10} maxLength={4000} rows={6} value={form.message} onChange={(event) => setForm({ ...form, message: event.target.value })} placeholder="Conte como podemos ajudar…" /></label>
     <label className="contact-honeypot" aria-hidden="true">Site<input tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => setForm({ ...form, website: event.target.value })} /></label>
     <p className="contact-privacy-note">Ao enviar, você concorda com o uso dos dados para responder e acompanhar esta solicitação, conforme a <a href="/privacidade">Política de Privacidade</a>. Menores devem usar o formulário com acompanhamento ou autorização de responsável.</p>
-    <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Resposta inicial em até 5 dias úteis pelo e-mail informado.</span></div>
+    <div className="contact-form-footer"><button className="button primary" type="submit" disabled={sending}>{sending ? 'Enviando…' : 'Enviar mensagem'}</button><span>Resposta inicial em até {Number(responseBusinessDays || 5)} dias úteis pelo e-mail informado.</span></div>
     {status.text && <p className={`contact-status ${status.type}`} role="status">{status.text}</p>}
     <div className="contact-form-alternative">{contactEmail && <span>Ou escreva para <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</span>}</div>
   </form>;
@@ -791,9 +926,12 @@ function ContactForm({ contactEmail }) {
 
 function InfoPage({ page }) {
   const [config, setConfig] = useState(fallbackConfig);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const info = publicInfoPages[page] || publicInfoPages['/sobre'];
   const contactEmail = String(config.contactEmail || '').trim();
   const whatsappUrl = String(config.whatsappUrl || '').trim();
+  const customTextKey = { '/sobre': 'legalAboutCustomText', '/contato': 'legalContactCustomText', '/termos-de-uso': 'legalTermsCustomText', '/privacidade': 'legalPrivacyCustomText' }[page];
+  const customText = String(config[customTextKey] || '').trim();
 
   usePublicAnalytics();
 
@@ -809,22 +947,24 @@ function InfoPage({ page }) {
   }, [config, info.title]);
 
   return <div className="site-shell info-shell">
-    <header className="topbar">
+    <header className={`topbar ${config.mobileCompactMenu !== false ? 'compact-mobile-nav' : ''}`}>
       <div className="container nav-wrap">
         <Logo name={config.brandName || fallbackConfig.brandName} />
-        <nav><a href="/#ofertas">Ofertas</a><a href="/#cupons">Cupons</a><a href="/#grupos">Grupos</a><a href="/#como-funciona">Como funciona</a></nav>
+        {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label="Abrir menu" onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
+        <nav className={mobileMenuOpen ? 'mobile-open' : ''}><a href="/#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a><a href="/#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a><a href="/#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a><a href="/#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a></nav>
         <div className="nav-actions"><a className="nav-whatsapp" href={whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
       </div>
     </header>
     <main className="info-main">
-      <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p>{info.updatedAt && <small className="info-updated">Versão vigente · Atualizada em {info.updatedAt}</small>}</div></section>
+      <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p><small className="info-updated">Versão vigente · Atualizada em {legalVersionLabel(config.legalPolicyVersion)}</small></div></section>
       <article className="container info-content">
-        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} />}{section.contact && <div className="info-contact-actions"><a className="button primary" href="/contato">Ir para Fale Conosco ↗</a></div>}</section>)}
+        {customText && <aside className="info-custom-note"><strong>Informação adicional</strong>{customText.split(/\n{2,}/).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</aside>}
+        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{legalText(paragraph, config)}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} responseBusinessDays={config.legalResponseBusinessDays} />}{section.contact && <div className="info-contact-actions"><a className="button primary" href="/contato">Ir para Fale Conosco ↗</a></div>}</section>)}
         <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
       </article>
     </main>
     <SiteFooter config={config} />
-    <PrivacyConsent />
+    <PrivacyConsent policyVersion={config.legalPolicyVersion} />
   </div>;
 }
 
@@ -914,6 +1054,7 @@ function AdminApp() {
   const [productSearchErrors, setProductSearchErrors] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
+  const backupInputRef = useRef(null);
   function updateAudience(index, changes) {
     const audiences = Array.isArray(
       data.config.whatsappAudiences
@@ -1128,6 +1269,46 @@ function AdminApp() {
       setMessage('Configurações salvas.');
     } catch (error) {
       setMessage(`Não foi possível salvar: ${error.message}`);
+    }
+  }
+
+  async function downloadBackup() {
+    try {
+      const backup = await authApi('/admin/backup');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `promoshop-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage('Backup seguro baixado. Ele não contém senhas nem dados pessoais.');
+    } catch (error) {
+      setMessage(`Não foi possível criar o backup: ${error.message}`);
+    }
+  }
+
+  async function restoreBackup(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      await authApi('/admin/backup/restore', { method: 'POST', body: JSON.stringify(backup) });
+      await load();
+      setMessage('Configurações e cupons restaurados com sucesso.');
+    } catch (error) {
+      setMessage(`Não foi possível restaurar: ${error.message || 'arquivo inválido'}`);
+    }
+  }
+
+  async function checkOfferLinks() {
+    setMessage('Verificando um lote de links seguros…');
+    try {
+      const result = await authApi('/admin/maintenance/check-links', { method: 'POST', body: '{}' });
+      await load();
+      setMessage(`Links verificados: ${result.ok} funcionando, ${result.broken} indisponível(is) e ${result.unknown} inconclusivo(s).`);
+    } catch (error) {
+      setMessage(`Não foi possível verificar os links: ${error.message}`);
     }
   }
   async function saveSources(event) {
@@ -1563,13 +1744,13 @@ function AdminApp() {
   }
   function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', settings: 'Aparência do site', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja o alcance do site com métricas anônimas e consistentes.', settings: 'Personalize os textos e as cores do site público.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
     { label: 'Operação', items: ['overview', 'offers', 'coupons', 'inbox', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp'] },
-    { label: 'Sistema', items: ['analytics', 'settings', 'security', 'logs'] }
+    { label: 'Sistema', items: ['analytics', 'health', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
   const unreadInboxCount = (data.inbox || []).filter((item) => item.status === 'unread').length;
@@ -1578,9 +1759,13 @@ function AdminApp() {
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
+  const setConfigField = (key, value) => setData((current) => ({
+    ...current,
+    config: { ...current.config, [key]: value }
+  }));
 
   return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
-    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{Number(data.config.enableMercadoLivre) + Number(data.config.enableShopee) + Number(data.config.enableAliexpress)}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
+    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
 
@@ -1987,6 +2172,11 @@ function AdminApp() {
                       {offer.status === 'active'
                         ? 'Publicada'
                         : 'Aguardando link'}
+                    </small>
+                    <small className={`offer-quality ${offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) ? 'warning' : 'ok'}`}>
+                      Qualidade {Number(offer.qualityScore || 0)}/100
+                      {offer.isStale ? ' · oferta antiga' : ''}
+                      {Array.isArray(offer.qualityIssues) && offer.qualityIssues.length ? ` · ${offer.qualityIssues.join(', ')}` : ''}
                     </small>
                   </span>
 
@@ -2694,7 +2884,100 @@ function AdminApp() {
         <div className="form-footer"><span>As alterações entram em vigor após salvar.</span><button className="button primary">Salvar grupos e regras</button></div>
       </form>
     </div>}
-    {tab === 'settings' && <form className="panel settings-form" onSubmit={saveConfig}><h2>Identidade do site</h2><div className="settings-grid">{[['brandName', 'Nome do site'], ['heroTitle', 'Título principal'], ['heroText', 'Texto principal'], ['primaryColor', 'Cor principal'], ['disclosure', 'Aviso de afiliado'], ['contactEmail', 'E-mail de contato']].map(([key, label]) => <label key={key}>{label}{['heroText', 'disclosure'].includes(key) ? <textarea value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} /> : <input type={key === 'primaryColor' ? 'color' : key === 'contactEmail' ? 'email' : 'text'} value={data.config[key] ?? ''} onChange={(event) => setData({ ...data, config: { ...data.config, [key]: event.target.value } })} />}</label>)}</div><p className="settings-help">Esse e-mail aparece nas páginas de contato e no rodapé público. Deixe vazio para priorizar o WhatsApp.</p><button className="button primary">Salvar aparência</button></form>}
+    {tab === 'health' && <div className="health-layout">
+      <section className={`panel health-summary ${data.systemHealth?.status || 'attention'}`}><div><span className="section-step">DIAGNÓSTICO</span><h2>{data.systemHealth?.status === 'healthy' ? 'Sistema funcionando normalmente' : data.systemHealth?.status === 'critical' ? 'O sistema precisa de atenção imediata' : 'Há itens para revisar'}</h2><p>Verificação atualizada em {data.systemHealth?.checkedAt ? new Date(data.systemHealth.checkedAt).toLocaleString('pt-BR') : '—'}.</p></div><button className="button subtle" type="button" onClick={() => load()}>Verificar novamente</button></section>
+      <div className="health-check-grid">{(data.systemHealth?.checks || []).map((check) => <article className={`panel health-check ${check.ok ? 'ok' : 'warning'}`} key={check.id}><span>{check.ok ? '✓' : '!'}</span><div><h3>{check.label}</h3><p>{check.detail}</p></div></article>)}</div>
+      <section className="panel backup-panel"><div><span className="section-step">MANUTENÇÃO SEGURA</span><h2>Links, configurações e cupons</h2><p>Verifique os links conhecidos em pequenos lotes ou baixe uma cópia operacional. Por privacidade e segurança, o backup não inclui senhas, chaves de API, sessão do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.</p></div><div className="backup-actions"><button className="button subtle" type="button" onClick={checkOfferLinks}>Verificar links</button><button className="button primary" type="button" onClick={downloadBackup}>Baixar backup</button><button className="button subtle" type="button" onClick={() => backupInputRef.current?.click()}>Restaurar backup</button><input ref={backupInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={restoreBackup} /></div></section>
+      <section className="panel health-privacy-note"><strong>Importante</strong><p>O disco persistente do Render conserva os dados entre reinícios. Durante uma nova publicação, esse tipo de disco pode causar uma breve indisponibilidade; o painel diferencia isso de falhas permanentes.</p></section>
+    </div>}
+    {tab === 'settings' && <form className="site-settings-layout" onSubmit={saveConfig}>
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">IDENTIDADE</span><h2>Conteúdo e aparência</h2><p>Textos principais exibidos no site público.</p></div></div>
+        <div className="settings-grid">
+          <label>Nome do site<input value={data.config.brandName ?? ''} onChange={(event) => setConfigField('brandName', event.target.value)} /></label>
+          <label>Cor principal<input type="color" value={data.config.primaryColor ?? '#1269f3'} onChange={(event) => setConfigField('primaryColor', event.target.value)} /></label>
+          <label className="wide-field">Título principal<input value={data.config.heroTitle ?? ''} onChange={(event) => setConfigField('heroTitle', event.target.value)} /></label>
+          <label className="wide-field">Texto principal<textarea value={data.config.heroText ?? ''} onChange={(event) => setConfigField('heroText', event.target.value)} /></label>
+          <label className="wide-field">Aviso geral de afiliado<textarea value={data.config.disclosure ?? ''} onChange={(event) => setConfigField('disclosure', event.target.value)} /></label>
+          <label>Identificação nas ofertas<input value={data.config.affiliateDisclosureLabel ?? ''} onChange={(event) => setConfigField('affiliateDisclosureLabel', event.target.value)} /></label>
+          <label>E-mail público<input type="email" value={data.config.contactEmail ?? ''} onChange={(event) => setConfigField('contactEmail', event.target.value)} /></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.mobileCompactMenu !== false} onChange={(event) => setConfigField('mobileCompactMenu', event.target.checked)} /><span><strong>Menu compacto no celular</strong><small>Evita links amontoados em telas menores.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.showOfferUpdatedAt !== false} onChange={(event) => setConfigField('showOfferUpdatedAt', event.target.checked)} /><span><strong>Mostrar atualização</strong><small>Exibe quando a oferta foi revisada.</small></span></label>
+        </div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">SEO</span><h2>Busca e compartilhamento</h2><p>Informações usadas pelo Google e pelas prévias de redes sociais.</p></div></div>
+        <div className="settings-grid">
+          <label className="wide-field">Endereço oficial do site<input type="url" value={data.config.canonicalUrl ?? ''} onChange={(event) => setConfigField('canonicalUrl', event.target.value)} placeholder="https://promoshop.jhonatafaraujo.com.br" /></label>
+          <label className="wide-field">Título para buscadores<input maxLength={70} value={data.config.seoTitle ?? ''} onChange={(event) => setConfigField('seoTitle', event.target.value)} /><small>{String(data.config.seoTitle || '').length}/70 caracteres</small></label>
+          <label className="wide-field">Descrição para buscadores<textarea maxLength={180} value={data.config.seoDescription ?? ''} onChange={(event) => setConfigField('seoDescription', event.target.value)} /><small>{String(data.config.seoDescription || '').length}/180 caracteres</small></label>
+          <label className="wide-field">Palavras-chave<input value={data.config.seoKeywords ?? ''} onChange={(event) => setConfigField('seoKeywords', event.target.value)} /></label>
+          <label className="wide-field">Imagem de compartilhamento<input type="url" value={data.config.seoImageUrl ?? ''} onChange={(event) => setConfigField('seoImageUrl', event.target.value)} placeholder="https://.../imagem.jpg" /></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.seoIndexingEnabled !== false} onChange={(event) => setConfigField('seoIndexingEnabled', event.target.checked)} /><span><strong>Permitir indexação</strong><small>Autoriza buscadores a listar o site.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.seoStructuredDataEnabled !== false} onChange={(event) => setConfigField('seoStructuredDataEnabled', event.target.checked)} /><span><strong>Dados estruturados</strong><small>Identifica o site e a organização para buscadores.</small></span></label>
+        </div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">QUALIDADE</span><h2>Ofertas públicas</h2><p>Filtre itens incompletos, antigos ou potencialmente inadequados.</p></div></div>
+        <div className="settings-grid">
+          <label>Ofertas por carregamento<input type="number" min="6" max="60" value={data.config.publicOfferPageSize ?? 24} onChange={(event) => setConfigField('publicOfferPageSize', Number(event.target.value))} /></label>
+          <label>Idade máxima da oferta (dias)<input type="number" min="1" max="365" value={data.config.publicOfferMaxAgeDays ?? 45} onChange={(event) => setConfigField('publicOfferMaxAgeDays', Number(event.target.value))} /></label>
+          <label>Nota mínima de qualidade<input type="number" min="0" max="100" value={data.config.qualityMinimumScore ?? 55} onChange={(event) => setConfigField('qualityMinimumScore', Number(event.target.value))} /></label>
+          <label>Tamanho máximo do título<input type="number" min="40" max="500" value={data.config.qualityMaxTitleLength ?? 180} onChange={(event) => setConfigField('qualityMaxTitleLength', Number(event.target.value))} /></label>
+          <label>Links por verificação<input type="number" min="1" max="50" value={data.config.linkCheckBatchSize ?? 20} onChange={(event) => setConfigField('linkCheckBatchSize', Number(event.target.value))} /></label>
+          <label className="wide-field">Termos bloqueados<input value={data.config.qualityBlockedTerms ?? ''} onChange={(event) => setConfigField('qualityBlockedTerms', event.target.value)} /><small>Separe por vírgula. Itens com esses termos perdem qualidade.</small></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.qualityFilterEnabled !== false} onChange={(event) => setConfigField('qualityFilterEnabled', event.target.checked)} /><span><strong>Filtro de qualidade</strong><small>Oculta ofertas abaixo da nota mínima.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.staleOffersHidden !== false} onChange={(event) => setConfigField('staleOffersHidden', event.target.checked)} /><span><strong>Ocultar ofertas antigas</strong><small>Usa o limite de idade definido acima.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.qualityRequireImage !== false} onChange={(event) => setConfigField('qualityRequireImage', event.target.checked)} /><span><strong>Exigir imagem segura</strong><small>Considera apenas imagens com HTTPS.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.qualityRequireHttpsLink !== false} onChange={(event) => setConfigField('qualityRequireHttpsLink', event.target.checked)} /><span><strong>Exigir link HTTPS</strong><small>Ajuda a evitar destinos inseguros.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.linkCheckEnabled !== false} onChange={(event) => setConfigField('linkCheckEnabled', event.target.checked)} /><span><strong>Verificação de links</strong><small>Habilita o monitor para domínios conhecidos.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.linkCheckAutoPause === true} onChange={(event) => setConfigField('linkCheckAutoPause', event.target.checked)} /><span><strong>Pausar link quebrado</strong><small>Só pausa após resposta definitiva 404 ou 410.</small></span></label>
+        </div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">PRIVACIDADE E LGPD</span><h2>Medição e retenção</h2><p>O site mede acessos e cliques somente após autorização.</p></div></div>
+        <div className="settings-grid">
+          <label>Identificador de audiência (dias)<input type="number" min="1" max="730" value={data.config.analyticsVisitorRetentionDays ?? 365} onChange={(event) => setConfigField('analyticsVisitorRetentionDays', Number(event.target.value))} /></label>
+          <label>Resumo diário (dias)<input type="number" min="1" max="730" value={data.config.analyticsDailyRetentionDays ?? 120} onChange={(event) => setConfigField('analyticsDailyRetentionDays', Number(event.target.value))} /></label>
+          <label>Mensagens de contato (meses)<input type="number" min="1" max="60" value={data.config.contactRetentionMonths ?? 12} onChange={(event) => { const value = Number(event.target.value); setConfigField('contactRetentionMonths', value); setConfigField('legalContactRetentionMonths', value); }} /></label>
+          <label>Comprovantes de escolha (anos)<input type="number" min="1" max="10" value={data.config.consentReceiptRetentionYears ?? 5} onChange={(event) => { const value = Number(event.target.value); setConfigField('consentReceiptRetentionYears', value); setConfigField('legalConsentRetentionYears', value); }} /></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.clickAnalyticsEnabled !== false} onChange={(event) => setConfigField('clickAnalyticsEnabled', event.target.checked)} /><span><strong>Medir cliques autorizados</strong><small>Registra somente totais anônimos após consentimento.</small></span></label>
+        </div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">INFORMAÇÕES LEGAIS</span><h2>Responsável e políticas</h2><p>Ao mudar informações relevantes, atualize também a versão da política.</p></div></div>
+        <div className="settings-grid">
+          <label>Nome do responsável<input value={data.config.legalResponsibleName ?? ''} onChange={(event) => setConfigField('legalResponsibleName', event.target.value)} /></label>
+          <label>Forma de atuação<input value={data.config.legalResponsibleType ?? ''} onChange={(event) => setConfigField('legalResponsibleType', event.target.value)} /></label>
+          <label>Cidade e estado<input value={data.config.legalCityState ?? ''} onChange={(event) => setConfigField('legalCityState', event.target.value)} /></label>
+          <label>E-mail de privacidade<input type="email" value={data.config.legalPrivacyEmail ?? ''} onChange={(event) => setConfigField('legalPrivacyEmail', event.target.value)} /></label>
+          <label>Prazo de resposta (dias úteis)<input type="number" min="1" max="30" value={data.config.legalResponseBusinessDays ?? 5} onChange={(event) => setConfigField('legalResponseBusinessDays', Number(event.target.value))} /></label>
+          <label>Versão das políticas<input value={data.config.legalPolicyVersion ?? ''} onChange={(event) => setConfigField('legalPolicyVersion', event.target.value)} placeholder="2026-08-23-v2" /><small>Use AAAA-MM-DD-vN. Uma nova versão pede nova escolha de privacidade.</small></label>
+          <label className="wide-field">Programas de afiliados<input value={data.config.legalAffiliatePrograms ?? ''} onChange={(event) => setConfigField('legalAffiliatePrograms', event.target.value)} /></label>
+          <label className="wide-field">Texto adicional em Sobre nós<textarea maxLength={3000} value={data.config.legalAboutCustomText ?? ''} onChange={(event) => setConfigField('legalAboutCustomText', event.target.value)} placeholder="Opcional. O texto obrigatório de transparência permanece atualizado automaticamente." /></label>
+          <label className="wide-field">Texto adicional em Fale Conosco<textarea maxLength={3000} value={data.config.legalContactCustomText ?? ''} onChange={(event) => setConfigField('legalContactCustomText', event.target.value)} /></label>
+          <label className="wide-field">Texto adicional nos Termos<textarea maxLength={3000} value={data.config.legalTermsCustomText ?? ''} onChange={(event) => setConfigField('legalTermsCustomText', event.target.value)} /></label>
+          <label className="wide-field">Texto adicional em Privacidade<textarea maxLength={3000} value={data.config.legalPrivacyCustomText ?? ''} onChange={(event) => setConfigField('legalPrivacyCustomText', event.target.value)} /><small>Use para informações específicas. As cláusulas essenciais continuam automáticas para evitar omissões legais.</small></label>
+        </div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">MONITORAMENTO</span><h2>Limites de atenção</h2><p>Parâmetros usados para destacar problemas operacionais no painel.</p></div></div>
+        <div className="settings-grid">
+          <label>E-mail para alertas<input type="email" value={data.config.monitoringEmail ?? ''} onChange={(event) => setConfigField('monitoringEmail', event.target.value)} /></label>
+          <label>WhatsApp sem resposta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappMinutes', Number(event.target.value))} /></label>
+          <label>Coleta atrasada (horas)<input type="number" min="1" max="168" value={data.config.monitoringCollectionHours ?? 6} onChange={(event) => setConfigField('monitoringCollectionHours', Number(event.target.value))} /></label>
+          <label>Falhas toleradas na fila<input type="number" min="1" max="500" value={data.config.monitoringFailedQueueLimit ?? 10} onChange={(event) => setConfigField('monitoringFailedQueueLimit', Number(event.target.value))} /></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringEnabled !== false} onChange={(event) => setConfigField('monitoringEnabled', event.target.checked)} /><span><strong>Monitoramento ativo</strong><small>Exibe avisos quando os limites forem ultrapassados.</small></span></label>
+        </div>
+      </section>
+
+      <div className="settings-save-bar"><div><strong>Revise antes de salvar</strong><span>As alterações públicas entram em vigor imediatamente.</span></div><button className="button primary">Salvar site e políticas</button></div>
+    </form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
@@ -2791,6 +3074,7 @@ function AnalyticsDashboard({ analytics = {} }) {
   const today = analytics.today || {};
   const days = Array.isArray(analytics.last14Days) ? analytics.last14Days : [];
   const maxPageViews = Math.max(1, ...days.map((day) => Number(day.pageViews || 0)));
+  const clickTypes = { offer: 'Ofertas', coupon: 'Cupons', whatsapp: 'WhatsApp', group: 'Grupos' };
 
   return <div className="analytics-layout">
     <div className="stats analytics-stats">
@@ -2798,6 +3082,7 @@ function AnalyticsDashboard({ analytics = {} }) {
       <div><span><i>⌁</i>Acessos hoje</span><strong>{Number(today.pageViews || 0).toLocaleString('pt-BR')}</strong><small>Visualizações de páginas</small></div>
       <div><span><i>↗</i>Visitantes hoje</span><strong>{Number(today.uniqueVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores únicos no dia</small></div>
       <div><span><i>◷</i>Sessões</span><strong>{Number(analytics.totalSessions || 0).toLocaleString('pt-BR')}</strong><small>Períodos de até 30 minutos</small></div>
+      <div><span><i>◎</i>Cliques medidos</span><strong>{Number(analytics.totalClicks || 0).toLocaleString('pt-BR')}</strong><small>Interações autorizadas</small></div>
     </div>
 
     <section className="panel analytics-panel">
@@ -2807,6 +3092,13 @@ function AnalyticsDashboard({ analytics = {} }) {
         return <div className="analytics-bar-group" key={day.date} title={`${day.date}: ${day.pageViews || 0} visualizações e ${day.uniqueVisitors || 0} visitantes`}><strong>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</strong><div className="analytics-bar" style={{ height: `${height}%` }}></div><small>{String(day.date || '').slice(8, 10)}/{String(day.date || '').slice(5, 7)}</small></div>;
       })}</div> : <div className="empty"><strong>Ainda não há acessos registrados</strong><p>As métricas aparecerão assim que alguém visitar o site público.</p></div>}
     </section>
+
+    <div className="analytics-detail-grid">
+      <section className="panel analytics-ranking"><div className="panel-heading"><div><span className="section-step">INTERAÇÕES</span><h2>Cliques por tipo</h2><p>Somente visitantes que aceitaram a medição.</p></div></div><div className="analytics-ranking-list">{Object.entries(clickTypes).map(([key, label]) => <div key={key}><span>{label}</span><strong>{Number(analytics.clicksByType?.[key] || 0).toLocaleString('pt-BR')}</strong></div>)}</div></section>
+      <section className="panel analytics-ranking"><div className="panel-heading"><div><span className="section-step">LOJAS</span><h2>Cliques por loja</h2><p>Ajuda a entender onde há mais interesse.</p></div></div><div className="analytics-ranking-list">{Object.entries(analytics.clicksByStore || {}).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 8).map(([store, count]) => <div key={store}><span>{store}</span><strong>{Number(count).toLocaleString('pt-BR')}</strong></div>)}{!Object.keys(analytics.clicksByStore || {}).length && <small>Ainda não há cliques por loja.</small>}</div></section>
+    </div>
+
+    <section className="panel analytics-ranking"><div className="panel-heading"><div><span className="section-step">CONTEÚDOS</span><h2>Ofertas, cupons e destinos mais acessados</h2><p>O painel guarda o nome resumido e os totais, não o endereço completo do link.</p></div></div><div className="analytics-ranking-list">{(analytics.topTargets || []).map((target) => <div key={`${target.type}-${target.targetId}`}><span><b>{clickTypes[target.type] || target.type}</b> · {target.label || 'Destino sem nome'}{target.store ? ` · ${target.store}` : ''}</span><strong>{Number(target.count || 0).toLocaleString('pt-BR')}</strong></div>)}{!(analytics.topTargets || []).length && <small>Os conteúdos mais acessados aparecerão aqui.</small>}</div></section>
 
     <section className="panel analytics-note"><div className="analytics-note-icon">◎</div><div><h2>Como a contagem funciona</h2><p>A contagem inclui somente quem aceitou a medição de acessos. O site cria um identificador anônimo no navegador para reconhecer retornos sem coletar nome, e-mail, endereço IP ou impressão digital do dispositivo. Se a pessoa rejeitar, limpar os dados do navegador ou trocar de dispositivo, ela não será reconhecida pelo identificador anterior.</p><small>O painel mostra visitantes únicos por navegador entre as pessoas que autorizaram a medição. Quem rejeita continua usando o site normalmente e não entra nessas métricas.</small></div></section>
   </div>;

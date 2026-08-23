@@ -916,10 +916,15 @@ export async function runCollection() {
   let imported = 0;
   let refreshedLinks = 0;
   await updateStore((data) => {
+    const refreshedAt = new Date().toISOString();
     const existing = new Map(data.offers.map((offer) => [offer.id, offer]));
     for (const offer of candidates.sort((a, b) => b.score - a.score)) {
       const savedOffer = existing.get(offer.id);
       if (savedOffer) {
+        for (const key of ['title', 'store', 'category', 'price', 'originalPrice', 'image', 'freeShipping', 'featured']) {
+          if (offer[key] !== undefined && offer[key] !== null && offer[key] !== '') savedOffer[key] = offer[key];
+        }
+        savedOffer.updatedAt = refreshedAt;
         /*
          * Recalcula os públicos da oferta existente.
          * Isso é importante caso você tenha alterado
@@ -985,6 +990,9 @@ export async function runCollection() {
           offer,
           data.config.whatsappAudiences
         );
+
+      offer.createdAt ||= refreshedAt;
+      offer.updatedAt = refreshedAt;
 
       data.offers.unshift(offer);
 
