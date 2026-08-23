@@ -86,7 +86,7 @@ try {
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v3' })
+    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v4' })
   });
   assert.equal(privacyReceipt.status, 200);
   const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
@@ -221,7 +221,9 @@ try {
   assert.ok(Number(blocked.headers.get('retry-after')) > 0);
   console.log('Proteções de autenticação e cabeçalhos validadas.');
 } finally {
-  child.kill();
-  await new Promise((resolve) => child.once('exit', resolve));
+  if (child.exitCode === null) {
+    child.kill();
+    await new Promise((resolve) => child.once('exit', resolve));
+  }
   await fs.rm(testDataDir, { recursive: true, force: true });
 }

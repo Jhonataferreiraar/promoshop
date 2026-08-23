@@ -96,6 +96,14 @@ async function defaults() {
     googleSearchConsoleRefreshToken: '',
     googleSearchConsoleTokenExpiresAt: 0,
     googleSearchConsoleOAuthState: '',
+    instagramAppId: '',
+    instagramAppSecret: '',
+    instagramAccessToken: '',
+    instagramUserId: '',
+    instagramUsername: '',
+    instagramProfilePictureUrl: '',
+    instagramTokenExpiresAt: 0,
+    instagramOAuthState: '',
     brevoInboundToken: crypto.randomBytes(32).toString('hex'),
     aiApiKey: '',
     geminiApiKey: '',
@@ -198,6 +206,23 @@ async function updateSecretsUnlocked(changes) {
   if (Number.isFinite(Number(changes.googleSearchConsoleTokenExpiresAt))) next.googleSearchConsoleTokenExpiresAt = Number(changes.googleSearchConsoleTokenExpiresAt);
   if (typeof changes.googleSearchConsoleOAuthState === 'string') next.googleSearchConsoleOAuthState = changes.googleSearchConsoleOAuthState.trim();
   if (changes.clearGoogleSearchConsoleConnection) { next.googleSearchConsoleAccessToken = ''; next.googleSearchConsoleRefreshToken = ''; next.googleSearchConsoleTokenExpiresAt = 0; next.googleSearchConsoleOAuthState = ''; }
+  if (typeof changes.instagramAppId === 'string' && changes.instagramAppId.trim()) next.instagramAppId = changes.instagramAppId.trim();
+  if (typeof changes.instagramAppSecret === 'string' && changes.instagramAppSecret.trim()) next.instagramAppSecret = changes.instagramAppSecret.trim();
+  if (typeof changes.instagramAccessToken === 'string') next.instagramAccessToken = changes.instagramAccessToken.trim();
+  if (changes.instagramUserId !== undefined) next.instagramUserId = String(changes.instagramUserId || '').trim();
+  if (changes.instagramUsername !== undefined) next.instagramUsername = String(changes.instagramUsername || '').trim();
+  if (changes.instagramProfilePictureUrl !== undefined) next.instagramProfilePictureUrl = String(changes.instagramProfilePictureUrl || '').trim();
+  if (Number.isFinite(Number(changes.instagramTokenExpiresAt))) next.instagramTokenExpiresAt = Number(changes.instagramTokenExpiresAt);
+  if (typeof changes.instagramOAuthState === 'string') next.instagramOAuthState = changes.instagramOAuthState.trim();
+  if (changes.clearInstagramCredentials) { next.instagramAppId = ''; next.instagramAppSecret = ''; }
+  if (changes.clearInstagramConnection) {
+    next.instagramAccessToken = '';
+    next.instagramUserId = '';
+    next.instagramUsername = '';
+    next.instagramProfilePictureUrl = '';
+    next.instagramTokenExpiresAt = 0;
+    next.instagramOAuthState = '';
+  }
   if (
     typeof changes.aiApiKey === 'string' &&
     normalizeApiKey(changes.aiApiKey)
@@ -264,6 +289,14 @@ export function secretStatus(secrets) {
     googleSearchConsoleClientIdConfigured: Boolean(secrets.googleSearchConsoleClientId),
     googleSearchConsoleClientSecretConfigured: Boolean(secrets.googleSearchConsoleClientSecret),
     googleSearchConsoleConnected: Boolean(secrets.googleSearchConsoleAccessToken || secrets.googleSearchConsoleRefreshToken),
+    instagramAppIdConfigured: Boolean(secrets.instagramAppId),
+    instagramAppSecretConfigured: Boolean(secrets.instagramAppSecret),
+    instagramAppId: secrets.instagramAppId || '',
+    instagramConnected: Boolean(secrets.instagramAccessToken && secrets.instagramUserId),
+    instagramUserId: secrets.instagramUserId || '',
+    instagramUsername: secrets.instagramUsername || '',
+    instagramProfilePictureUrl: secrets.instagramProfilePictureUrl || '',
+    instagramTokenExpiresAt: Number(secrets.instagramTokenExpiresAt || 0),
     mercadoLivreClientIdConfigured: Boolean(secrets.mercadoLivreClientId),
     mercadoLivreClientSecretConfigured: Boolean(secrets.mercadoLivreClientSecret),
     mercadoLivreClientId: secrets.mercadoLivreClientId || '',

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {
   DEFAULT_WHATSAPP_AUDIENCES
 } from './audienceRouting.js';
+import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramThemes.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -73,7 +74,7 @@ const initialData = {
     legalContactRetentionMonths: 12,
     legalConsentRetentionYears: 5,
     legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
-    legalPolicyVersion: '2026-08-23-v3',
+    legalPolicyVersion: '2026-08-23-v4',
     legalAboutCustomText: '',
     legalContactCustomText: '',
     legalTermsCustomText: '',
@@ -137,6 +138,27 @@ const initialData = {
     whatsappHeadless: true,
     whatsappAutoStart: true,
 
+    instagramEnabled: false,
+    instagramAutoFromWhatsapp: true,
+    instagramIncludeCoupons: true,
+    instagramApiVersion: 'v25.0',
+    instagramRedirectUri: 'https://promoshop.jhonatafaraujo.com.br/api/instagram/callback',
+    instagramPublishingStart: '08:00',
+    instagramPublishingEnd: '22:30',
+    instagramIntervalMinutes: 20,
+    instagramMaxPerDay: 15,
+    instagramMinimumDiscount: 20,
+    instagramDuplicateDays: 7,
+    instagramStores: ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'],
+    instagramAudienceCodes: [],
+    instagramThemeMode: 'automatic',
+    instagramManualThemeId: 'default',
+    instagramThemes: DEFAULT_INSTAGRAM_THEMES.map((theme) => ({ ...theme })),
+    instagramCtaText: 'Acesse o link da bio',
+    instagramDisclosureText: 'Publicidade · link de afiliado',
+    instagramShowQrCode: false,
+    instagramAssetRetentionHours: 72,
+
     aiEnabled: true,
 
     aiProvider: 'gemini',
@@ -197,6 +219,7 @@ const initialData = {
   inbox: [],
   privacyConsents: {},
   queue: [],
+  instagramQueue: [],
   logs: [],
   analytics: {
     totalPageViews: 0,
@@ -278,7 +301,7 @@ export async function readStore() {
     data.config.seoDescription = initialData.config.seoDescription;
   }
 
-  if (['2026-08-23', '2026-08-23-v2'].includes(data.config.legalPolicyVersion)) {
+  if (['2026-08-23', '2026-08-23-v2', '2026-08-23-v3'].includes(data.config.legalPolicyVersion)) {
     data.config.legalPolicyVersion = initialData.config.legalPolicyVersion;
   }
 
@@ -286,6 +309,14 @@ export async function readStore() {
     ...initialData.config.aiModels,
     ...(data.config.aiModels || {})
   };
+
+  data.config.instagramThemes = sanitizeInstagramThemes(data.config.instagramThemes);
+  data.config.instagramStores = Array.isArray(data.config.instagramStores)
+    ? data.config.instagramStores.map((entry) => String(entry).trim()).filter(Boolean)
+    : [...initialData.config.instagramStores];
+  data.config.instagramAudienceCodes = Array.isArray(data.config.instagramAudienceCodes)
+    ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
+    : [];
 
   if (
     !Array.isArray(data.config.whatsappAudiences) ||
@@ -322,6 +353,7 @@ export async function readStore() {
     ? data.privacyConsents
     : {};
   data.queue ||= [];
+  data.instagramQueue ||= [];
   data.logs ||= [];
   data.analytics = {
     ...initialData.analytics,

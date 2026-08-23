@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import InstagramPanel from './InstagramPanel.jsx';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -67,7 +68,7 @@ const fallbackConfig = {
   legalContactRetentionMonths: 12,
   legalConsentRetentionYears: 5,
   legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
-  legalPolicyVersion: '2026-08-23-v3',
+  legalPolicyVersion: '2026-08-23-v4',
   legalAboutCustomText: '',
   legalContactCustomText: '',
   legalTermsCustomText: '',
@@ -145,7 +146,7 @@ function anonymousStorageId(storage, key) {
 const analyticsConsentKey = 'promoshop_analytics_consent';
 const analyticsConsentEvent = 'promoshop:analytics-consent';
 const privacyOpenEvent = 'promoshop:privacy-open';
-const privacyPolicyVersion = '2026-08-23-v3';
+const privacyPolicyVersion = '2026-08-23-v4';
 const privacyReceiptKey = 'promoshop_privacy_receipt';
 const privacyReceiptSyncKey = 'promoshop_privacy_receipt_synced';
 
@@ -893,6 +894,7 @@ function SiteFooter({ config = fallbackConfig }) {
         <h3>Informações</h3>
         <a href="/termos-de-uso">Termos de uso</a>
         <a href="/privacidade">Privacidade</a>
+        <a href="/exclusao-de-dados">Exclusão de dados</a>
         <button type="button" className="footer-privacy-button" onClick={() => window.dispatchEvent(new Event(privacyOpenEvent))}>Preferências de privacidade</button>
       </div>
       <div className="footer-column footer-contact">
@@ -939,7 +941,8 @@ const publicInfoPages = {
       { title: '3. Preços, cupons e disponibilidade', paragraphs: ['As informações refletem os dados disponíveis no momento da coleta ou publicação e podem mudar sem aviso. Não garantimos menor preço histórico, disponibilidade, frete grátis ou manutenção do desconto.', 'Quando a loja não informar a validade de um cupom, ele será identificado como “validade não informada”. A condição válida é sempre aquela exibida pela loja antes da conclusão da compra.'] },
       { title: '4. Links de afiliados', paragraphs: ['Participamos dos programas de afiliados do Mercado Livre, Shopee, AliExpress e Magalu. O PromoShop poderá receber comissão por compras qualificadas iniciadas por um link de afiliado, sem custo adicional para você. Essa relação é identificada nas ofertas e nos cupons.'] },
       { title: '5. WhatsApp', paragraphs: ['As publicações são realizadas em grupos e canais nos quais as pessoas entraram voluntariamente. A participação pode ser encerrada a qualquer momento pelos recursos do próprio WhatsApp.', 'O uso do WhatsApp também está sujeito aos termos e às configurações da plataforma. Conforme o tipo de grupo e as configurações escolhidas, outras pessoas poderão visualizar informações do perfil ou número do participante.'] },
-      { title: '6. Público e menores de idade', paragraphs: ['O site apresenta promoções de uso geral e não é direcionado especificamente a crianças. Menores devem navegar e enviar solicitações com acompanhamento ou autorização de responsável legal, especialmente quando houver fornecimento de dados no formulário.'] },
+      { title: '6. Instagram', paragraphs: ['O PromoShop pode divulgar ofertas e cupons em Stories de sua própria conta profissional do Instagram por meio da integração oficial da Meta. A visualização e a interação com essas publicações também estão sujeitas aos termos, políticas e configurações do Instagram.'] },
+      { title: '7. Público e menores de idade', paragraphs: ['O site apresenta promoções de uso geral e não é direcionado especificamente a crianças. Menores devem navegar e enviar solicitações com acompanhamento ou autorização de responsável legal, especialmente quando houver fornecimento de dados no formulário.'] },
       { title: '7. Uso adequado', paragraphs: ['É proibido tentar comprometer a segurança ou a disponibilidade do site, acessar áreas restritas sem autorização, usar automação abusiva, praticar fraude ou reproduzir conteúdo de forma que viole direitos do PromoShop ou de terceiros.'] },
       { title: '8. Serviços e marcas de terceiros', paragraphs: ['Links externos conduzem a ambientes controlados por terceiros e sujeitos aos próprios termos e políticas. Marcas, nomes, imagens e sinais distintivos pertencem aos respectivos titulares e são utilizados apenas para identificar ofertas e lojas.'] },
       { title: '9. Propriedade intelectual', paragraphs: ['A identidade visual, a organização, os textos próprios e os componentes do PromoShop são protegidos pela legislação aplicável. O acesso ao site não transfere direitos de propriedade intelectual ao usuário.'] },
@@ -955,13 +958,24 @@ const publicInfoPages = {
       { title: '1. Controlador e contato', paragraphs: ['O responsável pelo tratamento relacionado ao PromoShop é Jhonata Ferreira de Araujo, pessoa física, localizado em Brasília/DF. O canal para assuntos de privacidade é contatopromoshop.site@gmail.com ou o formulário Fale Conosco.', 'Buscamos enviar uma resposta inicial em até 5 dias úteis, sem prejuízo de prazos específicos previstos em lei.'] },
       { title: '2. Dados tratados', paragraphs: ['Medição opcional: somente após sua autorização, criamos identificadores aleatórios no navegador para contar visitantes, sessões, páginas vistas e cliques em ofertas, cupons, favoritos, grupos e botões. Registramos totais agregados, tipo do clique, loja e nome resumido do destino; não guardamos nesse controle o endereço completo do link. Os identificadores não contêm nome, e-mail, telefone ou endereço IP e não utilizamos impressão digital do dispositivo.', 'Favoritos: os identificadores das ofertas salvas ficam apenas no armazenamento local do seu navegador e não são sincronizados com uma conta. Você pode removê-los pelo próprio site ou apagando os dados do navegador.', 'Contato: quando você envia o formulário, tratamos nome, e-mail, assunto e mensagem. O endereço IP pode ser usado temporariamente em memória para limitar abuso, mas não é armazenado junto à mensagem nem exibido na caixa de entrada.', 'O servidor também pode gerar registros técnicos de segurança e funcionamento. Serviços externos e lojas podem receber dados técnicos normais da conexão quando o navegador carrega um recurso ou quando você clica em um link.'] },
       { title: '3. Finalidades e bases legais', paragraphs: ['A medição de audiência e de interação ajuda a entender quais páginas, lojas, ofertas e cupons despertam interesse. Ela é realizada com consentimento e pode ser rejeitada ou revogada sem perda de funcionalidade. Guardamos apenas um comprovante anônimo da escolha, com data, versão desta política e decisão, sem nome ou IP.', 'Os dados do contato são usados para receber, organizar e responder à solicitação, com base em procedimentos solicitados pelo titular e, conforme o caso, legítimo interesse no atendimento e na segurança. Também poderemos conservar informações para cumprir obrigação legal ou exercer direitos em processo.'] },
-      { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem, a Brevo para entrega e recebimento de e-mails e o Google Search Console para consultar relatórios agregados de desempenho na pesquisa, como cliques, impressões, páginas e termos buscados. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu e WhatsApp. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
+      { title: '4. Compartilhamento e operadores', paragraphs: ['Usamos a Render para hospedagem, a Brevo para entrega e recebimento de e-mails e o Google Search Console para consultar relatórios agregados de desempenho na pesquisa, como cliques, impressões, páginas e termos buscados. Os links e conteúdos também podem envolver Mercado Livre, Shopee, AliExpress, Magalu, WhatsApp, Instagram e Meta. Esses provedores podem tratar dados conforme seus próprios termos e políticas.', 'A integração administrativa com o Instagram guarda de forma criptografada o token de acesso e os identificadores da conta profissional do próprio PromoShop, exclusivamente para criar publicações autorizadas. Esses dados não pertencem aos visitantes do site e podem ser removidos pelo administrador ao desconectar a conta.', 'Não vendemos dados pessoais, não comercializamos listas de contatos e não usamos o formulário para newsletter ou publicidade. O contato é utilizado apenas para responder e acompanhar a conversa.'] },
       { title: '5. Transferências internacionais', paragraphs: ['Alguns provedores de hospedagem, e-mail, mensageria e programas de afiliados podem processar dados fora do Brasil. Nesses casos, buscamos utilizar serviços reconhecidos e mecanismos contratuais e de segurança compatíveis com a legislação aplicável.'] },
       { title: '6. Retenção e eliminação', paragraphs: ['Mensagens e respostas do Fale Conosco são mantidas por até 12 meses após a última interação, salvo necessidade legal de conservação por prazo maior. Identificadores de audiência podem ser mantidos por até 365 dias e resumos diários por até 120 dias.', 'Comprovantes anônimos de consentimento podem ser mantidos por até 5 anos para demonstrar a escolha registrada. Quando a pessoa rejeita ou revoga a medição, o identificador individual conhecido por este navegador é removido dos registros ativos; totais estatísticos já agregados não permitem reidentificação e podem permanecer.'] },
       { title: '7. Seus direitos', paragraphs: ['Você pode solicitar confirmação de tratamento, acesso, correção, anonimização, bloqueio, eliminação, portabilidade quando aplicável, informação sobre compartilhamento, revisão, oposição e revogação do consentimento. Poderemos pedir informações mínimas para confirmar a legitimidade da solicitação.', 'Para mudar a medição, use “Preferências de privacidade” no rodapé. Para outras solicitações, use o Fale Conosco com o assunto “Privacidade e dados pessoais”.'] },
       { title: '8. Crianças e adolescentes', paragraphs: ['O PromoShop é um site de promoções de uso geral e não é direcionado especificamente a crianças. Não buscamos criar perfis de menores. Solicitações que envolvam dados de menores devem ser realizadas com acompanhamento ou autorização de responsável legal.'] },
       { title: '9. Segurança, cópias e incidentes', paragraphs: ['Adotamos controles de acesso, autenticação administrativa, limitação contra abuso e outras medidas razoáveis para proteger os dados. Cópias técnicas do serviço podem conter dados ainda dentro dos prazos de retenção e seguem os controles do provedor de hospedagem. O backup operacional baixado pelo painel exclui mensagens, comprovantes de consentimento, identificadores de audiência, senhas, chaves e sessão do WhatsApp.', 'Nenhum sistema é totalmente livre de riscos; caso ocorra incidente relevante, serão adotadas as providências legais e técnicas cabíveis, inclusive comunicação quando exigida.'] },
       { title: '10. Atualizações e contato', paragraphs: ['Esta política pode ser atualizada quando houver mudanças no serviço, nos fornecedores ou na legislação. A versão vigente será publicada nesta página com a data da atualização.'] , contact: true }
+    ]
+  },
+  '/exclusao-de-dados': {
+    eyebrow: 'EXCLUSÃO DE DADOS',
+    title: 'Como remover dados e integrações.',
+    intro: 'Você pode solicitar a exclusão de informações relacionadas ao PromoShop ou revogar uma integração autorizada.',
+    updatedAt: '23 de agosto de 2026',
+    sections: [
+      { title: 'Visitantes e contatos', paragraphs: ['Para solicitar acesso, correção ou exclusão de uma mensagem enviada pelo site, use o Fale Conosco com o assunto “Privacidade e dados pessoais”. Informe somente o necessário para localizarmos a solicitação e confirmarmos sua legitimidade.'], contact: true },
+      { title: 'Integração com Instagram e Meta', paragraphs: ['A integração é usada apenas pelo administrador da conta profissional do PromoShop. Ela pode ser revogada no painel administrativo em Instagram Stories, usando “Desconectar”, e também nas configurações de aplicativos e sites da conta Meta ou Instagram.', 'Ao desconectar no PromoShop, removemos do armazenamento protegido o token de acesso, o identificador, o nome de usuário e a imagem de perfil obtidos pela integração. Registros técnicos mínimos de publicações já realizadas podem permanecer pelo prazo necessário à segurança e à comprovação da operação.'] },
+      { title: 'Prazo e contato', paragraphs: ['Buscamos enviar resposta inicial em até 5 dias úteis. A conclusão seguirá o prazo aplicável à natureza do pedido e poderá exigir confirmação de identidade ou de titularidade da conta.'] , contact: true }
     ]
   }
 };
@@ -1184,7 +1198,7 @@ function couponFormFromCoupon(coupon) {
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem('promoshop_token'));
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
@@ -1214,6 +1228,8 @@ function AdminApp() {
     netshoesApiKey: '',
     googleSearchConsoleClientId: '',
     googleSearchConsoleClientSecret: '',
+    instagramAppId: '',
+    instagramAppSecret: '',
 
     aiApiKey: '',
     geminiApiKey: '',
@@ -1368,7 +1384,11 @@ function AdminApp() {
 
           netshoesAffiliateId:
             result.secrets?.netshoesAffiliateId ||
-            current.netshoesAffiliateId
+            current.netshoesAffiliateId,
+
+          instagramAppId:
+            result.secrets?.instagramAppId ||
+            current.instagramAppId
         }));
       }
     }
@@ -1406,7 +1426,16 @@ function AdminApp() {
     window.history.replaceState({}, '', '/admin');
   }, []);
   useEffect(() => {
-    if (!token || tab !== 'whatsapp') return undefined;
+    const parameters = new URLSearchParams(window.location.search);
+    const status = parameters.get('instagram');
+    const error = parameters.get('instagram_error');
+    if (!status && !error) return;
+    setTab('instagram');
+    setMessage(status === 'connected' ? 'Instagram conectado com sucesso.' : `Não foi possível conectar o Instagram: ${error || 'confira o log do painel.'}`);
+    window.history.replaceState({}, '', '/admin');
+  }, []);
+  useEffect(() => {
+    if (!token || !['whatsapp', 'instagram'].includes(tab)) return undefined;
     const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
@@ -1989,12 +2018,12 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', instagram: 'Instagram Stories', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', instagram: 'Crie e publique Stories automáticos com a identidade da PromoShop.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', instagram: '◎', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
     { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
-    { label: 'Automação', items: ['sources', 'whatsapp'] },
+    { label: 'Automação', items: ['sources', 'whatsapp', 'instagram'] },
     { label: 'Sistema', items: ['analytics', 'health', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
@@ -3160,6 +3189,7 @@ function AdminApp() {
         <div className="form-footer"><span>As alterações entram em vigor após salvar.</span><button className="button primary">Salvar grupos e regras</button></div>
       </form>
     </div>}
+    {tab === 'instagram' && <InstagramPanel data={data} setData={setData} secretForm={secretForm} setSecretForm={setSecretForm} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} />}
     {tab === 'health' && <div className="health-layout">
       <section className={`panel health-summary ${data.systemHealth?.status || 'attention'}`}><div><span className="section-step">DIAGNÓSTICO</span><h2>{data.systemHealth?.status === 'healthy' ? 'Sistema funcionando normalmente' : data.systemHealth?.status === 'critical' ? 'O sistema precisa de atenção imediata' : 'Há itens para revisar'}</h2><p>Verificação atualizada em {data.systemHealth?.checkedAt ? new Date(data.systemHealth.checkedAt).toLocaleString('pt-BR') : '—'}.</p></div><button className="button subtle" type="button" onClick={() => load()}>Verificar novamente</button></section>
       <div className="health-check-grid">{(data.systemHealth?.checks || []).map((check) => <article className={`panel health-check ${check.ok ? 'ok' : 'warning'}`} key={check.id}><span>{check.ok ? '✓' : '!'}</span><div><h3>{check.label}</h3><p>{check.detail}</p></div></article>)}</div>

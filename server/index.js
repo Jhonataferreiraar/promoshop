@@ -59,6 +59,19 @@ import {
 } from './audienceRouting.js';
 import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
+import {
+  beginInstagramAuthorization,
+  cleanupInstagramAssets,
+  enqueueInstagramFromWhatsapp,
+  finishInstagramAuthorization,
+  generateInstagramStory,
+  instagramAssetPath,
+  processInstagramQueue,
+  refreshInstagramToken,
+  testInstagramConnection,
+  verifyInstagramSignedRequest
+} from './instagram.js';
+import { sanitizeInstagramThemes } from './instagramThemes.js';
 
 const app = express();
 
@@ -611,7 +624,7 @@ function mailboxName(value) {
 }
 
 const analyticsSessionWindowMs = 30 * 60 * 1000;
-const privacyPolicyVersion = '2026-08-23-v3';
+const privacyPolicyVersion = '2026-08-23-v4';
 
 function boundedNumber(value, fallback, minimum, maximum) {
   const number = Number(value);
@@ -1632,6 +1645,8 @@ app.use(
     limit: '1mb'
   })
 );
+
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 /*
  * ==========================================================
@@ -3232,7 +3247,12 @@ app.put(
           legalConsentRetentionYears: [5, 1, 10],
           monitoringWhatsappMinutes: [5, 1, 120],
           monitoringCollectionHours: [6, 1, 168],
-          monitoringFailedQueueLimit: [10, 1, 500]
+          monitoringFailedQueueLimit: [10, 1, 500],
+          instagramIntervalMinutes: [20, 1, 1440],
+          instagramMaxPerDay: [15, 1, 100],
+          instagramMinimumDiscount: [20, 0, 99],
+          instagramDuplicateDays: [7, 1, 365],
+          instagramAssetRetentionHours: [72, 24, 720]
         };
         for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
           data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
@@ -3253,6 +3273,25 @@ app.put(
         }
         if (!/^https:\/\//i.test(data.config.searchConsoleRedirectUri)) data.config.searchConsoleRedirectUri = previousConfig.searchConsoleRedirectUri || '';
         if (!/^(?:sc-domain:|https?:\/\/)/i.test(data.config.searchConsoleSiteUrl)) data.config.searchConsoleSiteUrl = previousConfig.searchConsoleSiteUrl || '';
+
+        if (Object.prototype.hasOwnProperty.call(body, 'instagramThemes')) {
+          data.config.instagramThemes = sanitizeInstagramThemes(body.instagramThemes);
+        }
+        data.config.instagramStores = Array.isArray(data.config.instagramStores)
+          ? [...new Set(data.config.instagramStores.map((entry) => String(entry).trim()).filter(Boolean))]
+          : previousConfig.instagramStores || [];
+        data.config.instagramAudienceCodes = Array.isArray(data.config.instagramAudienceCodes)
+          ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
+          : previousConfig.instagramAudienceCodes || [];
+        if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
+        if (!/^v\d+\.\d+$/.test(String(data.config.instagramApiVersion || ''))) data.config.instagramApiVersion = previousConfig.instagramApiVersion || 'v25.0';
+        for (const key of ['instagramRedirectUri', 'instagramCtaText', 'instagramDisclosureText']) {
+          data.config[key] = String(data.config[key] || '').trim().slice(0, 300);
+        }
+        if (!/^https:\/\//i.test(data.config.instagramRedirectUri)) data.config.instagramRedirectUri = previousConfig.instagramRedirectUri || '';
+        for (const key of ['instagramPublishingStart', 'instagramPublishingEnd']) {
+          if (!/^\d{2}:\d{2}$/.test(String(data.config[key] || ''))) data.config[key] = previousConfig[key];
+        }
 
         if (audienceRoutingChanged) {
           for (const offer of data.offers) {
@@ -4109,6 +4148,148 @@ app.post(
     return res.json(await runOfferLinkChecks());
   }
 );
+
+/*
+ * ==========================================================
+ * INSTAGRAM STORIES
+ * ==========================================================
+ */
+
+app.post('/api/admin/instagram/connect', requireAdmin, async (req, res) => {
+  try {
+    const [data, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const authorizationUrl = await beginInstagramAuthorization(data.config, secrets);
+    res.json({ authorizationUrl });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/instagram/callback', async (req, res) => {
+  try {
+    if (req.query.error) throw new Error(String(req.query.error_description || req.query.error));
+    const [data, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const profile = await finishInstagramAuthorization(data.config, secrets, req.query || {});
+    await addLog(`Instagram conectado${profile.username ? ` como @${profile.username}` : ''}.`, 'success');
+    res.redirect('/admin?instagram=connected');
+  } catch (error) {
+    await addLog(`Instagram: não foi possível concluir a conexão: ${error.message}`, 'error');
+    res.redirect(`/admin?instagram_error=${encodeURIComponent(String(error.message || 'Falha na conexão').slice(0, 180))}`);
+  }
+});
+
+app.post('/api/instagram/deauthorize', async (req, res) => {
+  try {
+    const secrets = await readSecrets();
+    verifyInstagramSignedRequest(req.body?.signed_request, secrets.instagramAppSecret);
+    await updateSecrets({ clearInstagramConnection: true });
+    await addLog('Instagram: a Meta desautorizou a integração e o acesso foi removido.', 'warning');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/instagram/data-deletion', async (req, res) => {
+  try {
+    const secrets = await readSecrets();
+    verifyInstagramSignedRequest(req.body?.signed_request, secrets.instagramAppSecret);
+    await updateSecrets({ clearInstagramConnection: true });
+    const data = await readStore();
+    const confirmationCode = crypto.randomBytes(12).toString('hex');
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    await addLog(`Instagram: pedido de exclusão processado (${confirmationCode}).`, 'warning');
+    res.json({ url: `${canonical}/exclusao-de-dados?confirmation=${confirmationCode}`, confirmation_code: confirmationCode });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/test', requireAdmin, async (req, res) => {
+  try {
+    const [data, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const profile = await testInstagramConnection(data.config, secrets);
+    res.json({ ok: true, username: profile.username || '', name: profile.name || '' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/refresh', requireAdmin, async (req, res) => {
+  try {
+    const secrets = await readSecrets();
+    const result = await refreshInstagramToken(secrets);
+    await addLog('Instagram: token de acesso renovado.', 'success');
+    res.json({ ok: true, expiresIn: Number(result.expires_in || 0) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/disconnect', requireAdmin, async (req, res) => {
+  await updateSecrets({ clearInstagramConnection: true });
+  await addLog('Instagram desconectado do publicador.', 'warning');
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/instagram/preview', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const candidate = req.body?.story || (data.offers || []).find((offer) => offer.image && offer.status === 'active') || {
+      title: 'Oferta selecionada especialmente para você',
+      store: 'PromoShop', price: 99.9, originalPrice: 159.9, discount: 38, image: '', link: data.config.canonicalUrl
+    };
+    const sample = { ...candidate, link: candidate.link || candidate.affiliateUrl || data.config.canonicalUrl };
+    const asset = await generateInstagramStory(sample, data.config, String(req.body?.themeId || ''));
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    res.json({ ok: true, themeId: asset.themeId, imageUrl: `${canonical}/media/instagram/${asset.fileName}` });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/queue/:id/publish', requireAdmin, async (req, res) => {
+  const data = await readStore();
+  const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
+  if (!item) return res.status(404).json({ error: 'Publicação do Instagram não encontrada.' });
+  processInstagramQueue({ forceId: item.id }).catch((error) => console.error('Instagram:', error.message));
+  res.status(202).json({ ok: true, message: 'Publicação iniciada. O estado será atualizado no painel.' });
+});
+
+app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) => {
+  let found = false;
+  await updateStore((data) => {
+    const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
+    if (!item || item.status === 'sent') return;
+    found = true;
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null });
+  });
+  if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/instagram/queue/:id', requireAdmin, async (req, res) => {
+  let removed = false;
+  await updateStore((data) => {
+    const before = (data.instagramQueue || []).length;
+    data.instagramQueue = (data.instagramQueue || []).filter((entry) => entry.id !== req.params.id || entry.status === 'publishing');
+    removed = data.instagramQueue.length < before;
+  });
+  if (!removed) return res.status(400).json({ error: 'Não é possível excluir uma publicação que está sendo enviada.' });
+  res.json({ ok: true });
+});
+
+app.get('/media/instagram/:fileName', async (req, res) => {
+  const filePath = instagramAssetPath(req.params.fileName);
+  if (!filePath) return res.status(404).end();
+  try {
+    await fs.access(filePath);
+    res.set('Cache-Control', 'public, max-age=259200');
+    res.type('image/jpeg').sendFile(filePath);
+  } catch {
+    res.status(404).end();
+  }
+});
 
 /*
  * ==========================================================
@@ -6601,6 +6782,7 @@ app.post(
     res
   ) => {
     let completedItem = null;
+    let instagramQueuedItem = null;
 
     await updateStore(
       (data) => {
@@ -6641,6 +6823,8 @@ app.post(
           roundAudienceCode:
             item.roundAudienceCode
         };
+
+        instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
 
         /*
          * ==================================================
@@ -6741,6 +6925,10 @@ app.post(
           'success'
         );
       }
+    }
+
+    if (instagramQueuedItem) {
+      await addLog(`Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`, 'success');
     }
 
     res.json({
@@ -7097,7 +7285,8 @@ function pageSeo(config, pathname, origin, offers = []) {
     '/sobre': ['Sobre o PromoShop', 'Conheça o PromoShop, sua curadoria independente de ofertas e cupons de lojas parceiras.'],
     '/contato': ['Fale Conosco — PromoShop', 'Entre em contato com o PromoShop sobre ofertas, cupons, parcerias ou privacidade.'],
     '/termos-de-uso': ['Termos de Uso — PromoShop', 'Consulte as condições de uso, responsabilidades e transparência do PromoShop.'],
-    '/privacidade': ['Política de Privacidade — PromoShop', 'Saiba como o PromoShop trata dados, consentimento, métricas e solicitações de privacidade.']
+    '/privacidade': ['Política de Privacidade — PromoShop', 'Saiba como o PromoShop trata dados, consentimento, métricas e solicitações de privacidade.'],
+    '/exclusao-de-dados': ['Exclusão de dados — PromoShop', 'Veja como solicitar a exclusão de dados e desconectar integrações do PromoShop.']
   };
   const offerMatch = pathname.match(/^\/oferta\/([^/]+)$/);
   const offer = offerMatch ? offers.find((entry) => offerPublicSlug(entry) === offerMatch[1]) : null;
@@ -7187,7 +7376,7 @@ app.get('/sitemap.xml', async (req, res) => {
   const origin = publicSiteOrigin(config, req);
   const lastmod = String(config.legalPolicyVersion || privacyPolicyVersion).slice(0, 10);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
-  const paths = ['/', '/sobre', '/contato', '/termos-de-uso', '/privacidade'];
+  const paths = ['/', '/sobre', '/contato', '/termos-de-uso', '/privacidade', '/exclusao-de-dados'];
   const catalogPaths = [
     ...new Set(eligible.map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
     ...new Set(eligible.map((offer) => `/loja/${catalogSlug(offer.store)}`).filter((path) => !path.endsWith('/'))),
@@ -7278,6 +7467,21 @@ cron.schedule('20 */6 * * *', async () => {
     if (config.linkCheckEnabled !== false) await runOfferLinkChecks();
   } catch (error) {
     console.error('Falha na verificação programada de links:', error.message);
+  }
+});
+
+cron.schedule('30 4 * * *', async () => {
+  try {
+    const { config } = await readStore();
+    await cleanupInstagramAssets(config.instagramAssetRetentionHours);
+    const secrets = await readSecrets();
+    const expiresAt = Number(secrets.instagramTokenExpiresAt || 0);
+    if (secrets.instagramAccessToken && expiresAt && expiresAt - Date.now() < 7 * 24 * 60 * 60 * 1000) {
+      await refreshInstagramToken(secrets);
+      await addLog('Instagram: acesso renovado automaticamente.', 'success');
+    }
+  } catch (error) {
+    await addLog(`Instagram: falha na manutenção automática: ${error.message}`, 'error');
   }
 });
 
@@ -7379,5 +7583,10 @@ app.listen(
       },
       2000
     );
+
+    const instagramTimer = setInterval(() => {
+      processInstagramQueue().catch((error) => console.error('Instagram:', error.message));
+    }, 30_000);
+    instagramTimer.unref?.();
   }
 );
