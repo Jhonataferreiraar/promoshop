@@ -4721,25 +4721,23 @@ button {
 .coupon-group-label small { color: #667085; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
 .coupon-manager { min-width: 0; }
 .coupon-admin-list { display: grid; gap: 10px; }
-.coupon-admin-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px; border: 1px solid #eaecf0; border-radius: 13px; }
-.coupon-admin-row > div:first-child { display: grid; flex: 1 1 240px; gap: 5px; min-width: 0; }
+.coupon-admin-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 16px; padding: 15px; border: 1px solid #eaecf0; border-radius: 13px; }
+.coupon-admin-row > div:first-child { display: grid; width: 100%; gap: 5px; min-width: 0; }
 .coupon-admin-row > div:first-child > strong { overflow-wrap: anywhere; color: #101828; line-height: 1.35; }
 .coupon-admin-row small { color: #667085; }
 .coupon-short-link { overflow-wrap: anywhere; color: var(--primary) !important; font-size: 12px; }
-.coupon-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; flex: 0 0 auto; }
-.coupon-row-actions button { min-height: 34px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 9px; color: #344054; background: #fff; font-size: 12px; font-weight: 800; cursor: pointer; }
+.coupon-row-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); width: 100%; gap: 7px; }
+.coupon-row-actions button { width: 100%; min-width: 0; min-height: 34px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 9px; color: #344054; background: #fff; font-size: 12px; font-weight: 800; cursor: pointer; }
 .coupon-row-actions button.edit { color: var(--primary); border-color: #b2ccff; background: #f5f8ff; }
 .coupon-row-actions button.force { color: #fff; border-color: var(--primary); background: var(--primary); }
 .coupon-row-actions button.danger { color: #b42318; border-color: #fecdca; background: #fff5f4; }
 
 @media (max-width: 900px) {
   .coupons-admin-layout, .coupon-grid { grid-template-columns: 1fr; }
-  .coupon-admin-row { align-items: stretch; flex-direction: column; }
-  .coupon-row-actions { width: 100%; justify-content: flex-start; }
 }
 
 @media (max-width: 600px) {
-  .coupon-admin-row { align-items: flex-start; flex-direction: column; }
+  .coupon-admin-row { align-items: stretch; }
   .coupon-row-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .coupon-row-actions button { width: 100%; min-width: 0; }
 }
