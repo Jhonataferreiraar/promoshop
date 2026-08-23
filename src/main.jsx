@@ -1804,7 +1804,7 @@ function AdminApp() {
       setMessage('Link confirmado e oferta publicada.');
     } catch (error) { setMessage(error.message); }
   }
-  async function collect() { setMessage('Buscando novas ofertas…'); try { const result = await authApi('/admin/collect', { method: 'POST' }); await load(); setMessage(`${result.imported} novas ofertas encontradas.`); } catch (err) { setMessage(err.message); } }
+  async function collect() { setMessage('Buscando novas ofertas…'); try { const result = await authApi('/admin/collect', { method: 'POST' }); await load(); setMessage(result.queued ? 'A coleta aguardará a rodada de publicações terminar.' : `${result.imported} novas ofertas encontradas.`); } catch (err) { setMessage(err.message); } }
   async function startWhatsapp(mode = 'qr') {
     setMessage('Iniciando o publicador do WhatsApp…');
 

@@ -104,6 +104,118 @@ let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let collectionInProgress = false;
+let lastDeferredCollectionRoundId = '';
+
+function activePublicationRound(data) {
+  const round =
+    data?.meta
+      ?.publicationRound;
+
+  return round &&
+    Array.isArray(
+      round.pendingAudienceCodes
+    ) &&
+    round.pendingAudienceCodes.length
+      ? round
+      : null;
+}
+
+async function rememberCollectionRequest() {
+  await updateStore(
+    (data) => {
+      data.meta =
+        data.meta || {};
+
+      data.meta
+        .collectionRequestedAt =
+        data.meta
+          .collectionRequestedAt ||
+        new Date()
+          .toISOString();
+    }
+  );
+}
+
+async function runCollectionWhenIdle({
+  requestedByAdmin = false
+} = {}) {
+  if (collectionInProgress) {
+    if (requestedByAdmin) {
+      await rememberCollectionRequest();
+    }
+
+    return {
+      imported: 0,
+      queued: true,
+      reason: 'collection-in-progress'
+    };
+  }
+
+  /*
+   * A trava é ligada antes da primeira leitura assíncrona.
+   * Assim, o worker não consegue iniciar uma nova rodada no
+   * pequeno intervalo entre a verificação e o começo da coleta.
+   */
+  collectionInProgress = true;
+
+  try {
+    const data =
+      await readStore();
+
+    const round =
+      activePublicationRound(
+        data
+      );
+
+    if (round) {
+      if (requestedByAdmin) {
+        await rememberCollectionRequest();
+      }
+
+      if (
+        lastDeferredCollectionRoundId !==
+        round.id
+      ) {
+        lastDeferredCollectionRoundId =
+          round.id;
+
+        await addLog(
+          `Coleta aguardando a rodada ${round.id} finalizar.`,
+          'info'
+        );
+      }
+
+      return {
+        imported: 0,
+        queued: true,
+        reason: 'publication-round'
+      };
+    }
+
+    const result =
+      await runCollection();
+
+    await updateStore(
+      (freshData) => {
+        freshData.meta =
+          freshData.meta || {};
+
+        delete freshData.meta
+          .collectionRequestedAt;
+      }
+    );
+
+    lastDeferredCollectionRoundId =
+      '';
+
+    return {
+      ...result,
+      queued: false
+    };
+  } finally {
+    collectionInProgress = false;
+  }
+}
 
 const loginAttempts = new Map();
 
@@ -1212,10 +1324,23 @@ function getLocalCodesForQueueItem(
 async function getPublicationRound(
   createIfMissing = true
 ) {
+  /*
+   * Enquanto as lojas são consultadas, nenhuma nova publicação
+   * começa. A rodada que já estava ativa sempre tem prioridade e
+   * impede a coleta de começar por meio de runCollectionWhenIdle().
+   */
+  if (collectionInProgress) {
+    return null;
+  }
+
   let result = null;
 
   await updateStore(
     (data) => {
+      if (collectionInProgress) {
+        return;
+      }
+
       data.meta =
         data.meta || {};
 
@@ -4205,7 +4330,9 @@ app.post(
     res
   ) =>
     res.json(
-      await runCollection()
+      await runCollectionWhenIdle({
+        requestedByAdmin: true
+      })
     )
 );
 
@@ -4812,6 +4939,12 @@ app.get(
     req,
     res
   ) => {
+    if (collectionInProgress) {
+      return res
+        .status(204)
+        .end();
+    }
+
     const {
       config,
       queue,
@@ -7160,6 +7293,12 @@ cron.schedule(
     const data =
       await readStore();
 
+    const collectionRequested =
+      Boolean(
+        data.meta
+          ?.collectionRequestedAt
+      );
+
     const interval =
       Math.max(
         5,
@@ -7180,6 +7319,7 @@ cron.schedule(
         : 0;
 
     if (
+      !collectionRequested &&
       Date.now() -
       last <
       interval *
@@ -7188,19 +7328,13 @@ cron.schedule(
       return;
     }
 
-    collectionInProgress =
-      true;
-
     try {
-      await runCollection();
+      await runCollectionWhenIdle();
     } catch (error) {
       await addLog(
         `Erro no agendador: ${error.message}`,
         'error'
       );
-    } finally {
-      collectionInProgress =
-        false;
     }
   }
 );
