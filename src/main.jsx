@@ -334,9 +334,11 @@ function PublicSite() {
                   </div>
                   <h3>{coupon.title}</h3>
                   {coupon.description && <p>{coupon.description}</p>}
-                  {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
-                  {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
-                  <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
+                  <div className="coupon-card-actions">
+                    {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
+                    {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
+                    <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
+                  </div>
                 </article>
               ))}
             </div>
