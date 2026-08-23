@@ -3903,7 +3903,7 @@ button {
 
 .product-search-form {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 160px auto auto;
+  grid-template-columns: minmax(280px, 1fr) 130px minmax(210px, .75fr) minmax(220px, .8fr) auto;
   gap: 16px;
   align-items: end;
 }
@@ -3916,6 +3916,22 @@ button {
 .product-search-query input {
   width: 100%;
 }
+
+.product-search-form .product-search-strict {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 11px;
+  border: 1px solid #dbe3ee;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.product-search-strict input { margin-top: 3px; }
+.product-search-strict span { display: grid; gap: 2px; }
+.product-search-strict strong { font-size: 13px; }
+.product-search-strict small { color: #64748b; font-size: 11px; line-height: 1.35; }
 
 .product-search-stores {
   display: flex;
@@ -4705,6 +4721,16 @@ button {
   .assistant-group:hover {
     transform: none;
   }
+}
+
+.product-search-relevance {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #e8f2ff;
+  color: #1269f3;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 /* Cupons públicos */

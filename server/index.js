@@ -58,6 +58,7 @@ import {
 import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
+import { rankProductSearchResults } from './searchRelevance.js';
 
 const app = express();
 
@@ -3273,6 +3274,8 @@ app.post(
     const requestedLimit =
       req.body.limit;
 
+    const strictSearch = req.body.strict !== false;
+
     const limit =
       requestedLimit ===
       'all'
@@ -3321,7 +3324,7 @@ app.post(
         const mercadoLivreResults =
           await searchMercadoLivreProducts(
             query,
-            limit
+            Math.max(limit, 20)
           );
 
         results.push(
@@ -3344,7 +3347,7 @@ app.post(
           await searchShopeeProducts(
             query,
             secrets,
-            limit
+            Math.max(limit, 20)
           );
 
         results.push(
@@ -3368,13 +3371,17 @@ app.post(
       errors.push('Magalu: a vitrine pode exigir captcha e não libera uma busca automática confiável. Abra a busca da sua loja e cadastre o link do produto no formulário abaixo.');
     }
 
+    const rankedResults = rankProductSearchResults(query, results, { strict: strictSearch, limitPerStore: limit });
+
     res.json({
       query,
 
       count:
-        results.length,
+        rankedResults.length,
 
-      results,
+      results: rankedResults,
+      discarded: Math.max(0, results.length - rankedResults.length),
+      strict: strictSearch,
       errors,
       magaluStoreUrl
     });

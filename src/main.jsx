@@ -1158,7 +1158,8 @@ function AdminApp() {
   const [productSearch, setProductSearch] = useState({
     query: '',
     stores: ['mercadolivre', 'shopee', 'magalu'],
-    limit: 10
+    limit: 10,
+    strict: true
   });
 
   const [productSearchResults, setProductSearchResults] = useState([]);
@@ -1808,6 +1809,7 @@ function AdminApp() {
         body: JSON.stringify({
           query,
           stores: productSearch.stores,
+          strict: productSearch.strict !== false,
           limit:
             productSearch.limit === 'all'
               ? 'all'
@@ -1830,11 +1832,11 @@ function AdminApp() {
 
       if (result.count > 0) {
         setMessage(
-          `${result.count} produto${result.count === 1 ? '' : 's'} encontrado${result.count === 1 ? '' : 's'} para "${query}".`
+          `${result.count} produto${result.count === 1 ? '' : 's'} relevante${result.count === 1 ? '' : 's'} encontrado${result.count === 1 ? '' : 's'} para "${query}"${result.discarded ? `. ${result.discarded} resultado(s) sem relação foram descartados.` : '.'}`
         );
       } else {
         setMessage(
-          `Nenhum produto encontrado para "${query}".`
+          `Nenhum produto realmente compatível encontrado para "${query}"${result.discarded ? `. A busca descartou ${result.discarded} resultado(s) apenas parecido(s) ou de acessórios.` : '.'}`
         );
       }
     } catch (error) {
@@ -1921,7 +1923,7 @@ function AdminApp() {
               <span className="section-step">BUSCA MANUAL</span>
               <h2>Buscar produto nas lojas</h2>
               <p>
-                Digite o produto que deseja encontrar nas lojas conectadas. No Magalu, a vitrine pode exigir captcha; nesse caso o painel abre a busca da sua loja para você copiar o link.
+                A busca confere o tipo do produto, modelo e características importantes antes de mostrar o resultado. No Magalu, a vitrine pode exigir captcha; nesse caso o painel abre a busca da sua loja.
               </p>
             </div>
           </div>
@@ -1962,10 +1964,12 @@ function AdminApp() {
                 <option value={5}>5</option>
                 <option value={10}>10</option>
                 <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value="all">Todos</option>
               </select>
+            </label>
+
+            <label className="product-search-strict">
+              <input type="checkbox" checked={productSearch.strict !== false} onChange={(event) => setProductSearch({ ...productSearch, strict: event.target.checked })} />
+              <span><strong>Busca exata</strong><small>Descarta acessórios e produtos apenas parecidos. Desmarque somente se quiser uma busca mais ampla.</small></span>
             </label>
 
             <div className="product-search-stores">
@@ -2104,6 +2108,8 @@ function AdminApp() {
                       <span className="product-search-store">
                         {offer.store}
                       </span>
+
+                      {offer.relevance && <span className="product-search-relevance">{offer.relevance.score}% compatível</span>}
 
                       <h3>{offer.title}</h3>
 
