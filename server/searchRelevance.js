@@ -1,8 +1,8 @@
 const stopWords = new Set(['a', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'o', 'os', 'para', 'por', 'um', 'uma']);
 
 const intents = [
-  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'base', 'bateria', 'bolsa', 'cabo', 'caixa', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'lente', 'lentes', 'limpa', 'livro', 'memoria', 'mesa', 'microfibra', 'mochila', 'mochla', 'mouse', 'peca', 'pelicula', 'skin', 'som', 'ssd', 'suporte', 'teclado', 'tela', 'telas', 'transmissor'], adjacentAccessories: ['adaptador', 'base', 'bolsa', 'capa', 'carregador', 'case', 'cooler', 'mesa', 'mochila', 'mochla', 'mouse', 'suporte', 'transmissor'] },
-  { aliases: ['skincare'], matchTerms: ['skincare', 'hidratante', 'serum', 'niacinamida', 'retinol', 'retinal', 'acnezil', 'esfoliante', 'demaquilante', 'protetor', 'limpeza', 'mascara', 'acne'], accessories: ['cabo', 'capa', 'case', 'pelicula', 'suporte', 'tela'], alwaysExcludeAccessories: true },
+  { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adaptador', 'adesivo', 'base', 'bateria', 'bolsa', 'cabo', 'caixa', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'lente', 'lentes', 'limpa', 'livro', 'memoria', 'mesa', 'microfibra', 'mochila', 'mochla', 'mouse', 'pasta', 'peca', 'pelicula', 'prompter', 'skin', 'som', 'ssd', 'suporte', 'teclado', 'tela', 'telas', 'teleprompter', 'transmissor'], adjacentAccessories: ['adaptador', 'base', 'bolsa', 'capa', 'carregador', 'case', 'cooler', 'mesa', 'mochila', 'mochla', 'mouse', 'pasta', 'prompter', 'suporte', 'teleprompter', 'transmissor'] },
+  { aliases: ['skincare'], matchTerms: ['skincare', 'hidratante', 'serum', 'niacinamida', 'retinol', 'retinal', 'acnezil', 'esfoliante', 'demaquilante', 'protetor', 'limpeza', 'acne'], accessories: ['cabo', 'capa', 'case', 'pelicula', 'suporte', 'tela'], alwaysExcludeAccessories: true },
   { aliases: ['celular', 'smartphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['airfryer', 'fritadeira'], accessories: ['cesta', 'forma', 'grade', 'papel', 'peca', 'protetor', 'tapete'] },
@@ -56,6 +56,9 @@ export function productSearchRelevance(query, offer, { strict = true } = {}) {
   const requestedAccessories = intent ? intent.accessories.filter((word) => queryTokens.includes(word)) : [];
   const wrongCatalogCategory = Boolean(intent && !requestedAccessories.length && /mercado-livre/i.test(String(offer?.source || '')) && tokens(categoryText).some((token) => ['acessorio', 'acessorios', 'componente', 'componentes', 'livro', 'livros', 'papelaria', 'peca', 'pecas'].includes(token)));
   const intentPosition = intent ? Math.min(...intentMatchTerms.map((alias) => titleTokens.indexOf(alias)).filter((index) => index >= 0), Number.POSITIVE_INFINITY) : -1;
+  const indirectIntentReference = Boolean(intent && !requestedAccessories.length && intentPosition > 0 && (
+    intentPosition > 7 || intentMatchTerms.some((alias) => new RegExp(`\\b(?:para|do|da|de) ${alias}\\b`).test(titleText))
+  ));
   const unwantedAccessories = intent && !requestedAccessories.length
     ? intent.accessories.filter((word) => {
       const position = titleTokens.indexOf(word);
@@ -76,16 +79,18 @@ export function productSearchRelevance(query, offer, { strict = true } = {}) {
   const coverage = comparableTokens.length ? matched.length / comparableTokens.length : (intentMatched ? 1 : 0);
   let score = Math.round(coverage * 55 + (intentMatched ? 25 : 0) + (exactPhrase ? 20 : 0));
   if (unwantedAccessories.length) score -= 70;
+  if (indirectIntentReference) score -= 70;
   if (wrongCatalogCategory) score -= 70;
   if (!intentMatched) score -= 50;
   if (numbersMissing.length) score -= 35;
   score = Math.max(0, Math.min(100, score));
 
   const accepted = strict
-    ? intentMatched && !wrongCatalogCategory && !unwantedAccessories.length && !numbersMissing.length && coverage >= (comparableTokens.length <= 2 ? 1 : 0.75) && score >= 65
-    : intentMatched && !numbersMissing.length && coverage >= 0.5 && score >= 45;
+    ? intentMatched && !wrongCatalogCategory && !unwantedAccessories.length && !indirectIntentReference && !numbersMissing.length && coverage >= (comparableTokens.length <= 2 ? 1 : 0.75) && score >= 65
+    : intentMatched && !indirectIntentReference && !numbersMissing.length && coverage >= 0.5 && score >= 45;
   const reason = wrongCatalogCategory ? 'Categoria de catálogo incompatível'
     : unwantedAccessories.length ? `Acessório não solicitado: ${unwantedAccessories.join(', ')}`
+    : indirectIntentReference ? 'Produto citado apenas como compatibilidade'
     : !intentMatched ? 'Tipo de produto não corresponde'
       : missing.length ? `Termos ausentes: ${missing.join(', ')}` : 'Correspondência relevante';
   return { accepted, score, matched, missing, reason };

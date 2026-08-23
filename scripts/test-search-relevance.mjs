@@ -14,6 +14,9 @@ assert.equal(relevant('notebook', 'Adaptador Bluetooth USB para Notebook', 'Aces
 assert.equal(relevant('notebook', 'Kit Limpa Telas com Lenço de Microfibra para Notebook', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Caixa de Som Estéreo para Computador Notebook', 'Acessórios'), false);
 assert.equal(relevant('notebook', 'Laptop Suporte Base de Alumínio Dobrável', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Ulanzi Teleprompter para Câmera Smartphone Tablet Laptop', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Ventilador de refrigeração da CPU do laptop para Lenovo', 'Acessórios'), false);
+assert.equal(relevant('notebook', 'Pasta Térmica para Processadores e Laptop', 'Acessórios'), false);
 assert.equal(relevant('suporte notebook', 'Suporte Ergonômico para Notebook', 'Acessórios'), true);
 assert.equal(relevant('iphone 15 128gb', 'Apple iPhone 15 128GB Preto', 'Celulares'), true);
 assert.equal(relevant('iphone 15 128gb', 'Capinha Transparente para iPhone 15', 'Acessórios'), false);
@@ -23,6 +26,7 @@ assert.equal(relevant('air fryer mondial', 'Forma de Silicone para Air Fryer', '
 assert.equal(relevant('skincare', 'Creme Hidratante Facial com Niacinamida', 'Cuidados com a pele'), true);
 assert.equal(relevant('skincare', 'Protetor Solar Facial FPS 60', 'Cuidados com a pele'), true);
 assert.equal(relevant('skincare', 'Capa e Película para Celular', 'Acessórios'), false);
+assert.equal(relevant('skincare', 'Máscara Descartável Dupla 5Un', 'Proteção'), false);
 assert.equal(relevant('cadeira gamer', 'Cadeira Gamer Reclinável Ergonômica', 'Móveis'), true);
 assert.equal(relevant('cadeira gamer', 'Livro sobre universo gamer', 'Livros'), false);
 

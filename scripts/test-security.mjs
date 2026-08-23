@@ -56,6 +56,7 @@ try {
   assert.equal(publicHome.config.brandName, 'PromoShop');
   assert.ok(Array.isArray(publicHome.coupons));
   assert.ok(Array.isArray(publicHome.audiences));
+  assert.equal(publicHome.config.assistantAvailable, true);
   assert.equal(Object.hasOwn(publicHome.config, 'whatsappAudiences'), false);
   assert.equal(Object.hasOwn(publicHome, 'secrets'), false);
 
@@ -67,8 +68,9 @@ try {
 
   const initialDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   const technologyAudience = initialDashboard.config.whatsappAudiences.find((audience) => audience.code === 'G02');
-  technologyAudience.keywords = ['notebook', ' Notebook ', 'ultrabook'];
+  technologyAudience.keywords = ['notebook', ' Notebook ', 'ultrabook', 'fone bluetooth'];
   technologyAudience.blockedKeywords = ['usado', ' USADO '];
+  technologyAudience.whatsappLink = 'https://chat.whatsapp.com/grupo-promoshop-teste';
   const keywordSave = await fetch(`${origin}/api/admin/config`, {
     method: 'PUT',
     headers: authorization,
@@ -77,7 +79,7 @@ try {
   assert.equal(keywordSave.status, 200);
   const dashboardWithKeywords = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   const savedTechnologyAudience = dashboardWithKeywords.config.whatsappAudiences.find((audience) => audience.code === 'G02');
-  assert.deepEqual(savedTechnologyAudience.keywords, ['notebook', 'ultrabook']);
+  assert.deepEqual(savedTechnologyAudience.keywords, ['notebook', 'ultrabook', 'fone bluetooth']);
   assert.deepEqual(savedTechnologyAudience.blockedKeywords, ['usado']);
 
   const receiptId = 'privacyreceipt1234567890';
@@ -142,6 +144,29 @@ try {
   assert.match(publicOffers.offers[0].publicSlug, /fone-bluetooth/);
   const productPage = await fetch(`${origin}/api/offer/${publicOffers.offers[0].publicSlug}`).then((response) => response.json());
   assert.equal(productPage.offer.title, 'Fone Bluetooth Teste Premium');
+
+  const assistantQuestion = await fetch(`${origin}/api/assistant/recommend`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Quero um fone bluetooth' })
+  }).then((response) => response.json());
+  assert.equal(assistantQuestion.status, 'question');
+  assert.equal(assistantQuestion.products.length, 0);
+
+  const assistantResult = await fetch(`${origin}/api/assistant/recommend`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: '200',
+      history: [
+        { role: 'user', content: 'Quero um fone bluetooth' },
+        { role: 'assistant', content: 'Qual é o seu orçamento?' }
+      ]
+    })
+  }).then((response) => response.json());
+  assert.equal(assistantResult.status, 'result');
+  assert.equal(assistantResult.products[0].title, 'Fone Bluetooth Teste Premium');
+  assert.equal(assistantResult.audiences[0].code, 'G02');
   const favoritesPage = await fetch(`${origin}/favoritos`).then((response) => response.text());
   assert.match(favoritesPage, /noindex, nofollow/);
 

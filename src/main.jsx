@@ -12,6 +12,7 @@ const fallbackConfig = {
   whatsappUrl: '#',
   whatsappAudiences: [],
   assistantAvailable: false,
+  assistantEnabled: true,
   disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
   contactEmail: 'contatopromoshop.site@gmail.com',
   inboxInboundEnabled: false,
@@ -363,9 +364,13 @@ function PublicSite() {
   const [audiences, setAudiences] = useState([]);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMessage, setAssistantMessage] = useState('');
-  const [assistantReply, setAssistantReply] = useState('');
-  const [assistantAudiences, setAssistantAudiences] = useState([]);
+  const [assistantMessages, setAssistantMessages] = useState(() => [{
+    role: 'assistant',
+    content: 'Olá! Eu sou o Assistente PromoShop. Que produto você procura hoje? Conte também como pretende usar; eu posso perguntar o orçamento antes de indicar as melhores opções.'
+  }]);
+  const [assistantSeenProductIds, setAssistantSeenProductIds] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const assistantBodyRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const offerRequestRef = useRef(0);
   usePublicAnalytics();
@@ -481,10 +486,13 @@ function PublicSite() {
   useEffect(() => {
     if (!config.assistantAvailable) {
       setAssistantOpen(false);
-      setAssistantReply('');
-      setAssistantAudiences([]);
     }
   }, [config.assistantAvailable]);
+
+  useEffect(() => {
+    if (!assistantOpen) return;
+    assistantBodyRef.current?.scrollTo({ top: assistantBodyRef.current.scrollHeight, behavior: 'smooth' });
+  }, [assistantOpen, assistantMessages, assistantLoading]);
 
   const stores = ['Todas', ...offerStores];
   const favoriteSet = new Set(favorites);
@@ -506,34 +514,35 @@ function PublicSite() {
     if (!message) return;
 
     setAssistantLoading(true);
-    setAssistantReply('');
-    setAssistantAudiences([]);
+    const history = assistantMessages.slice(-10).map(({ role, content }) => ({ role, content }));
+    setAssistantMessages((current) => [...current, { role: 'user', content: message }]);
+    setAssistantMessage('');
 
     try {
       const result = await api('/assistant/recommend', {
         method: 'POST',
         body: JSON.stringify({
-          message
+          message,
+          history,
+          seenProductIds: assistantSeenProductIds
         })
       });
 
-      setAssistantMessage('');
-
-      setAssistantReply(
-        result.message ||
-        'Encontrei alguns grupos para você.'
-      );
-
-      setAssistantAudiences(
-        Array.isArray(result.audiences)
-          ? result.audiences
-          : []
-      );
+      const products = Array.isArray(result.products) ? result.products : [];
+      setAssistantMessages((current) => [...current, {
+        role: 'assistant',
+        content: result.message || 'Encontrei algumas opções para você.',
+        products,
+        audiences: Array.isArray(result.audiences) ? result.audiences : []
+      }]);
+      if (products.length) {
+        setAssistantSeenProductIds((current) => [...new Set([...current, ...products.map((product) => product.id)])].slice(-100));
+      }
     } catch (error) {
-      setAssistantReply(
-        error.message ||
-        'Não consegui fazer a recomendação agora.'
-      );
+      setAssistantMessages((current) => [...current, {
+        role: 'assistant',
+        content: error.message || 'Não consegui fazer a recomendação agora.'
+      }]);
     } finally {
       setAssistantLoading(false);
     }
@@ -627,14 +636,16 @@ function PublicSite() {
       )}
 
       <section className="how-section" id="como-funciona"><div className="container"><div className="section-heading centered"><div><span className="eyebrow dark">SIMPLES E TRANSPARENTE</span><h2>Economizar ficou mais fácil</h2><p>Nós reunimos as oportunidades. Você decide onde comprar.</p></div></div><div className="how-grid"><article><span>01</span><h3>Buscamos</h3><p>As ofertas são coletadas nas principais plataformas.</p></article><article><span>02</span><h3>Organizamos</h3><p>Você filtra por loja, preço ou desconto sem perder tempo.</p></article><article><span>03</span><h3>Você economiza</h3><p>Abra a oferta na loja oficial e conclua sua compra com segurança.</p></article></div></div></section>
-      {audiences.length > 0 && (
+      {(audiences.length > 0 || config.assistantAvailable) && (
 
         <section
-          className="audience-public-section"
+          className={`audience-public-section ${!audiences.length ? 'assistant-only' : ''}`}
           id="grupos"
         >
 
           <div className="container">
+
+            {audiences.length > 0 && <>
 
             <div className="section-heading centered">
 
@@ -689,6 +700,8 @@ function PublicSite() {
 
             </div>
 
+            </>}
+
             {config.assistantAvailable && (
               <>
                 <button
@@ -701,7 +714,7 @@ function PublicSite() {
                   }
                 >
                   🤖
-                  <span>Escolher grupo</span>
+                  <span>Encontrar produto</span>
                 </button>
 
                 {assistantOpen && (
@@ -713,7 +726,7 @@ function PublicSite() {
                         </strong>
 
                         <small>
-                          Encontre os grupos ideais para você
+                          Produtos e grupos certos para você
                         </small>
                       </div>
 
@@ -727,45 +740,48 @@ function PublicSite() {
                       </button>
                     </div>
 
-                    <div className="assistant-chat-body">
-                      <div className="assistant-bubble assistant">
-                        👋 Me conta o que você gosta de comprar ou quais ofertas quer receber.
-                      </div>
+                    <div className="assistant-chat-body" ref={assistantBodyRef} aria-live="polite">
+                      {assistantMessages.map((chatMessage, messageIndex) => (
+                        <div className={`assistant-message ${chatMessage.role}`} key={`${chatMessage.role}-${messageIndex}`}>
+                          <div className={`assistant-bubble ${chatMessage.role}`}>
+                            {chatMessage.content}
+                          </div>
 
-                      {assistantReply && (
-                        <div className="assistant-bubble assistant">
-                          {assistantReply}
-                        </div>
-                      )}
+                          {Array.isArray(chatMessage.products) && chatMessage.products.length > 0 && (
+                            <div className="assistant-products">
+                              {chatMessage.products.map((product) => (
+                                <article className="assistant-product" key={product.id}>
+                                  <a className="assistant-product-image" href={`/oferta/${product.publicSlug || product.id}`}>
+                                    <img src={product.image} alt={product.title} width="96" height="96" loading="lazy" referrerPolicy="no-referrer" />
+                                  </a>
+                                  <div>
+                                    <small>{product.store}{product.discount > 0 ? ` · ${product.discount}% OFF` : ''}</small>
+                                    <h4><a href={`/oferta/${product.publicSlug || product.id}`}>{product.title}</a></h4>
+                                    <span>{product.originalPrice > product.price ? <s>{money.format(product.originalPrice)}</s> : null}<strong>{money.format(product.price)}</strong></span>
+                                    {product.freeShipping && <em>Frete grátis informado</em>}
+                                    <a className="assistant-product-action" href={product.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: product.id, label: product.title, store: product.store })}>Ver oferta ↗</a>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          )}
 
-                      {assistantAudiences.length > 0 && (
-                        <div className="assistant-recommendations">
-                          {assistantAudiences.map(
-                            (audience) => (
-                              <a
-                                key={audience.code}
-                                href={audience.whatsappLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="assistant-group"
-                                onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('group', { id: audience.code, label: audience.name, store: 'WhatsApp' })}
-                              >
-                                <span>
-                                  <small>
-                                    {audience.code}
-                                  </small>
-
-                                  <strong>
-                                    {audience.name}
-                                  </strong>
-                                </span>
-
-                                <b>Entrar →</b>
-                              </a>
-                            )
+                          {Array.isArray(chatMessage.audiences) && chatMessage.audiences.length > 0 && (
+                            <div className="assistant-recommendations">
+                              <small className="assistant-section-label">Grupo recomendado</small>
+                              {chatMessage.audiences.map((audience) => audience.whatsappLink ? (
+                                <a key={audience.code} href={audience.whatsappLink} target="_blank" rel="noreferrer" className="assistant-group" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('group', { id: audience.code, label: audience.name, store: 'WhatsApp' })}>
+                                  <span><small>{audience.code}</small><strong>{audience.name}</strong></span><b>Entrar →</b>
+                                </a>
+                              ) : (
+                                <div className="assistant-group no-link" key={audience.code}><span><small>{audience.code}</small><strong>{audience.name}</strong></span></div>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      )}
+                      ))}
+
+                      {assistantLoading && <div className="assistant-bubble assistant assistant-thinking"><i></i><i></i><i></i><span className="visually-hidden">Procurando ofertas</span></div>}
                     </div>
 
                     <form
@@ -779,9 +795,14 @@ function PublicSite() {
                             event.target.value
                           )
                         }
-                        placeholder="Ex.: Gosto de produtos para cabelo, maquiagem e perfumes..."
+                        placeholder="Ex.: Quero um notebook para estudar até R$ 3.000"
                         rows={2}
                         maxLength={1000}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' || event.shiftKey) return;
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }}
                       />
 
                       <button
@@ -793,7 +814,7 @@ function PublicSite() {
                         }
                       >
                         {assistantLoading
-                          ? 'Pensando…'
+                          ? 'Buscando…'
                           : 'Enviar'}
                       </button>
                     </form>
@@ -3199,6 +3220,7 @@ function AdminApp() {
           <label className="toggle-card"><input type="checkbox" checked={data.config.rankingDiversityEnabled !== false} onChange={(event) => setConfigField('rankingDiversityEnabled', event.target.checked)} /><span><strong>Diversificar lojas</strong><small>Evita uma sequência longa da mesma loja.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.publicAdvancedFiltersEnabled !== false} onChange={(event) => setConfigField('publicAdvancedFiltersEnabled', event.target.checked)} /><span><strong>Filtros avançados</strong><small>Preço, desconto e frete grátis no site.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.favoritesEnabled !== false} onChange={(event) => setConfigField('favoritesEnabled', event.target.checked)} /><span><strong>Favoritos</strong><small>Salvos somente no navegador do visitante.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.assistantEnabled !== false} onChange={(event) => setConfigField('assistantEnabled', event.target.checked)} /><span><strong>Assistente de compras</strong><small>Conversa, recomenda produtos ativos e indica o grupo adequado.</small></span></label>
         </div>
       </section>
 

@@ -39,6 +39,7 @@ const initialData = {
     rankingDiversityEnabled: true,
     publicAdvancedFiltersEnabled: true,
     favoritesEnabled: true,
+    assistantEnabled: true,
     searchConsoleSiteUrl: 'sc-domain:jhonatafaraujo.com.br',
     searchConsoleRedirectUri: 'https://promoshop.jhonatafaraujo.com.br/api/search-console/callback',
     showOfferUpdatedAt: true,

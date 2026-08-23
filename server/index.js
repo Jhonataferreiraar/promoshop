@@ -45,8 +45,7 @@ import {
   classifyOfferAudience,
   generateFallbackOfferMessage,
   generateOfferMessage,
-  getAiAvailability,
-  recommendWhatsappAudiences
+  getAiAvailability
 } from './ai.js';
 
 import {
@@ -58,7 +57,7 @@ import {
 import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
-import { rankProductSearchResults } from './searchRelevance.js';
+import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
 
 const app = express();
@@ -118,7 +117,7 @@ const assistantAttempts = new Map();
 const assistantWindowMs =
   10 * 60 * 1000;
 
-const assistantMaxAttempts = 10;
+const assistantMaxAttempts = 30;
 
 const contactAttempts = new Map();
 
@@ -667,6 +666,136 @@ function diversifyOffers(offers) {
     result.push(remaining.splice(index >= 0 ? index : 0, 1)[0]);
   }
   return result;
+}
+
+const assistantIgnoredWords = new Set([
+  'a', 'agora', 'algo', 'algum', 'alguma', 'as', 'ate', 'barato', 'barata',
+  'busco', 'com', 'comprar', 'da', 'das', 'de', 'do', 'dos', 'e', 'em',
+  'encontrar', 'escola', 'estudar', 'estudo', 'estudos', 'eu', 'faculdade',
+  'gostaria', 'me', 'mais', 'maximo', 'menos', 'melhor',
+  'mostra', 'mostrar', 'na', 'nas', 'no', 'nos', 'o', 'oferta', 'ofertas',
+  'opcao', 'opcoes', 'ou', 'para', 'pela', 'pelo', 'por', 'preciso', 'procuro',
+  'produto', 'produtos', 'promocao', 'promocoes', 'quero', 'r', 'reais', 'sem',
+  'ser', 'trabalhar', 'trabalho', 'uma', 'um', 'usar', 'uso', 'valor', 'ver'
+]);
+const assistantKnownProductWords = new Set([
+  'airfryer', 'aspirador', 'celular', 'earphone', 'fone', 'fritadeira', 'headphone',
+  'headset', 'iphone', 'laptop', 'notebook', 'relogio', 'roboaspirador', 'skincare',
+  'smartphone', 'smarttv', 'smartwatch', 'televisao', 'tv', 'ultrabook'
+]);
+
+function sanitizeAssistantHistory(value) {
+  return (Array.isArray(value) ? value : []).slice(-10).map((entry) => ({
+    role: entry?.role === 'assistant' ? 'assistant' : 'user',
+    content: String(entry?.content || '').trim().slice(0, 600)
+  })).filter((entry) => entry.content);
+}
+
+function parseAssistantAmount(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 0;
+  const multiplier = /\bmil\b/.test(raw) ? 1000 : 1;
+  const cleaned = raw.replace(/\bmil\b/g, '').replace(/\s+/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.').replace(/[^\d.]/g, '');
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number * multiplier : 0;
+}
+
+function assistantBudgetFromText(value) {
+  const text = String(value || '');
+  const normalized = normalizeSearchText(text);
+  if (/\bsem limite\b|\bqualquer preco\b|\btanto faz o preco\b/.test(normalized)) {
+    return { specified: true, maximum: Number.POSITIVE_INFINITY, preferCheapest: false };
+  }
+
+  const patterns = [
+    /(?:at[eé]|m[aá]ximo|no m[aá]ximo|por menos de|abaixo de)\s*(?:r\$\s*)?([\d.]+(?:,\d{1,2})?\s*(?:mil)?)/i,
+    /(?:r\$\s*)?([\d.]+(?:,\d{1,2})?\s*(?:mil)?)\s*(?:reais)?\s*(?:ou menos|no m[aá]ximo)/i,
+    /(?:entre|de)\s*(?:r\$\s*)?[\d.]+(?:,\d{1,2})?\s*(?:e|a|at[eé])\s*(?:r\$\s*)?([\d.]+(?:,\d{1,2})?\s*(?:mil)?)/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const maximum = parseAssistantAmount(match?.[1]);
+    if (maximum > 0) return { specified: true, maximum, preferCheapest: false };
+  }
+
+  const shortAmount = text.match(/^\s*(?:r\$\s*)?([\d.]+(?:,\d{1,2})?\s*(?:mil)?)\s*(?:reais)?\s*$/i);
+  const shortMaximum = parseAssistantAmount(shortAmount?.[1]);
+  if (shortMaximum > 0) return { specified: true, maximum: shortMaximum, preferCheapest: false };
+
+  const preferCheapest = /\bbarat[oa]s?\b|\bmais em conta\b|\bmenor preco\b/.test(normalized);
+  return { specified: preferCheapest, maximum: Number.POSITIVE_INFINITY, preferCheapest };
+}
+
+function assistantCatalogQuery(value, offers) {
+  const catalogTokens = new Set(
+    (Array.isArray(offers) ? offers : []).flatMap((offer) =>
+      normalizeSearchText(`${offer.title || ''} ${offer.category || ''}`).split(/\s+/)
+    ).filter((token) => token.length >= 2)
+  );
+  const result = [];
+  const seen = new Set();
+  for (const token of normalizeSearchText(value).split(/\s+/)) {
+    if (token.length < 2 || /^\d+$/.test(token) || assistantIgnoredWords.has(token) || (!catalogTokens.has(token) && !assistantKnownProductWords.has(token)) || seen.has(token)) continue;
+    seen.add(token);
+    result.push(token);
+    if (result.length >= 8) break;
+  }
+  return result.join(' ');
+}
+
+function assistantStoreFromText(value) {
+  const text = normalizeSearchText(value);
+  if (/\bshopee\b/.test(text)) return 'shopee';
+  if (/\baliexpress\b|\bali express\b/.test(text)) return 'aliexpress';
+  if (/\bmercado livre\b|\bml\b/.test(text)) return 'mercado livre';
+  if (/\bmagalu\b|\bmagazine luiza\b/.test(text)) return 'magalu';
+  return '';
+}
+
+function assistantAudienceRecommendations(query, products, audiences) {
+  const codes = [];
+  for (const product of products) {
+    const productCodes = Array.isArray(product.targetAudienceCodes) && product.targetAudienceCodes.length
+      ? product.targetAudienceCodes
+      : getAudienceCodesForOffer(product, audiences);
+    for (const code of productCodes) if (!codes.includes(code)) codes.push(code);
+  }
+  if (!codes.length && query) {
+    codes.push(...getAudienceCodesForOffer({ title: query, category: query, price: 1, originalPrice: 1 }, audiences));
+  }
+  const thematic = codes.filter((code) => !['G01', 'G10'].includes(String(code).toUpperCase()));
+  const selectedCodes = [...thematic, ...codes.filter((code) => !thematic.includes(code))].slice(0, 2);
+  return selectedCodes.map((code) => (audiences || []).find((audience) =>
+    String(audience.code || '').toUpperCase() === String(code || '').toUpperCase()
+  )).filter((audience) => audience && audience.enabled !== false).map((audience) => ({
+    code: String(audience.code || ''),
+    name: String(audience.name || ''),
+    whatsappLink: String(audience.whatsappLink || '')
+  }));
+}
+
+function assistantProducts(query, offers, config, analytics, { maximum, preferCheapest, store, seenProductIds }) {
+  const normalizedStore = normalizeSearchText(store);
+  let ranked = rankProductSearchResults(query, offers, { strict: false, limitPerStore: 50 })
+    .filter((offer) => !normalizedStore || normalizeSearchText(offer.store).includes(normalizedStore))
+    .filter((offer) => !Number.isFinite(maximum) || Number(offer.price || 0) <= maximum)
+    .filter((offer) => !seenProductIds.has(String(offer.id || '')));
+
+  ranked.sort((a, b) => preferCheapest
+    ? Number(a.price || 0) - Number(b.price || 0)
+    : (Number(b.relevance?.score || 0) * 2 + smartOfferScore(b, config, analytics)) - (Number(a.relevance?.score || 0) * 2 + smartOfferScore(a, config, analytics))
+  );
+
+  const selected = [];
+  const storeCounts = new Map();
+  for (const offer of ranked) {
+    const storeKey = normalizeSearchText(offer.store) || 'loja';
+    if ((storeCounts.get(storeKey) || 0) >= 2) continue;
+    selected.push(offer);
+    storeCounts.set(storeKey, (storeCounts.get(storeKey) || 0) + 1);
+    if (selected.length >= 4) break;
+  }
+  return selected;
 }
 
 function analyticsDay(date = new Date()) {
@@ -1634,15 +1763,6 @@ app.get(
       legalPrivacyCustomText
     } = config;
 
-    /*
-     * Apenas consulta o estado.
-     *
-     * NÃO faz chamada para Gemini,
-     * OpenAI ou Groq.
-     */
-    const aiStatus =
-      getAiAvailability();
-
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({
       brandName,
@@ -1686,11 +1806,7 @@ app.get(
       legalTermsCustomText,
       legalPrivacyCustomText,
 
-      assistantAvailable:
-        Boolean(
-          config.aiEnabled !== false &&
-          aiStatus.available
-        )
+      assistantAvailable: config.assistantEnabled !== false
     });
   }
 );
@@ -1712,8 +1828,7 @@ const publicHomeConfigKeys = [
 
 function publicHomeConfig(config) {
   const payload = Object.fromEntries(publicHomeConfigKeys.map((key) => [key, config[key]]));
-  const aiStatus = getAiAvailability();
-  payload.assistantAvailable = Boolean(config.aiEnabled !== false && aiStatus.available);
+  payload.assistantAvailable = config.assistantEnabled !== false;
   return payload;
 }
 
@@ -6664,71 +6779,88 @@ app.post(
           });
       }
 
-      const data =
-        await readStore();
+      const data = await readStore();
+      const history = sanitizeAssistantHistory(req.body?.history);
+      const userContext = [...history.filter((entry) => entry.role === 'user').map((entry) => entry.content), message].join(' ');
+      const eligibleOffers = (Array.isArray(data.offers) ? data.offers : [])
+        .filter((offer) => publicOfferAllowed(offer, data.config));
+      const audiences = Array.isArray(data.config.whatsappAudiences)
+        ? data.config.whatsappAudiences
+        : [];
+      const query = assistantCatalogQuery(userContext, eligibleOffers);
+      const currentBudget = assistantBudgetFromText(message);
+      const budget = currentBudget.specified ? currentBudget : assistantBudgetFromText(userContext);
+      const requestedStore = assistantStoreFromText(userContext);
+      const seenProductIds = new Set((Array.isArray(req.body?.seenProductIds) ? req.body.seenProductIds : [])
+        .map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100));
 
-      const secrets =
-        await readSecrets();
+      if (!query) {
+        return res.json({
+          status: 'question',
+          message: 'Claro! Qual produto você está procurando? Se puder, conte também para que vai usar e quanto pretende gastar.',
+          products: [],
+          audiences: []
+        });
+      }
 
-      const audiences =
-        Array.isArray(
-          data.config
-            .whatsappAudiences
-        )
-          ? data.config
-              .whatsappAudiences
-          : [];
+      if (!budget.specified) {
+        return res.json({
+          status: 'question',
+          message: `Entendi: você procura ${query}. Qual é o valor máximo que pretende gastar? Você também pode responder “sem limite”.`,
+          products: [],
+          audiences: []
+        });
+      }
 
-      const recommendation =
-        await recommendWhatsappAudiences(
-          message,
-          audiences,
-          data.config,
-          secrets
-        );
+      let products = assistantProducts(query, eligibleOffers, data.config, data.analytics || {}, {
+        maximum: budget.maximum,
+        preferCheapest: budget.preferCheapest,
+        store: requestedStore,
+        seenProductIds
+      });
 
-      const recommendedAudiences =
-        recommendation.codes
-          .map(
-            (code) =>
-              audiences.find(
-                (audience) =>
-                  normalizeAudienceCode(
-                    audience.code
-                  ) ===
-                  normalizeAudienceCode(
-                    code
-                  )
-              )
-          )
-          .filter(
-            (audience) =>
-              audience &&
-              audience.enabled !==
-                false &&
-              audience
-                .whatsappLink
-          )
-          .map(
-            (audience) => ({
-              code:
-                audience.code,
+      // Se a pessoa pediu mais opções e todas já foram vistas, recomeça a lista em vez de responder vazio.
+      if (!products.length && seenProductIds.size) {
+        products = assistantProducts(query, eligibleOffers, data.config, data.analytics || {}, {
+          maximum: budget.maximum,
+          preferCheapest: budget.preferCheapest,
+          store: requestedStore,
+          seenProductIds: new Set()
+        });
+      }
 
-              name:
-                audience.name,
+      if (!products.length) {
+        const priceText = Number.isFinite(budget.maximum)
+          ? ` até ${Number(budget.maximum).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+          : '';
+        return res.json({
+          status: 'question',
+          message: `Não encontrei uma oferta pública de ${query}${priceText}${requestedStore ? ` na ${requestedStore}` : ''} agora. Quer tentar outro valor, loja, marca ou modelo?`,
+          products: [],
+          audiences: assistantAudienceRecommendations(query, [], audiences)
+        });
+      }
 
-              whatsappLink:
-                audience
-                  .whatsappLink
-            })
-          );
+      const recommendedAudiences = assistantAudienceRecommendations(query, products, audiences);
+      const productPayload = products.map((offer) => ({
+        id: String(offer.id || ''),
+        title: String(offer.title || ''),
+        store: String(offer.store || ''),
+        category: String(offer.category || ''),
+        price: Number(offer.price || 0),
+        originalPrice: Number(offer.originalPrice || 0),
+        discount: offerDiscount(offer),
+        image: String(offer.image || ''),
+        affiliateUrl: String(offer.affiliateUrl || ''),
+        publicSlug: offerPublicSlug(offer),
+        freeShipping: offer.freeShipping === true
+      }));
 
-      res.json({
-        message:
-          recommendation.message,
-
-        audiences:
-          recommendedAudiences
+      return res.json({
+        status: 'result',
+        message: `Separei ${productPayload.length} ${productPayload.length === 1 ? 'oferta que combina' : 'ofertas que combinam'} com o seu pedido. Quer que eu refine por marca, loja, preço ou outra característica?`,
+        products: productPayload,
+        audiences: recommendedAudiences
       });
     } catch (error) {
       console.error(
@@ -6740,7 +6872,7 @@ app.post(
         .status(500)
         .json({
           error:
-            'Não consegui encontrar um grupo agora. Tente novamente em alguns instantes.'
+            'Não consegui consultar as ofertas agora. Tente novamente em alguns instantes.'
         });
     }
   }
