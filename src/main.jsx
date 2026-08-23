@@ -684,7 +684,7 @@ function SiteFooter({ config = fallbackConfig }) {
         <a href="/contato">Fale conosco ↗</a>
       </div>
     </div>
-    <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Responsável: Jhonata Ferreira de Araujo · Brasília/DF</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
+    <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
   </footer>;
 }
 
