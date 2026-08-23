@@ -336,7 +336,7 @@ function PublicSite() {
                   {coupon.description && <p>{coupon.description}</p>}
                   {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
                   {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
-                  <a className="button primary full" href={coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
+                  <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer">Ativar cupom <span>↗</span></a>
                 </article>
               ))}
             </div>
@@ -1148,6 +1148,19 @@ function AdminApp() {
     setCouponForm(defaultCoupon);
     setMessage('Edição cancelada.');
   }
+  async function copyShortCouponUrl(coupon) {
+    const shortUrl = String(coupon?.shortUrl || '').trim();
+    if (!shortUrl) {
+      setMessage('Este cupom ainda não possui um link curto.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shortUrl);
+      setMessage('Link curto copiado.');
+    } catch {
+      setMessage('Não foi possível copiar o link curto neste navegador.');
+    }
+  }
   async function removeCoupon(id) {
     if (!window.confirm('Excluir este cupom?')) return;
     try {
@@ -1894,7 +1907,7 @@ function AdminApp() {
         <div className="settings-grid two-columns"><label className="toggle-card"><input type="checkbox" checked={couponForm.featured} onChange={(event) => setCouponForm({ ...couponForm, featured: event.target.checked })} /><span><strong>Destacar no site</strong><small>Mostra o cupom antes dos demais.</small></span></label><label className="toggle-card"><input type="checkbox" checked={couponForm.active} onChange={(event) => setCouponForm({ ...couponForm, active: event.target.checked })} /><span><strong>Ativo</strong><small>Cupons inativos não aparecem no site.</small></span></label></div>
         <div className="coupon-form-actions"><button className="button primary full" type="submit">{editingCouponId ? 'Salvar alterações' : 'Cadastrar cupom'}</button>{editingCouponId && <button className="coupon-cancel-button" type="button" onClick={cancelCouponEdit}>Cancelar edição</button>}</div>
       </form>
-      <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
+      <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}

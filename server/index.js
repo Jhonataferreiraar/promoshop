@@ -400,6 +400,37 @@ function requestBaseUrl(req) {
   return `${protocol}://${req.get('host')}`;
 }
 
+function publicBaseUrl(req) {
+  if (req?.get) return requestBaseUrl(req).replace(/\/$/, '');
+  const configured = String(
+    process.env.PUBLIC_URL || process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || ''
+  ).split(',')[0].trim().replace(/\/$/, '');
+  return configured || `http://localhost:${port}`;
+}
+
+function couponShortCode(coupon) {
+  const stored = String(coupon?.shortCode || '').trim().toLowerCase();
+  if (stored) return stored;
+  const fallback = String(coupon?.id || '')
+    .replace(/^coupon_/i, '')
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(-12)
+    .toLowerCase();
+  return fallback || 'coupon';
+}
+
+function createCouponShortCode(coupons = []) {
+  let code = '';
+  do {
+    code = crypto.randomBytes(4).toString('hex');
+  } while (coupons.some((coupon) => couponShortCode(coupon) === code));
+  return code;
+}
+
+function couponShortUrl(coupon, req) {
+  return `${publicBaseUrl(req)}/c/${encodeURIComponent(couponShortCode(coupon))}`;
+}
+
 function inboundWebhookUrl(req, token) {
   return `${requestBaseUrl(req)}/api/webhooks/brevo/inbound?token=${encodeURIComponent(token)}`;
 }
@@ -558,7 +589,7 @@ function formatCouponMessage(coupon) {
   if (expiresAt && !Number.isNaN(expiresAt.getTime())) {
     parts.push(`⏰ Válido até ${expiresAt.toLocaleDateString('pt-BR')}.`);
   }
-  if (coupon?.link) parts.push(`👉 Ative aqui: ${coupon.link}`);
+  if (coupon?.link) parts.push(`👉 Ative aqui: ${coupon.shortUrl || coupon.link}`);
   parts.push('⚠️ Confira as regras e a validade antes de usar.');
   return parts.filter(Boolean).join('\n\n');
 }
@@ -1295,7 +1326,7 @@ app.get(
 
 app.get(
   '/api/coupons',
-  async (_req, res) => {
+  async (req, res) => {
     const { coupons } = await readStore();
     const now = Date.now();
 
@@ -1311,8 +1342,38 @@ app.get(
         })
         .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
         .slice(0, 100)
-        .map(({ targetAudienceCodes, ...coupon }) => coupon)
+        .map(({ targetAudienceCodes, ...coupon }) => ({
+          ...coupon,
+          shortUrl: couponShortUrl(coupon, req)
+        }))
     );
+  }
+);
+
+app.get(
+  '/c/:code',
+  async (req, res) => {
+    const code = String(req.params.code || '').trim().toLowerCase();
+    if (!/^[a-z0-9_-]{4,80}$/.test(code)) return res.status(404).send('Cupom não encontrado.');
+
+    const { coupons } = await readStore();
+    const coupon = (Array.isArray(coupons) ? coupons : []).find((entry) => couponShortCode(entry) === code);
+    if (!coupon || coupon.active === false) return res.status(404).send('Cupom não encontrado ou inativo.');
+
+    if (coupon.expiresAt) {
+      const expiresAt = new Date(coupon.expiresAt).getTime();
+      if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return res.status(410).send('Este cupom expirou.');
+    }
+
+    let destination;
+    try {
+      destination = new URL(String(coupon.link || '').trim());
+    } catch {
+      destination = null;
+    }
+    if (!destination || !['http:', 'https:'].includes(destination.protocol)) return res.status(404).send('Link do cupom indisponível.');
+
+    return res.redirect(302, destination.toString());
   }
 );
 
@@ -2051,7 +2112,7 @@ app.get(
   '/api/admin/dashboard',
   requireAdmin,
   async (
-    _req,
+    req,
     res
   ) => {
     const data =
@@ -2087,6 +2148,11 @@ app.get(
 
     res.json({
       ...data,
+      coupons: (Array.isArray(data.coupons) ? data.coupons : []).map((coupon) => ({
+        ...coupon,
+        shortCode: couponShortCode(coupon),
+        shortUrl: couponShortUrl(coupon, req)
+      })),
 
       analytics:
         summarizeAnalytics(
@@ -2912,7 +2978,7 @@ app.post(
     const parsed = parseCouponInput(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
 
-    const coupon = {
+    let coupon = {
       id: createId('coupon'),
       ...parsed.fields,
       source: 'manual',
@@ -2922,6 +2988,8 @@ app.post(
 
     await updateStore((data) => {
       data.coupons ||= [];
+      coupon.shortCode = createCouponShortCode(data.coupons);
+      coupon.shortUrl = couponShortUrl(coupon, req);
       data.coupons.unshift(coupon);
       data.coupons = data.coupons.slice(0, 300);
     });
@@ -2949,7 +3017,8 @@ app.put(
         return;
       }
 
-      Object.assign(coupon, parsed.fields, { updatedAt: new Date().toISOString() });
+      if (!coupon.shortCode) coupon.shortCode = createCouponShortCode(data.coupons);
+      Object.assign(coupon, parsed.fields, { shortUrl: couponShortUrl(coupon, req), updatedAt: new Date().toISOString() });
       data.queue ||= [];
       if (coupon.active === false) {
         data.queue = data.queue.filter((item) => !(item.kind === 'coupon' && item.couponId === coupon.id && item.status === 'pending'));
@@ -2960,8 +3029,8 @@ app.put(
           item.offerTitle = coupon.title;
           item.store = coupon.store || 'Magalu';
           item.targetAudienceCodes = targetAudienceCodes;
-          item.couponSnapshot = { ...coupon, targetAudienceCodes };
-          item.message = formatCouponMessage(coupon);
+          item.couponSnapshot = { ...coupon, targetAudienceCodes, shortUrl: couponShortUrl(coupon, req) };
+          item.message = formatCouponMessage({ ...coupon, shortUrl: couponShortUrl(coupon, req) });
           item.image = coupon.image || '';
         });
       }
@@ -3004,7 +3073,9 @@ app.post(
       if (!coupon || coupon.active === false) return;
       const targetAudienceCodes = normalizeCouponAudienceCodes(coupon.targetAudienceCodes);
       if (!targetAudienceCodes.length) return;
-      const message = formatCouponMessage(coupon);
+      if (!coupon.shortCode) coupon.shortCode = createCouponShortCode(data.coupons);
+      const couponForDelivery = { ...coupon, shortUrl: couponShortUrl(coupon, req) };
+      const message = formatCouponMessage(couponForDelivery);
       queueItem = {
         id: createId('queue'),
         kind: 'coupon',
@@ -3013,7 +3084,7 @@ app.post(
         offerTitle: coupon.title,
         store: coupon.store || 'Magalu',
         targetAudienceCodes,
-        couponSnapshot: { ...coupon, targetAudienceCodes },
+        couponSnapshot: { ...couponForDelivery, targetAudienceCodes },
         message,
         messageSource: 'coupon',
         aiStatus: 'not-applicable',

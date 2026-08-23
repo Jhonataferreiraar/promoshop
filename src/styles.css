@@ -4725,6 +4725,7 @@ button {
 .coupon-admin-row > div:first-child { display: grid; flex: 1 1 240px; gap: 5px; min-width: 0; }
 .coupon-admin-row > div:first-child > strong { overflow-wrap: anywhere; color: #101828; line-height: 1.35; }
 .coupon-admin-row small { color: #667085; }
+.coupon-short-link { overflow-wrap: anywhere; color: var(--primary) !important; font-size: 12px; }
 .coupon-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; flex: 0 0 auto; }
 .coupon-row-actions button { min-height: 34px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 9px; color: #344054; background: #fff; font-size: 12px; font-weight: 800; cursor: pointer; }
 .coupon-row-actions button.edit { color: var(--primary); border-color: #b2ccff; background: #f5f8ff; }
