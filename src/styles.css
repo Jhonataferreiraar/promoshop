@@ -103,11 +103,11 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+.search-control { min-width: 0; display: grid; gap: 8px; }
 .search-box, .sort-filter { min-height: 66px; border: 1px solid #d0d5dd; border-radius: 13px; background: #fff; }
 .search-box { display: flex; align-items: center; gap: 12px; padding: 0 16px; }
 .search-box > span:first-child { color: var(--primary); font-size: 25px; }
-.search-field { flex: 1; display: grid; gap: 2px; }
-.search-field small, .store-filter > small, .sort-filter > small { color: #667085; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.search-control > small, .store-filter > small, .sort-filter > small { color: #667085; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .search-box input { width: 100%; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-weight: 600; }
 .store-filter { display: grid; gap: 8px; }
 .store-filter > div { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -633,6 +633,7 @@ a {
 .card-one {
   left: 1%;
   top: 17%;
+  animation: float-card-one 4.4s ease-in-out infinite;
 }
 
 .card-two {
@@ -640,10 +641,21 @@ a {
   bottom: 19%;
   flex-direction: row;
   align-items: center;
+  animation: float-card-two 4s ease-in-out .55s infinite;
 }
 
 .card-two span {
   font-size: 25px;
+}
+
+@keyframes float-card-one {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1deg); }
+  50% { transform: translate3d(0, -12px, 0) rotate(1deg); }
+}
+
+@keyframes float-card-two {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(1deg); }
+  50% { transform: translate3d(0, 12px, 0) rotate(-1deg); }
 }
 
 .search-panel {
@@ -4679,9 +4691,11 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
 
+  .floating-card,
   .assistant-floating-button,
   .assistant-group,
   .assistant-chat-head button {
+    animation: none;
     transition: none;
   }
 

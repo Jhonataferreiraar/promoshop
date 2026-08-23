@@ -295,7 +295,7 @@ function PublicSite() {
       </section>
 
       <section className="search-panel container" aria-label="Filtros de ofertas">
-        <label className="search-box"><span>⌕</span><span className="search-field"><small>O que você procura?</small><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Busque por produto, marca ou loja" /></span></label>
+        <label className="search-control"><small>O que você procura?</small><span className="search-box"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Busque por produto, marca ou loja" /></span></label>
         <div className="store-filter"><small>Filtrar por loja</small><div>{stores.map((item) => <button type="button" className={store === item ? 'active' : ''} key={item} onClick={() => setStore(item)}>{item}</button>)}</div></div>
         <label className="sort-filter"><small>Ordenar por</small><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Ordenar ofertas"><option value="discount">Maior desconto</option><option value="recent">Mais recentes</option><option value="price">Menor preço</option></select></label>
         {(query || store !== 'Todas') && <button type="button" className="clear-filters" onClick={() => { setQuery(''); setStore('Todas'); }}>Limpar filtros</button>}
