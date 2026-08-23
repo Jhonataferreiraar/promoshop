@@ -65,6 +65,21 @@ try {
   const authorization = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 200);
 
+  const initialDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  const technologyAudience = initialDashboard.config.whatsappAudiences.find((audience) => audience.code === 'G02');
+  technologyAudience.keywords = ['notebook', ' Notebook ', 'ultrabook'];
+  technologyAudience.blockedKeywords = ['usado', ' USADO '];
+  const keywordSave = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT',
+    headers: authorization,
+    body: JSON.stringify({ whatsappAudiences: initialDashboard.config.whatsappAudiences })
+  });
+  assert.equal(keywordSave.status, 200);
+  const dashboardWithKeywords = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  const savedTechnologyAudience = dashboardWithKeywords.config.whatsappAudiences.find((audience) => audience.code === 'G02');
+  assert.deepEqual(savedTechnologyAudience.keywords, ['notebook', 'ultrabook']);
+  assert.deepEqual(savedTechnologyAudience.blockedKeywords, ['usado']);
+
   const receiptId = 'privacyreceipt1234567890';
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
     method: 'POST',

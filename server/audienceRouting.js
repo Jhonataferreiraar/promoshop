@@ -606,7 +606,10 @@ export function getAudienceCodesForOffer(
             .toUpperCase() === 'G01'
       );
 
-    if (general) {
+    const generalKeywords = Array.isArray(general?.keywords) ? general.keywords : [];
+    const generalMatches = !generalKeywords.length || getKeywordMatchScore(searchParts.all, general).score > 0;
+
+    if (general && generalMatches && isOfferAllowedForAudience(offer, general)) {
       codes.push('G01');
     }
   }
@@ -639,10 +642,14 @@ export function getAudienceCodesForOffer(
         dealsAudience.minDiscount ||
         40
       );
+    const dealsKeywords = Array.isArray(dealsAudience.keywords) ? dealsAudience.keywords : [];
+    const dealsMatch = !dealsKeywords.length || getKeywordMatchScore(searchParts.all, dealsAudience).score > 0;
 
     if (
       minimumDiscount > 0 &&
       discount >= minimumDiscount &&
+      dealsMatch &&
+      isOfferAllowedForAudience(offer, dealsAudience) &&
       !codes.includes('G10')
     ) {
       codes.push('G10');

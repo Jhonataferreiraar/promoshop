@@ -507,6 +507,44 @@ function boundedNumber(value, fallback, minimum, maximum) {
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
 }
 
+function sanitizeAudienceKeywordList(value) {
+  const words = Array.isArray(value) ? value : String(value || '').split(/[,;\n]+/);
+  const result = [];
+  const seen = new Set();
+  for (const word of words) {
+    const clean = String(word || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+    const key = clean.toLocaleLowerCase('pt-BR');
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    result.push(clean);
+    if (result.length >= 200) break;
+  }
+  return result;
+}
+
+function sanitizeWhatsappAudiences(value) {
+  const audiences = Array.isArray(value) ? value : [];
+  const seenCodes = new Set();
+  return audiences.slice(0, 50).map((audience) => {
+    const code = String(audience?.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    if (!code || seenCodes.has(code)) return null;
+    seenCodes.add(code);
+    const profile = String(audience?.profile || 'general').toLowerCase() === 'female' ? 'female' : 'general';
+    return {
+      code,
+      name: String(audience?.name || '').trim().slice(0, 100),
+      whatsappLink: /^https:\/\//i.test(String(audience?.whatsappLink || '').trim()) ? String(audience.whatsappLink).trim().slice(0, 1000) : '',
+      enabled: audience?.enabled !== false,
+      general: code === 'G01',
+      deals: code === 'G10',
+      profile,
+      minDiscount: boundedNumber(audience?.minDiscount, code === 'G10' ? 40 : 0, 0, 99),
+      keywords: sanitizeAudienceKeywordList(audience?.keywords),
+      blockedKeywords: sanitizeAudienceKeywordList(audience?.blockedKeywords)
+    };
+  }).filter(Boolean);
+}
+
 function normalizeAnalyticsId(value) {
   const id = String(value || '').trim();
   return /^[a-zA-Z0-9_-]{16,128}$/.test(id) ? id : '';
@@ -2886,6 +2924,13 @@ app.put(
           ...data.config,
           ...body
         };
+
+        if (Object.prototype.hasOwnProperty.call(body, 'whatsappAudiences')) {
+          const sanitizedAudiences = sanitizeWhatsappAudiences(body.whatsappAudiences);
+          data.config.whatsappAudiences = sanitizedAudiences.length
+            ? sanitizedAudiences
+            : previousAudiences;
+        }
 
         const numericRules = {
           publicOfferPageSize: [24, 6, 60],

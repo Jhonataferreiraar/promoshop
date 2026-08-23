@@ -1087,6 +1087,58 @@ function offerFormFromOffer(offer) {
   };
 }
 
+function KeywordEditor({ label, value, onChange, placeholder, help }) {
+  const [draft, setDraft] = useState('');
+  const words = Array.isArray(value) ? value : [];
+
+  function addWords(rawValue = draft) {
+    const additions = String(rawValue || '')
+      .split(/[,;\n]+/)
+      .map((word) => word.trim())
+      .filter(Boolean);
+    if (!additions.length) return;
+
+    const next = [];
+    const seen = new Set();
+    for (const word of [...words, ...additions]) {
+      const clean = String(word).trim().slice(0, 80);
+      const key = clean.toLocaleLowerCase('pt-BR');
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      next.push(clean);
+      if (next.length >= 200) break;
+    }
+    onChange(next);
+    setDraft('');
+  }
+
+  function removeWord(index) {
+    onChange(words.filter((_, wordIndex) => wordIndex !== index));
+  }
+
+  return <div className="keyword-editor">
+    <span className="keyword-editor-label">{label}</span>
+    <div className="keyword-tags">
+      {words.map((word, index) => <span className="keyword-tag" key={`${word}-${index}`}>{word}<button type="button" onClick={() => removeWord(index)} aria-label={`Remover ${word}`}>×</button></span>)}
+      {!words.length && <small>Nenhuma palavra cadastrada.</small>}
+    </div>
+    <div className="keyword-entry">
+      <input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ',') return;
+          event.preventDefault();
+          addWords();
+        }}
+        placeholder={placeholder}
+      />
+      <button className="button subtle" type="button" onClick={() => addWords()}>Adicionar</button>
+    </div>
+    <small>{help}</small>
+  </div>;
+}
+
 function couponDateTimeLocal(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -1169,23 +1221,15 @@ function AdminApp() {
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const backupInputRef = useRef(null);
   function updateAudience(index, changes) {
-    const audiences = Array.isArray(
-      data.config.whatsappAudiences
-    )
-      ? [...data.config.whatsappAudiences]
-      : [];
-
-    audiences[index] = {
-      ...audiences[index],
-      ...changes
-    };
-
-    setData({
-      ...data,
-      config: {
-        ...data.config,
-        whatsappAudiences: audiences
-      }
+    setData((current) => {
+      const audiences = Array.isArray(current.config.whatsappAudiences)
+        ? [...current.config.whatsappAudiences]
+        : [];
+      audiences[index] = { ...audiences[index], ...changes };
+      return {
+        ...current,
+        config: { ...current.config, whatsappAudiences: audiences }
+      };
     });
   }
 
@@ -3001,80 +3045,46 @@ function AdminApp() {
 
                   {audience.code !== 'G01' &&
                     audience.code !== 'G10' && (
-                      <>
-                        <label>
-                          Perfil do público
+                      <label>
+                        Perfil do público
 
-                          <select
-                            value={audience.profile || 'general'}
-                            onChange={(event) =>
-                              updateAudience(index, {
-                                profile: event.target.value
-                              })
-                            }
-                          >
-                            <option value="general">Geral</option>
-                            <option value="female">Somente feminino</option>
-                          </select>
-
-                          <small>
-                            No perfil feminino, produtos masculinos são barrados mesmo que a IA os classifique neste grupo.
-                          </small>
-                        </label>
-
-                        <label>
-                        Palavras-chave
-
-                        <textarea
-                          value={
-                            Array.isArray(audience.keywords)
-                              ? audience.keywords.join(', ')
-                              : ''
-                          }
+                        <select
+                          value={audience.profile || 'general'}
                           onChange={(event) =>
                             updateAudience(index, {
-                              keywords:
-                                event.target.value
-                                  .split(',')
-                                  .map((word) => word.trim())
-                                  .filter(Boolean)
+                              profile: event.target.value
                             })
                           }
-                          placeholder="iphone, smartphone, celular, notebook..."
-                        />
+                        >
+                          <option value="general">Geral</option>
+                          <option value="female">Somente feminino</option>
+                        </select>
 
                         <small>
-                          Separe cada palavra ou produto por vírgula.
+                          No perfil feminino, produtos masculinos são barrados mesmo que a IA os classifique neste grupo.
                         </small>
-                        </label>
-
-                        <label>
-                          Termos bloqueados
-
-                          <textarea
-                            value={
-                              Array.isArray(audience.blockedKeywords)
-                                ? audience.blockedKeywords.join(', ')
-                                : ''
-                            }
-                            onChange={(event) =>
-                              updateAudience(index, {
-                                blockedKeywords: event.target.value
-                                  .split(',')
-                                  .map((word) => word.trim())
-                                  .filter(Boolean)
-                              })
-                            }
-                            placeholder="masculino, homem, barba, menino..."
-                          />
-
-                          <small>
-                            Se o anúncio contiver um destes termos, não será enviado para este público.
-                          </small>
-                        </label>
-                      </>
-
+                      </label>
                     )}
+
+                  <KeywordEditor
+                    label="Palavras-chave"
+                    value={audience.keywords}
+                    onChange={(keywords) => updateAudience(index, { keywords })}
+                    placeholder="Digite uma palavra ou cole uma lista"
+                    help={audience.code === 'G01'
+                      ? 'Se a lista ficar vazia, este grupo recebe ofertas que não combinarem com outro público. Com palavras, recebe apenas as ofertas gerais que também combinarem com elas.'
+                      : audience.code === 'G10'
+                        ? 'Se a lista ficar vazia, basta atingir o desconto mínimo. Com palavras, a oferta também precisa combinar com pelo menos uma delas.'
+                        : 'Você pode adicionar várias palavras separadas por vírgula, ponto e vírgula ou linha.'}
+                  />
+
+                  <KeywordEditor
+                    label="Termos bloqueados"
+                    value={audience.blockedKeywords}
+                    onChange={(blockedKeywords) => updateAudience(index, { blockedKeywords })}
+                    placeholder="Ex.: masculino, barba, menino"
+                    help="Se o anúncio contiver um destes termos, ele não será enviado para este público."
+                  />
 
 
                   {audience.code === 'G10' && (

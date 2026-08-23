@@ -4211,6 +4211,22 @@ button {
   opacity: 0.7;
 }
 
+.keyword-editor { display: grid; min-width: 0; gap: 8px; }
+.keyword-editor-label { color: #344054; font-size: 14px; font-weight: 800; }
+.keyword-tags { display: flex; flex-wrap: wrap; min-height: 42px; gap: 7px; padding: 9px; border: 1px solid #e4e7ec; border-radius: 11px; background: #f8fafc; }
+.keyword-tags > small { align-self: center; padding: 0 3px; color: #667085; }
+.keyword-tag { display: inline-flex; align-items: center; max-width: 100%; min-height: 30px; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid #b2ccff; border-radius: 999px; color: #175cd3; background: #eff8ff; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
+.keyword-tag button { flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; color: #175cd3; background: #dbeafe; font-size: 16px; line-height: 1; cursor: pointer; }
+.keyword-tag button:hover { color: #fff; background: #175cd3; }
+.keyword-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.keyword-entry .button { min-width: 92px; padding-inline: 14px; }
+
+@media (max-width: 480px) {
+  .keyword-entry { grid-template-columns: minmax(0, 1fr); }
+  .keyword-entry .button { width: 100%; }
+  .keyword-tag { max-width: 100%; }
+}
+
 .audience-public-section {
   padding: 90px 0;
 
