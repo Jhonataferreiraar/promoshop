@@ -111,9 +111,11 @@ const fallbackOffers = [
 ];
 
 async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const response = await fetch(`/api${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    headers
   });
   if (!response.ok) {
     const error = new Error((await response.json().catch(() => ({}))).error || 'Falha na solicitação');
@@ -329,7 +331,7 @@ function readFavorites() {
 
 function OfferCard({ offer, config, favorite = false, onFavorite }) {
   return <article className="offer-card">
-    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={offer.image} alt={offer.title} loading="lazy" referrerPolicy="no-referrer" /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
+    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={offer.image} alt={offer.title} width="640" height="640" loading="lazy" decoding="async" referrerPolicy="no-referrer" /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
     <div className="offer-content"><div className="offer-meta"><small>{offer.category}</small>{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3><a href={`/oferta/${offer.publicSlug || offer.id}`}>{offer.title}</a></h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
   </article>;
 }
@@ -369,32 +371,12 @@ function PublicSite() {
   usePublicAnalytics();
 
   useEffect(() => {
-    Promise.all([
-      api('/config/public'),
-      api('/coupons'),
-      api('/audiences/public')
-    ])
-      .then(
-        ([
-          configData,
-          couponData,
-          audienceData
-        ]) => {
-
-          setConfig({
-            ...fallbackConfig,
-            ...configData
-          });
-
-          setCoupons(Array.isArray(couponData) ? couponData : []);
-
-          setAudiences(
-            Array.isArray(audienceData)
-              ? audienceData
-              : []
-          );
-        }
-      )
+    api('/home')
+      .then(({ config: configData, coupons: couponData, audiences: audienceData }) => {
+        setConfig({ ...fallbackConfig, ...(configData || {}) });
+        setCoupons(Array.isArray(couponData) ? couponData : []);
+        setAudiences(Array.isArray(audienceData) ? audienceData : []);
+      })
       .catch(() => { });
   }, []);
 
@@ -418,7 +400,7 @@ function PublicSite() {
         freeShipping: freeShipping ? '1' : '',
         ids: favoritesOnly ? favorites.slice(0, 100).join(',') : ''
       });
-      const result = await api(`/offers?${params.toString()}`, { cache: 'no-store' });
+      const result = await api(`/offers?${params.toString()}`);
       if (requestId !== offerRequestRef.current) return;
       const nextOffers = Array.isArray(result.offers) ? result.offers : [];
       setOffers((current) => append ? [...current, ...nextOffers] : nextOffers);
@@ -468,14 +450,14 @@ function PublicSite() {
     const refreshCoupons = () => {
       if (document.visibilityState === 'hidden') return;
 
-      api('/coupons', { cache: 'no-store' })
+      api('/coupons')
         .then((couponData) => {
           setCoupons(Array.isArray(couponData) ? couponData : []);
         })
         .catch(() => { });
     };
 
-    const interval = window.setInterval(refreshCoupons, 15000);
+    const interval = window.setInterval(refreshCoupons, 60000);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refreshCoupons();
     };

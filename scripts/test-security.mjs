@@ -50,6 +50,15 @@ try {
   assert.equal(health.headers.get('x-frame-options'), 'DENY');
   assert.match(health.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
 
+  const publicHomeResponse = await fetch(`${origin}/api/home`);
+  assert.equal(publicHomeResponse.status, 200);
+  const publicHome = await publicHomeResponse.json();
+  assert.equal(publicHome.config.brandName, 'PromoShop');
+  assert.ok(Array.isArray(publicHome.coupons));
+  assert.ok(Array.isArray(publicHome.audiences));
+  assert.equal(Object.hasOwn(publicHome.config, 'whatsappAudiences'), false);
+  assert.equal(Object.hasOwn(publicHome, 'secrets'), false);
+
   const validLogin = await login('SenhaInicialSegura123!');
   assert.equal(validLogin.status, 200);
   const { token } = await validLogin.json();

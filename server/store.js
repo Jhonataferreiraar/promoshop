@@ -212,15 +212,34 @@ const initialData = {
 };
 
 let writeChain = Promise.resolve();
+let ensurePromise = null;
+let cachedData = null;
+let cachedSignature = '';
 
 async function ensureStore() {
-  await fs.mkdir(dataDir, { recursive: true });
-  try { await fs.access(dataFile); }
-  catch { await fs.writeFile(dataFile, JSON.stringify(initialData, null, 2), 'utf8'); }
+  if (!ensurePromise) {
+    ensurePromise = (async () => {
+      await fs.mkdir(dataDir, { recursive: true });
+      try { await fs.access(dataFile); }
+      catch { await fs.writeFile(dataFile, JSON.stringify(initialData, null, 2), 'utf8'); }
+    })().catch((error) => {
+      ensurePromise = null;
+      throw error;
+    });
+  }
+  await ensurePromise;
+}
+
+function storeSignature(stats) {
+  return `${stats.size}:${stats.mtimeMs}`;
 }
 
 export async function readStore() {
   await ensureStore();
+  const stats = await fs.stat(dataFile);
+  const signature = storeSignature(stats);
+  if (cachedData && cachedSignature === signature) return cachedData;
+
   let data;
   let lastError;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -315,12 +334,14 @@ export async function readStore() {
       ...(data.analytics?.daily || {})
     }
   };
+  cachedData = data;
+  cachedSignature = signature;
   return data;
 }
 
 export async function updateStore(mutator) {
   writeChain = writeChain.catch(() => { }).then(async () => {
-    const data = await readStore();
+    const data = structuredClone(await readStore());
     const result = await mutator(data);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
     await fs.writeFile(temporaryFile, JSON.stringify(data, null, 2), 'utf8');
@@ -338,6 +359,9 @@ export async function updateStore(mutator) {
       await fs.unlink(temporaryFile).catch(() => { });
       throw error;
     }
+    const stats = await fs.stat(dataFile);
+    cachedData = data;
+    cachedSignature = storeSignature(stats);
     return result;
   });
   return writeChain;

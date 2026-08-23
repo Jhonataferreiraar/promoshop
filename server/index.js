@@ -76,6 +76,19 @@ const root = path.resolve(
   '..'
 );
 
+let indexHtmlPromise = null;
+
+function readIndexHtml() {
+  if (!indexHtmlPromise) {
+    indexHtmlPromise = fs.readFile(path.join(root, 'dist', 'index.html'), 'utf8')
+      .catch((error) => {
+        indexHtmlPromise = null;
+        throw error;
+      });
+  }
+  return indexHtmlPromise;
+}
+
 /*
  * Versão 7:
  *
@@ -1592,6 +1605,7 @@ app.get(
     const aiStatus =
       getAiAvailability();
 
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({
       brandName,
       heroTitle,
@@ -1642,6 +1656,65 @@ app.get(
     });
   }
 );
+
+const publicHomeConfigKeys = [
+  'brandName', 'heroTitle', 'heroText', 'primaryColor', 'whatsappUrl',
+  'disclosure', 'contactEmail', 'canonicalUrl', 'seoSiteName', 'seoTitle',
+  'seoDescription', 'seoKeywords', 'seoImageUrl', 'seoIndexingEnabled',
+  'seoStructuredDataEnabled', 'publicOfferPageSize', 'smartRankingEnabled',
+  'duplicateGroupingEnabled', 'rankingDiversityEnabled', 'publicAdvancedFiltersEnabled',
+  'favoritesEnabled', 'showOfferUpdatedAt', 'affiliateDisclosureLabel',
+  'mobileCompactMenu', 'clickAnalyticsEnabled', 'legalPolicyVersion',
+  'analyticsVisitorRetentionDays', 'analyticsDailyRetentionDays', 'legalResponsibleName',
+  'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail',
+  'legalResponseBusinessDays', 'legalContactRetentionMonths', 'legalConsentRetentionYears',
+  'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText',
+  'legalTermsCustomText', 'legalPrivacyCustomText'
+];
+
+function publicHomeConfig(config) {
+  const payload = Object.fromEntries(publicHomeConfigKeys.map((key) => [key, config[key]]));
+  const aiStatus = getAiAvailability();
+  payload.assistantAvailable = Boolean(config.aiEnabled !== false && aiStatus.available);
+  return payload;
+}
+
+function publicHomeCoupons(coupons, req) {
+  const now = Date.now();
+  return (Array.isArray(coupons) ? coupons : [])
+    .filter((coupon) => {
+      if (coupon.active === false) return false;
+      if (!coupon.expiresAt) return true;
+      const expiresAt = new Date(coupon.expiresAt).getTime();
+      return Number.isNaN(expiresAt) || expiresAt >= now;
+    })
+    .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 100)
+    .map(({ targetAudienceCodes, ...coupon }) => ({
+      ...coupon,
+      shortUrl: couponShortUrl(coupon, req)
+    }));
+}
+
+function publicHomeAudiences(config) {
+  return (Array.isArray(config.whatsappAudiences) ? config.whatsappAudiences : [])
+    .filter((audience) => audience.enabled !== false && audience.whatsappLink)
+    .map((audience) => ({
+      code: String(audience.code || ''),
+      name: String(audience.name || ''),
+      whatsappLink: String(audience.whatsappLink || '')
+    }));
+}
+
+app.get('/api/home', async (req, res) => {
+  const data = await readStore();
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+  res.json({
+    config: publicHomeConfig(data.config),
+    coupons: publicHomeCoupons(data.coupons, req),
+    audiences: publicHomeAudiences(data.config)
+  });
+});
 
 app.get(
   '/api/offers',
@@ -1761,7 +1834,7 @@ app.get(
     const { coupons } = await readStore();
     const now = Date.now();
 
-    res.set('Cache-Control', 'no-store');
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
 
     res.json(
       (Array.isArray(coupons) ? coupons : [])
@@ -2465,6 +2538,7 @@ app.get(
             .whatsappAudiences
         : [];
 
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     res.json(
       audiences
         .filter(
@@ -6755,6 +6829,7 @@ app.get('/sitemap.xml', async (req, res) => {
 
 app.get('/manifest.webmanifest', async (req, res) => {
   const { config } = await readStore();
+  res.set('Cache-Control', 'public, max-age=3600');
   res.type('application/manifest+json').send({
     name: config.brandName || 'PromoShop',
     short_name: config.brandName || 'PromoShop',
@@ -6803,7 +6878,7 @@ app.use(
 
     try {
       const [html, data] = await Promise.all([
-        fs.readFile(path.join(root, 'dist', 'index.html'), 'utf8'),
+        readIndexHtml(),
         readStore()
       ]);
       res.type('html').send(injectSeo(html, data, req));
