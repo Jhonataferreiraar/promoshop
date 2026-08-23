@@ -2924,7 +2924,8 @@ function parseCouponInput(body = {}, existing = {}) {
   const has = (key) => Object.prototype.hasOwnProperty.call(body || {}, key);
   const pick = (key, fallback = '') => has(key) ? body[key] : (existing[key] ?? fallback);
   const title = String(pick('title')).trim().slice(0, 180);
-  const link = String(pick('link')).trim().slice(0, 1000);
+  const rawLink = String(pick('link')).trim();
+  const link = rawLink.slice(0, 10000);
   const description = String(pick('description')).trim().slice(0, 500);
   const code = String(pick('code')).trim().slice(0, 80);
   const store = String(pick('store', 'Magalu')).trim().slice(0, 60) || 'Magalu';
@@ -2944,6 +2945,9 @@ function parseCouponInput(body = {}, existing = {}) {
 
   if (!title || !parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
     return { error: 'Informe o título e um link HTTPS válido para o cupom.' };
+  }
+  if (rawLink.length > 10000) {
+    return { error: 'O link do cupom é muito longo. Use um endereço com até 10.000 caracteres.' };
   }
   if (!targetAudienceCodes.length) {
     return { error: 'Selecione pelo menos um grupo para este cupom.' };
