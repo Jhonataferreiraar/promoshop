@@ -6739,8 +6739,7 @@ app.get('/manifest.webmanifest', async (req, res) => {
     theme_color: config.primaryColor || '#1269f3',
     icons: [
       { src: '/favicon-192.png', sizes: '192x192', type: 'image/png' },
-      { src: '/favicon-512.png', sizes: '512x512', type: 'image/png' },
-      { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }
+      { src: '/favicon-512.png', sizes: '512x512', type: 'image/png' }
     ]
   });
 });
