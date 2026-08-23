@@ -84,10 +84,56 @@ function anonymousStorageId(storage, key) {
   }
 }
 
+const analyticsConsentKey = 'promoshop_analytics_consent';
+const analyticsConsentEvent = 'promoshop:analytics-consent';
+const privacyOpenEvent = 'promoshop:privacy-open';
+
+function readAnalyticsConsent() {
+  try {
+    const value = window.localStorage.getItem(analyticsConsentKey);
+    return value === 'accepted' || value === 'rejected' ? value : '';
+  } catch {
+    return '';
+  }
+}
+
+function clearAnalyticsIdentifiers() {
+  try {
+    window.localStorage.removeItem('promoshop_analytics_visitor');
+    window.sessionStorage.removeItem('promoshop_analytics_session');
+    window.sessionStorage.removeItem('promoshop_analytics_pageview');
+  } catch { }
+}
+
+function saveAnalyticsConsent(value) {
+  try {
+    window.localStorage.setItem(analyticsConsentKey, value);
+  } catch { }
+  if (value === 'rejected') clearAnalyticsIdentifiers();
+
+  window.dispatchEvent(new CustomEvent(analyticsConsentEvent, { detail: value }));
+}
+
 function usePublicAnalytics() {
   const analyticsSentRef = useRef(false);
+  const [consent, setConsent] = useState(readAnalyticsConsent);
 
   useEffect(() => {
+    const updateConsent = (event) => setConsent(event.detail || readAnalyticsConsent());
+    const syncConsent = (event) => {
+      if (event.key === analyticsConsentKey) setConsent(readAnalyticsConsent());
+    };
+
+    window.addEventListener(analyticsConsentEvent, updateConsent);
+    window.addEventListener('storage', syncConsent);
+    return () => {
+      window.removeEventListener(analyticsConsentEvent, updateConsent);
+      window.removeEventListener('storage', syncConsent);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (consent !== 'accepted') return;
     if (analyticsSentRef.current) return;
     analyticsSentRef.current = true;
 
@@ -109,7 +155,51 @@ function usePublicAnalytics() {
         path: window.location.pathname
       })
     }).catch(() => { });
-  }, []);
+  }, [consent]);
+}
+
+function PrivacyConsent() {
+  const [choice, setChoice] = useState(readAnalyticsConsent);
+  const [open, setOpen] = useState(() => !readAnalyticsConsent());
+
+  useEffect(() => {
+    if (!choice) clearAnalyticsIdentifiers();
+
+    const showPreferences = () => setOpen(true);
+    const syncChoice = () => {
+      const nextChoice = readAnalyticsConsent();
+      setChoice(nextChoice);
+      if (nextChoice) setOpen(false);
+    };
+
+    window.addEventListener(privacyOpenEvent, showPreferences);
+    window.addEventListener('storage', syncChoice);
+    return () => {
+      window.removeEventListener(privacyOpenEvent, showPreferences);
+      window.removeEventListener('storage', syncChoice);
+    };
+  }, [choice]);
+
+  function choose(value) {
+    saveAnalyticsConsent(value);
+    setChoice(value);
+    setOpen(false);
+  }
+
+  if (!open) return null;
+
+  return <aside className="privacy-consent" role="dialog" aria-label="Preferências de privacidade" aria-live="polite">
+    <div className="privacy-consent-icon" aria-hidden="true">✓</div>
+    <div className="privacy-consent-copy">
+      <strong>Privacidade e medição de acessos</strong>
+      <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitantes e melhorar a PromoShop. O site continua funcionando normalmente se você rejeitar.</p>
+      <span><a href="/privacidade">Política de Privacidade</a><a href="/termos-de-uso">Termos de Uso</a>{choice && <small>Escolha atual: {choice === 'accepted' ? 'medição aceita' : 'medição rejeitada'}.</small>}</span>
+    </div>
+    <div className="privacy-consent-actions">
+      <button type="button" className="privacy-reject" onClick={() => choose('rejected')}>Rejeitar</button>
+      <button type="button" className="privacy-accept" onClick={() => choose('accepted')}>Aceitar medição</button>
+    </div>
+  </aside>;
 }
 
 function discount(offer) {
@@ -529,6 +619,7 @@ function PublicSite() {
     </main>
 
     <SiteFooter config={config} />
+    <PrivacyConsent />
   </div>;
 }
 
@@ -554,6 +645,7 @@ function SiteFooter({ config = fallbackConfig }) {
         <h3>Informações</h3>
         <a href="/termos-de-uso">Termos de uso</a>
         <a href="/privacidade">Privacidade</a>
+        <button type="button" className="footer-privacy-button" onClick={() => window.dispatchEvent(new Event(privacyOpenEvent))}>Preferências de privacidade</button>
       </div>
       <div className="footer-column footer-contact">
         <h3>Contato</h3>
@@ -602,10 +694,10 @@ const publicInfoPages = {
     title: 'Sua navegação com o mínimo de dados.',
     intro: 'Esta página explica, em linguagem simples, quais informações o PromoShop utiliza para funcionar e melhorar o serviço.',
     sections: [
-      { title: '1. Dados de navegação', paragraphs: ['Para medir o alcance do site, criamos um identificador anônimo no navegador. Ele não contém seu nome, e-mail, telefone ou endereço e é usado apenas para contar visitantes, visualizações e sessões.', 'O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas. Se você limpar os dados do navegador ou trocar de dispositivo, poderá ser contado como um novo visitante.'] },
+      { title: '1. Dados de navegação', paragraphs: ['Somente após a sua autorização, criamos um identificador anônimo no navegador para contar visitantes, visualizações e sessões. Ele não contém seu nome, e-mail, telefone ou endereço.', 'Você pode rejeitar essa medição sem perder nenhuma funcionalidade do site e alterar sua escolha a qualquer momento em “Preferências de privacidade”, no rodapé. O PromoShop não utiliza impressão digital do dispositivo e não armazena o endereço IP no painel de métricas.'] },
       { title: '2. Formulário de contato', paragraphs: ['Quando você envia uma mensagem pelo formulário, recebemos seu nome, e-mail e o conteúdo da mensagem para responder à solicitação. Esses dados são armazenados no painel administrativo do PromoShop e enviados ao Brevo, nosso serviço de entrega de e-mails, podendo permanecer nesses sistemas pelo tempo necessário para atender e organizar o contato.', 'Não usamos esses dados para vender listas ou enviar publicidade sem uma base adequada. Você pode solicitar informações sobre o uso dos seus dados pelo canal de contato indicado nesta página.'] },
       { title: '3. Links de terceiros', paragraphs: ['Ao acessar uma loja, o WhatsApp, o Brevo ou outro serviço externo, você passa a estar sujeito à política de privacidade e aos termos desse serviço. Recomendamos que leia as informações da plataforma antes de fornecer qualquer dado.'] },
-      { title: '4. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. As métricas anônimas são mantidas para gerar relatórios de alcance e são resumidas no painel administrativo. Não vendemos dados pessoais.'] },
+      { title: '4. Segurança e retenção', paragraphs: ['Adotamos medidas razoáveis para proteger as informações do sistema. O identificador anônimo pode ser mantido por até 365 dias e os registros diários por até 120 dias para gerar relatórios de alcance. Não vendemos dados pessoais.'] },
       { title: '5. Contato sobre privacidade', paragraphs: ['Se você tiver uma dúvida sobre esta política ou quiser falar sobre privacidade, utilize o canal de contato indicado abaixo.'] , contact: true }
     ]
   }
@@ -678,11 +770,12 @@ function InfoPage({ page }) {
     <main className="info-main">
       <section className="info-hero"><div className="container"><span className="eyebrow">{info.eyebrow}</span><h1>{info.title}</h1><p>{info.intro}</p></div></section>
       <article className="container info-content">
-        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} />}{section.contact && <div className="info-contact-actions">{contactEmail && <a className="button primary" href={`mailto:${contactEmail}`}>Enviar e-mail ↗</a>}{!contactEmail && <p className="info-contact-missing">O canal de contato será configurado em breve.</p>}</div>}</section>)}
+        {info.sections.map((section) => <section className="info-section" key={section.title}><h2>{section.title}</h2>{section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.contactForm && <ContactForm contactEmail={contactEmail} />}{section.contact && <div className="info-contact-actions"><a className="button primary" href="/contato">Ir para Fale Conosco ↗</a></div>}</section>)}
         <aside className="info-disclosure"><strong>Transparência do PromoShop</strong><p>Alguns links podem ser de afiliado. Se uma compra for realizada após o clique, podemos receber uma comissão sem custo adicional para você.</p></aside>
       </article>
     </main>
     <SiteFooter config={config} />
+    <PrivacyConsent />
   </div>;
 }
 
@@ -2652,7 +2745,7 @@ function AnalyticsDashboard({ analytics = {} }) {
 
   return <div className="analytics-layout">
     <div className="stats analytics-stats">
-      <div><span><i>◌</i>Visitantes únicos</span><strong>{Number(analytics.totalVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores anônimos identificados</small></div>
+      <div><span><i>◌</i>Visitantes únicos</span><strong>{Number(analytics.totalVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores que aceitaram a medição</small></div>
       <div><span><i>⌁</i>Acessos hoje</span><strong>{Number(today.pageViews || 0).toLocaleString('pt-BR')}</strong><small>Visualizações de páginas</small></div>
       <div><span><i>↗</i>Visitantes hoje</span><strong>{Number(today.uniqueVisitors || 0).toLocaleString('pt-BR')}</strong><small>Navegadores únicos no dia</small></div>
       <div><span><i>◷</i>Sessões</span><strong>{Number(analytics.totalSessions || 0).toLocaleString('pt-BR')}</strong><small>Períodos de até 30 minutos</small></div>
@@ -2666,7 +2759,7 @@ function AnalyticsDashboard({ analytics = {} }) {
       })}</div> : <div className="empty"><strong>Ainda não há acessos registrados</strong><p>As métricas aparecerão assim que alguém visitar o site público.</p></div>}
     </section>
 
-    <section className="panel analytics-note"><div className="analytics-note-icon">◎</div><div><h2>Como a contagem funciona</h2><p>O site cria um identificador anônimo no navegador para reconhecer retornos sem coletar nome, e-mail, endereço IP ou impressão digital do dispositivo. Se a pessoa limpar os dados do navegador ou trocar de dispositivo, ela será contada como um novo visitante.</p><small>Por isso, o painel mostra visitantes únicos por navegador — é a forma mais precisa possível sem login obrigatório e sem armazenar dados pessoais.</small></div></section>
+    <section className="panel analytics-note"><div className="analytics-note-icon">◎</div><div><h2>Como a contagem funciona</h2><p>A contagem inclui somente quem aceitou a medição de acessos. O site cria um identificador anônimo no navegador para reconhecer retornos sem coletar nome, e-mail, endereço IP ou impressão digital do dispositivo. Se a pessoa rejeitar, limpar os dados do navegador ou trocar de dispositivo, ela não será reconhecida pelo identificador anterior.</p><small>O painel mostra visitantes únicos por navegador entre as pessoas que autorizaram a medição. Quem rejeita continua usando o site normalmente e não entra nessas métricas.</small></div></section>
   </div>;
 }
 

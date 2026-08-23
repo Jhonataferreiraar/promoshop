@@ -4883,8 +4883,24 @@ button {
 .site-shell .site-footer .footer-column h3 { margin: 2px 0 5px; color: #fff; font-size: 13px; letter-spacing: .02em; }
 .site-shell .site-footer .footer-column a,
 .site-shell .site-footer .footer-column span { color: #aab8cc; font-size: 13px; line-height: 1.45; }
-.site-shell .site-footer .footer-column a:hover { color: #fff; }
+.site-shell .site-footer .footer-column a:hover,
+.site-shell .site-footer .footer-privacy-button:hover { color: #fff; }
+.site-shell .site-footer .footer-privacy-button { margin: 0; padding: 0; border: 0; color: #aab8cc; background: transparent; font: inherit; font-size: 13px; line-height: 1.45; text-align: left; cursor: pointer; }
 .site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
+.privacy-consent { position: fixed; z-index: 1000; right: 24px; bottom: 24px; left: 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; width: min(1040px, calc(100% - 48px)); margin-inline: auto; padding: 18px; border: 1px solid #d0d5dd; border-radius: 18px; color: #101828; background: rgba(255,255,255,.98); box-shadow: 0 24px 70px rgba(16,24,40,.22); backdrop-filter: blur(12px); }
+.privacy-consent-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #fff; background: var(--primary); font-weight: 900; box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 25%, transparent); }
+.privacy-consent-copy { min-width: 0; }
+.privacy-consent-copy > strong { display: block; margin-bottom: 4px; font: 800 15px/1.3 'Manrope', sans-serif; }
+.privacy-consent-copy p { max-width: 680px; margin: 0; color: #475467; font-size: 13px; line-height: 1.5; }
+.privacy-consent-copy > span { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 7px; }
+.privacy-consent-copy a { color: var(--primary); font-size: 12px; font-weight: 800; }
+.privacy-consent-copy small { color: #667085; font-size: 11px; }
+.privacy-consent-actions { display: flex; align-items: center; gap: 9px; }
+.privacy-consent-actions button { min-height: 42px; padding: 0 15px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.privacy-reject { border: 1px solid #d0d5dd; color: #344054; background: #fff; }
+.privacy-accept { border: 1px solid var(--primary); color: #fff; background: var(--primary); }
+.privacy-reject:hover { background: #f9fafb; }
+.privacy-accept:hover { background: var(--primary-dark); }
 .info-main { min-height: 65vh; background: #f8fafc; }
 .info-hero { padding: 76px 0 70px; color: #fff; background: linear-gradient(125deg, #0d4fc2, var(--primary) 55%, #4f8eff); }
 .info-hero .container { max-width: 920px; }
@@ -4942,6 +4958,11 @@ button {
   .contact-form-grid { grid-template-columns: 1fr; }
   .contact-form-footer { align-items: stretch; flex-direction: column; }
   .contact-form-footer .button { width: 100%; }
+  .privacy-consent { right: 12px; bottom: 12px; left: 12px; grid-template-columns: 1fr; gap: 11px; width: calc(100% - 24px); padding: 15px; border-radius: 15px; }
+  .privacy-consent-icon { display: none; }
+  .privacy-consent-copy p { font-size: 12px; }
+  .privacy-consent-actions { display: grid; grid-template-columns: 1fr 1.25fr; }
+  .privacy-consent-actions button { width: 100%; padding-inline: 10px; }
 }
 
 @media (max-width: 400px) {
