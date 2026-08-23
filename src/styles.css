@@ -3963,6 +3963,13 @@ button {
   gap: 16px;
 }
 
+.product-search-store-counts {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
 .product-search-grid {
   display: grid;
   grid-template-columns: repeat(
@@ -4079,6 +4086,10 @@ button {
   .product-search-results-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .product-search-store-counts {
+    text-align: left;
   }
 }
 

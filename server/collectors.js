@@ -7,6 +7,7 @@ import {
   generateMercadoLivreAffiliateLinks,
   normalizeMercadoLivreAffiliateUrl
 } from './mercadolivreAffiliate.js';
+import { buildSearchQueryVariants } from './searchRelevance.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -638,30 +639,46 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
     );
   }
 
-  const safeLimit = Math.min(
-    Math.max(Number(limit) || 10, 1),
-    20
-  );
+  const candidateLimit = Math.min(Math.max(Number(limit) || 40, 20), 80);
+  const variants = buildSearchQueryVariants(cleanQuery, 3);
+  const searches = variants.flatMap((variant, index) => {
+    const pageCount = index === 0 ? 2 : 1;
+    return Array.from({ length: pageCount }, (_, pageIndex) => ({
+      variant,
+      page: pageIndex + 1
+    }));
+  });
 
-  const graphqlQuery =
-    `{ productOfferV2(` +
-    `keyword: "${escapeGraphQL(cleanQuery)}", ` +
-    `page: 1, ` +
-    `limit: ${safeLimit}` +
-    `) { ` +
-    `nodes { ` +
-    `itemId productName productLink offerLink imageUrl ` +
-    `priceMin priceMax priceDiscountRate sales ratingStar ` +
-    `commissionRate shopId shopName periodEndTime ` +
-    `} ` +
-    `pageInfo { page limit hasNextPage } ` +
-    `} }`;
+  const responses = await Promise.allSettled(searches.map(({ variant, page }) => {
+    const graphqlQuery =
+      `{ productOfferV2(` +
+      `keyword: "${escapeGraphQL(variant)}", ` +
+      `page: ${page}, ` +
+      `limit: 20` +
+      `) { ` +
+      `nodes { ` +
+      `itemId productName productLink offerLink imageUrl ` +
+      `priceMin priceMax priceDiscountRate sales ratingStar ` +
+      `commissionRate shopId shopName periodEndTime ` +
+      `} ` +
+      `pageInfo { page limit hasNextPage } ` +
+      `} }`;
+    return shopeeGraphQL(appId, appSecret, graphqlQuery);
+  }));
 
-  const items = await shopeeGraphQL(
-    appId,
-    appSecret,
-    graphqlQuery
-  );
+  const successful = responses.filter((response) => response.status === 'fulfilled');
+  if (!successful.length) {
+    const firstFailure = responses.find((response) => response.status === 'rejected');
+    throw firstFailure?.reason || new Error('A Shopee não respondeu à pesquisa.');
+  }
+
+  const seen = new Set();
+  const items = successful.flatMap((response) => response.value).filter((item) => {
+    const fingerprint = String(item.itemId || item.offerLink || item.productLink || '');
+    if (!fingerprint || seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  }).slice(0, Math.min(80, Math.max(candidateLimit, searches.length * 20)));
 
   return items.map((item) => {
     const price = Number(

@@ -2,7 +2,8 @@ const stopWords = new Set(['a', 'as', 'com', 'da', 'das', 'de', 'do', 'dos', 'e'
 
 const intents = [
   { aliases: ['notebook', 'laptop', 'ultrabook'], accessories: ['adesivo', 'bateria', 'bolsa', 'cabo', 'capa', 'carregador', 'case', 'cooler', 'dobradica', 'fonte', 'livro', 'memoria', 'mesa', 'mochila', 'mouse', 'peca', 'pelicula', 'skin', 'ssd', 'suporte', 'teclado', 'tela'] },
-  { aliases: ['celular', 'smartphone', 'iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
+  { aliases: ['celular', 'smartphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
+  { aliases: ['iphone'], accessories: ['adaptador', 'bateria', 'cabo', 'camera', 'capinha', 'carregador', 'capa', 'case', 'display', 'pelicula', 'suporte', 'tela'] },
   { aliases: ['airfryer', 'fritadeira'], accessories: ['cesta', 'forma', 'grade', 'papel', 'peca', 'protetor', 'tapete'] },
   { aliases: ['televisao', 'smarttv', 'tv'], accessories: ['adaptador', 'antena', 'cabo', 'controle', 'painel', 'peca', 'receptor', 'suporte'] },
   { aliases: ['fone', 'headphone', 'headset', 'earphone'], accessories: ['almofada', 'borracha', 'cabo', 'capa', 'case', 'estojo', 'peca', 'suporte'] },
@@ -14,6 +15,23 @@ export function normalizeSearchText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/([a-z])([0-9])/g, '$1 $2').replace(/([0-9])([a-z])/g, '$1 $2')
     .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function buildSearchQueryVariants(query, maxVariants = 3) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return [];
+
+  const queryTokens = normalized.split(/\s+/).filter(Boolean);
+  const intent = intents.find((candidate) => candidate.aliases.some((alias) => queryTokens.includes(alias)));
+  if (!intent || intent.aliases.length < 2) return [normalized];
+
+  const matchedAlias = intent.aliases.find((alias) => queryTokens.includes(alias));
+  const variants = [normalized];
+  for (const alias of intent.aliases) {
+    if (alias === matchedAlias) continue;
+    variants.push(queryTokens.map((token) => token === matchedAlias ? alias : token).join(' '));
+  }
+  return [...new Set(variants)].slice(0, Math.max(1, Number(maxVariants) || 1));
 }
 
 function tokens(value) {

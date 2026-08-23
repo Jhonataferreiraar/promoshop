@@ -1164,6 +1164,7 @@ function AdminApp() {
 
   const [productSearchResults, setProductSearchResults] = useState([]);
   const [productSearchErrors, setProductSearchErrors] = useState([]);
+  const [productSearchStoreCounts, setProductSearchStoreCounts] = useState({});
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const backupInputRef = useRef(null);
@@ -1800,6 +1801,7 @@ function AdminApp() {
     setProductSearchLoading(true);
     setProductSearchResults([]);
     setProductSearchErrors([]);
+    setProductSearchStoreCounts({});
     setMagaluStoreUrl('');
     setMessage(`Buscando "${query}" nas lojas selecionadas…`);
 
@@ -1828,6 +1830,7 @@ function AdminApp() {
           ? result.errors
           : []
       );
+      setProductSearchStoreCounts(result.visibleCounts || {});
       setMagaluStoreUrl(result.magaluStoreUrl || '');
 
       if (result.count > 0) {
@@ -2075,12 +2078,17 @@ function AdminApp() {
                   {productSearchResults.length === 1 ? '' : 's'}
                 </strong>
 
+                <span className="product-search-store-counts">
+                  {Object.entries(productSearchStoreCounts).map(([store, count]) => `${store}: ${count}`).join(' · ')}
+                </span>
+
                 <button
                   type="button"
                   className="text-button"
                   onClick={() => {
                     setProductSearchResults([]);
                     setProductSearchErrors([]);
+                    setProductSearchStoreCounts({});
                   }}
                 >
                   Limpar resultados

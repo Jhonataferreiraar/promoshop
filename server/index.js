@@ -3347,7 +3347,7 @@ app.post(
           await searchShopeeProducts(
             query,
             secrets,
-            Math.max(limit, 20)
+            Math.max(limit * 4, 40)
           );
 
         results.push(
@@ -3372,6 +3372,11 @@ app.post(
     }
 
     const rankedResults = rankProductSearchResults(query, results, { strict: strictSearch, limitPerStore: limit });
+    const countByStore = (items) => items.reduce((counts, item) => {
+      const store = String(item.store || 'Outra loja');
+      counts[store] = (counts[store] || 0) + 1;
+      return counts;
+    }, {});
 
     res.json({
       query,
@@ -3381,6 +3386,8 @@ app.post(
 
       results: rankedResults,
       discarded: Math.max(0, results.length - rankedResults.length),
+      sourceCounts: countByStore(results),
+      visibleCounts: countByStore(rankedResults),
       strict: strictSearch,
       errors,
       magaluStoreUrl

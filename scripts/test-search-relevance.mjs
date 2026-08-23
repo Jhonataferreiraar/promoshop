@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { productSearchRelevance, rankProductSearchResults } from '../server/searchRelevance.js';
+import { buildSearchQueryVariants, productSearchRelevance, rankProductSearchResults } from '../server/searchRelevance.js';
 
 const relevant = (query, title, category = '') => productSearchRelevance(query, { title, category }).accepted;
 
@@ -12,6 +12,7 @@ assert.equal(relevant('notebook', 'Carregador Fonte Universal para Laptop', 'Ace
 assert.equal(relevant('suporte notebook', 'Suporte Ergonômico para Notebook', 'Acessórios'), true);
 assert.equal(relevant('iphone 15 128gb', 'Apple iPhone 15 128GB Preto', 'Celulares'), true);
 assert.equal(relevant('iphone 15 128gb', 'Capinha Transparente para iPhone 15', 'Acessórios'), false);
+assert.equal(relevant('iphone 15', 'Smartphone Samsung Galaxy A15 128GB', 'Celulares'), false);
 assert.equal(relevant('air fryer mondial', 'Fritadeira Air Fryer Mondial 5 Litros', 'Eletrodomésticos'), true);
 assert.equal(relevant('air fryer mondial', 'Forma de Silicone para Air Fryer', 'Acessórios'), false);
 assert.equal(relevant('cadeira gamer', 'Cadeira Gamer Reclinável Ergonômica', 'Móveis'), true);
@@ -23,5 +24,8 @@ const ranked = rankProductSearchResults('notebook', [
   { id: '3', title: 'Laptop Dell Inspiron 15', store: 'Loja B', category: 'Informática' }
 ], { strict: true, limitPerStore: 10 });
 assert.deepEqual(ranked.map((item) => item.id).sort(), ['2', '3']);
+
+assert.deepEqual(buildSearchQueryVariants('Notebook Gamer'), ['notebook gamer', 'laptop gamer', 'ultrabook gamer']);
+assert.deepEqual(buildSearchQueryVariants('iPhone 15'), ['iphone 15']);
 
 console.log('Filtro de relevância da busca validado.');
