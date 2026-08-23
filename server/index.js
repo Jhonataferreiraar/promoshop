@@ -59,6 +59,7 @@ import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
 import { rankProductSearchResults } from './searchRelevance.js';
+import { stripAffiliateDisclosure } from './messageSanitizer.js';
 
 const app = express();
 
@@ -874,14 +875,7 @@ function formatCouponMessage(coupon) {
   }
   if (coupon?.link) parts.push(`👉 Ative aqui: ${coupon.shortUrl || coupon.link}`);
   parts.push('⚠️ Confira as regras e a validade antes de usar.');
-  parts.push('ℹ️ Link de afiliado: a PromoShop pode receber comissão, sem custo adicional para você.');
   return parts.filter(Boolean).join('\n\n');
-}
-
-function withAffiliateDisclosure(message) {
-  const text = String(message || '').trim();
-  if (!text || /link\s+de\s+afiliad/i.test(text)) return text;
-  return `${text}\n\nℹ️ Link de afiliado: a PromoShop pode receber comissão, sem custo adicional para você.`;
 }
 
 function getRoundAudienceCodes(data) {
@@ -4584,7 +4578,9 @@ app.get(
             throw new Error('Cupom sem título, link ou grupo selecionado.');
           }
 
-          const message = String(item.message || formatCouponMessage(coupon)).trim();
+          const message = stripAffiliateDisclosure(
+            item.message || formatCouponMessage(coupon)
+          );
           await updateStore((data) => {
             const saved = data.queue.find(
               (entry) => entry.id === item.id && entry.status === 'pending'
@@ -4900,7 +4896,7 @@ app.get(
           );
         }
 
-        message = withAffiliateDisclosure(message);
+        message = stripAffiliateDisclosure(message);
 
         /*
          * ==================================================
