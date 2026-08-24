@@ -119,6 +119,7 @@ let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let collectionInProgress = false;
 let lastDeferredCollectionRoundId = '';
+const extensionRateLimit = new Map();
 
 function activePublicationRound(data) {
   const round =
@@ -1647,6 +1648,7 @@ app.use(
   })
 );
 
+app.use(express.text({ type: 'text/plain', limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 /*
@@ -3268,6 +3270,7 @@ app.put(
           monitoringWhatsappMinutes: [5, 1, 120],
           monitoringCollectionHours: [6, 1, 168],
           monitoringFailedQueueLimit: [10, 1, 500],
+          extensionMaxCouponsPerRequest: [10, 1, 50],
           instagramIntervalMinutes: [20, 1, 1440],
           instagramMaxPerDay: [15, 1, 1500],
           instagramMinimumDiscount: [20, 0, 99],
@@ -3303,6 +3306,14 @@ app.put(
         data.config.instagramAudienceCodes = Array.isArray(data.config.instagramAudienceCodes)
           ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
           : previousConfig.instagramAudienceCodes || [];
+        data.config.extensionStores = Array.isArray(data.config.extensionStores)
+          ? [...new Set(data.config.extensionStores.map((entry) => String(entry).trim()).filter((entry) => ['Mercado Livre', 'Shopee'].includes(entry)))]
+          : previousConfig.extensionStores || ['Mercado Livre', 'Shopee'];
+        data.config.extensionAudienceCodes = Array.isArray(data.config.extensionAudienceCodes)
+          ? [...new Set(data.config.extensionAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
+          : previousConfig.extensionAudienceCodes || ['G01'];
+        data.config.extensionEnabled = data.config.extensionEnabled !== false;
+        data.config.extensionAutoApprove = data.config.extensionAutoApprove === true;
         if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
         if (!/^v\d+\.\d+$/.test(String(data.config.instagramApiVersion || ''))) data.config.instagramApiVersion = previousConfig.instagramApiVersion || 'v25.0';
         for (const key of ['instagramRedirectUri', 'instagramCtaText', 'instagramDisclosureText']) {
@@ -4169,6 +4180,19 @@ app.post(
   }
 );
 
+app.post('/api/admin/extension/token', requireAdmin, async (_req, res) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  await updateSecrets({ extensionIngestToken: token });
+  await addLog('Token da extensão de cupons gerado.', 'success');
+  res.json({ ok: true, token });
+});
+
+app.delete('/api/admin/extension/token', requireAdmin, async (_req, res) => {
+  await updateSecrets({ clearExtensionIngestToken: true });
+  await addLog('Token da extensão de cupons revogado.', 'warning');
+  res.json({ ok: true });
+});
+
 /*
  * ==========================================================
  * INSTAGRAM STORIES
@@ -4446,6 +4470,111 @@ function parseCouponInput(body = {}, existing = {}) {
   };
 }
 
+function extensionRequestBody(req) {
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) return req.body;
+  if (typeof req.body === 'string') {
+    try {
+      const parsed = JSON.parse(req.body);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  }
+  return {};
+}
+
+function extensionTokenMatches(provided, expected) {
+  const left = Buffer.from(String(provided || ''));
+  const right = Buffer.from(String(expected || ''));
+  return Boolean(right.length) && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function extensionCouponFingerprint(coupon) {
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const store = normalize(coupon.store);
+  const code = normalize(coupon.code);
+  const link = String(coupon.link || '').trim().replace(/[?#].*$/, '').toLowerCase();
+  return `${store}|${code || link}`;
+}
+
+function extensionAllowedStore(config, store) {
+  const allowed = Array.isArray(config.extensionStores) ? config.extensionStores.map((entry) => String(entry).toLowerCase()) : ['mercado livre', 'shopee'];
+  return allowed.includes(String(store || '').trim().toLowerCase());
+}
+
+function extensionValidLink(store, link) {
+  try {
+    const url = new URL(String(link));
+    if (url.protocol !== 'https:') return false;
+    const hosts = String(store).toLowerCase() === 'mercado livre'
+      ? ['mercadolivre.com.br', 'mercadolivre.com', 'meli.la']
+      : ['shopee.com.br', 'shopee.com'];
+    return hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return false;
+  }
+}
+
+app.post('/api/extension/coupons', async (req, res) => {
+  const body = extensionRequestBody(req);
+  const secrets = await readSecrets();
+  const token = String(body.token || req.headers['x-promoshop-extension-token'] || '').trim();
+  if (!extensionTokenMatches(token, secrets.extensionIngestToken)) return res.status(401).json({ error: 'Token da extensão inválido.' });
+
+  const now = Date.now();
+  const rateKey = `${req.ip || 'unknown'}:${token.slice(-8)}`;
+  const recent = extensionRateLimit.get(rateKey) || [];
+  const activeRequests = recent.filter((timestamp) => now - timestamp < 60_000);
+  if (activeRequests.length >= 30) return res.status(429).json({ error: 'Muitas importações em pouco tempo. Aguarde um minuto.' });
+  activeRequests.push(now);
+  extensionRateLimit.set(rateKey, activeRequests);
+
+  const data = await readStore();
+  const config = data.config || {};
+  if (config.extensionEnabled === false) return res.status(403).json({ error: 'A extensão está desativada no painel.' });
+  const incoming = Array.isArray(body.coupons) ? body.coupons : [body];
+  const maximum = boundedNumber(config.extensionMaxCouponsPerRequest, 10, 1, 50);
+  const candidates = incoming.slice(0, maximum);
+  const existingFingerprints = new Set((data.coupons || []).map(extensionCouponFingerprint));
+  const imported = [];
+  const duplicates = [];
+  const errors = [];
+
+  await updateStore((storeData) => {
+    storeData.coupons ||= [];
+    for (const candidate of candidates) {
+      const storeName = String(candidate.store || '').trim().slice(0, 60);
+      if (!extensionAllowedStore(config, storeName)) { errors.push('Loja não permitida'); continue; }
+      const audienceCodes = normalizeCouponAudienceCodes(
+        Array.isArray(candidate.targetAudienceCodes) && candidate.targetAudienceCodes.length
+          ? candidate.targetAudienceCodes
+          : config.extensionAudienceCodes
+      );
+      const parsed = parseCouponInput({ ...candidate, store: storeName, targetAudienceCodes: audienceCodes, active: config.extensionAutoApprove === true });
+      if (parsed.error) { errors.push(parsed.error); continue; }
+      if (!extensionValidLink(storeName, parsed.fields.link)) { errors.push('Link não pertence à loja informada.'); continue; }
+      const fingerprint = extensionCouponFingerprint(parsed.fields);
+      if (existingFingerprints.has(fingerprint)) { duplicates.push(parsed.fields.title); continue; }
+      existingFingerprints.add(fingerprint);
+      const coupon = {
+        id: createId('coupon'),
+        ...parsed.fields,
+        source: 'extension',
+        approvalStatus: config.extensionAutoApprove === true ? 'approved' : 'pending',
+        importedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      coupon.shortCode = createCouponShortCode(storeData.coupons);
+      coupon.shortUrl = couponShortUrl(coupon, req);
+      storeData.coupons.unshift(coupon);
+      imported.push({ id: coupon.id, title: coupon.title, status: coupon.approvalStatus });
+    }
+    storeData.coupons = storeData.coupons.slice(0, 300);
+  });
+
+  if (imported.length) await addLog(`Extensão: ${imported.length} cupom(ns) recebido(s)${config.extensionAutoApprove === true ? ' e aprovado(s)' : ' para revisão'}.`, 'success');
+  res.status(imported.length || duplicates.length ? 202 : 400).json({ ok: imported.length > 0, imported, duplicates, errors: errors.slice(0, 10) });
+});
+
 app.post(
   '/api/admin/coupons',
   requireAdmin,
@@ -4519,6 +4648,36 @@ app.put(
     return res.json(updated);
   }
 );
+
+app.post('/api/admin/extension/coupons/:id/approve', requireAdmin, async (req, res) => {
+  let updated = null;
+  await updateStore((data) => {
+    const coupon = (data.coupons || []).find((entry) => entry.id === req.params.id && entry.source === 'extension');
+    if (!coupon) return;
+    coupon.active = true;
+    coupon.approvalStatus = 'approved';
+    coupon.updatedAt = new Date().toISOString();
+    updated = { ...coupon };
+  });
+  if (!updated) return res.status(404).json({ error: 'Cupom da extensão não encontrado.' });
+  await addLog(`Cupom importado aprovado: ${updated.title}.`, 'success');
+  res.json({ ok: true, coupon: updated });
+});
+
+app.post('/api/admin/extension/coupons/:id/reject', requireAdmin, async (req, res) => {
+  let updated = null;
+  await updateStore((data) => {
+    const coupon = (data.coupons || []).find((entry) => entry.id === req.params.id && entry.source === 'extension');
+    if (!coupon) return;
+    coupon.active = false;
+    coupon.approvalStatus = 'rejected';
+    coupon.updatedAt = new Date().toISOString();
+    updated = { ...coupon };
+  });
+  if (!updated) return res.status(404).json({ error: 'Cupom da extensão não encontrado.' });
+  await addLog(`Cupom importado recusado: ${updated.title}.`, 'info');
+  res.json({ ok: true, coupon: updated });
+});
 
 app.post('/api/admin/offers/bulk', requireAdmin, async (req, res) => {
   const ids = new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String).slice(0, 200));

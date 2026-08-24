@@ -206,6 +206,12 @@ const initialData = {
     enableMagalu: false,
     enableNetshoes: false,
 
+    extensionEnabled: true,
+    extensionAutoApprove: false,
+    extensionStores: ['Mercado Livre', 'Shopee'],
+    extensionAudienceCodes: ['G01'],
+    extensionMaxCouponsPerRequest: 10,
+
     // Slug público da vitrine Magazine Você. A busca automática do Magalu
     // pode ser protegida por captcha; este endereço é usado para abrir a
     // busca da sua própria loja no painel.
@@ -317,6 +323,12 @@ export async function readStore() {
   data.config.instagramAudienceCodes = Array.isArray(data.config.instagramAudienceCodes)
     ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
     : [];
+  data.config.extensionStores = Array.isArray(data.config.extensionStores)
+    ? [...new Set(data.config.extensionStores.map((entry) => String(entry).trim()).filter(Boolean))]
+    : [...initialData.config.extensionStores];
+  data.config.extensionAudienceCodes = Array.isArray(data.config.extensionAudienceCodes)
+    ? [...new Set(data.config.extensionAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
+    : [...initialData.config.extensionAudienceCodes];
 
   if (
     !Array.isArray(data.config.whatsappAudiences) ||

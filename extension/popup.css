@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+body { width: 340px; margin: 0; padding: 16px; color: #172033; background: #f7f9fc; font: 13px Arial, sans-serif; }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+header strong { display: block; font-size: 17px; } header small { display: block; margin-top: 3px; color: #667085; font-size: 10px; }
+.mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: #fff; background: #1269f3; font-size: 20px; font-weight: 800; transform: rotate(-6deg); }
+label { display: grid; gap: 6px; margin: 10px 0; color: #344054; font-size: 11px; font-weight: 700; }
+input { width: 100%; min-height: 36px; padding: 8px 9px; border: 1px solid #d0d5dd; border-radius: 8px; color: #172033; background: #fff; font: inherit; }
+.switch { display: flex; align-items: center; gap: 8px; font-weight: 600; } .switch input { width: 16px; min-height: 16px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+button { min-height: 36px; padding: 0 11px; border: 0; border-radius: 8px; font: inherit; font-weight: 800; cursor: pointer; } button.primary { color: #fff; background: #1269f3; } button.secondary { color: #344054; border: 1px solid #d0d5dd; background: #fff; } button:disabled { cursor: not-allowed; opacity: .5; }
+#status { margin: 13px 0 8px; padding: 9px; border-radius: 8px; color: #475467; background: #eef4ff; font-size: 11px; line-height: 1.45; }
+.candidate { display: grid; grid-template-columns: 18px 1fr; gap: 7px; margin: 7px 0; padding: 9px; border: 1px solid #e4e7ec; border-radius: 9px; background: #fff; } .candidate input { width: 16px; min-height: 16px; }
+.candidate strong { display: block; font-size: 11px; line-height: 1.35; } .candidate small { display: block; margin-top: 4px; color: #667085; font-size: 10px; } .full { width: 100%; margin-top: 10px; }

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>PromoShop Cupons</title><link rel="stylesheet" href="popup.css" /></head>
+  <body>
+    <header><span class="mark">%</span><div><strong>PromoShop</strong><small>Captura de cupons</small></div></header>
+    <label>URL do PromoShop<input id="endpoint" type="url" placeholder="https://promoshop.jhonatafaraujo.com.br" /></label>
+    <label>Token da extensão<input id="token" type="password" placeholder="Cole o token gerado no painel" /></label>
+    <label class="switch"><input id="autoSend" type="checkbox" /><span>Enviar automaticamente ao detectar</span></label>
+    <div class="actions"><button id="save" class="secondary">Salvar</button><button id="scan" class="primary">Ler página</button></div>
+    <div id="status" role="status">Abra uma página de cupons do Mercado Livre ou Shopee.</div>
+    <div id="results"></div><button id="send" class="primary full" disabled>Enviar cupons selecionados</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

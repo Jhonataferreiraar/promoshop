@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "PromoShop — Cupons",
+  "version": "0.1.0",
+  "description": "Envia cupons visíveis do Mercado Livre e da Shopee para o PromoShop.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://promoshop.jhonatafaraujo.com.br/*", "https://promoshop.onrender.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Enviar cupom para o PromoShop", "default_popup": "popup.html" },
+  "content_scripts": [
+    { "matches": ["https://*.mercadolivre.com.br/*", "https://*.mercadolivre.com/*"], "js": ["content/common.js", "content/mercadolivre.js"], "run_at": "document_idle" },
+    { "matches": ["https://*.shopee.com.br/*", "https://*.shopee.com/*"], "js": ["content/common.js", "content/shopee.js"], "run_at": "document_idle" }
+  ]
+}

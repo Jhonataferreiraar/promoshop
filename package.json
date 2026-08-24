@@ -15,6 +15,7 @@
     "test:routing": "node scripts/test-audience-routing.mjs",
     "test:messages": "node scripts/test-message-sanitizer.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",
+    "test:extension": "node scripts/test-extension.mjs",
     "preview": "vite preview",
     "start": "node server/index.js",
     "whatsapp": "node worker/whatsapp.js"

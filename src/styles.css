@@ -5151,6 +5151,44 @@ button {
 .site-settings-layout .toggle-card span { display: grid; gap: 3px; }
 .site-settings-layout .toggle-card strong { color: #101828; font-size: 13px; }
 .site-settings-layout .toggle-card small { color: #667085; font-size: 11px; font-weight: 600; line-height: 1.4; }
+.extension-admin-layout { display: grid; gap: 20px; padding-bottom: 94px; }
+.extension-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px; border-color: #cfe0ff; background: linear-gradient(135deg, #f5f8ff, #fff); }
+.extension-hero h2 { margin: 6px 0; color: #101828; }
+.extension-hero p { max-width: 700px; margin: 0; color: #667085; line-height: 1.55; }
+.extension-status { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 11px 13px; border: 1px solid #d0d5dd; border-radius: 999px; color: #475467; background: #fff; font-size: 11px; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: #98a2b3; }
+.status-dot.active { background: #12b76a; box-shadow: 0 0 0 4px #dcfae6; }
+.extension-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 20px; }
+.extension-settings-card, .extension-token-card, .extension-review-card, .extension-install-card { display: grid; gap: 16px; padding: 22px; }
+.extension-settings-card label:not(.toggle-card) { display: grid; gap: 7px; color: #344054; font-size: 12px; font-weight: 800; }
+.extension-settings-card label > input[type="number"] { min-height: 44px; padding: 9px 11px; border: 1px solid #d0d5dd; border-radius: 10px; color: #101828; font: inherit; font-weight: 600; }
+.extension-settings-card label small, .extension-choice > small { color: #667085; font-size: 11px; font-weight: 600; line-height: 1.4; }
+.extension-settings-card .toggle-card { min-height: 68px; }
+.extension-choice { display: grid; gap: 8px; padding-top: 6px; border-top: 1px solid #eaecf0; color: #344054; font-size: 12px; font-weight: 800; }
+.extension-choice label { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.extension-choice input { width: 16px; height: 16px; }
+.extension-choice label span { display: grid; gap: 2px; }
+.extension-choice label span small { color: #667085; font-size: 10px; font-weight: 600; }
+.extension-token-empty { padding: 17px; border: 1px dashed #b2ccff; border-radius: 11px; color: #475467; background: #f5f8ff; font-size: 12px; line-height: 1.5; }
+.extension-token-result { display: grid; gap: 8px; }
+.extension-token-result textarea { min-height: 92px; resize: vertical; padding: 11px; border: 1px solid #b2ccff; border-radius: 10px; color: #1849a9; background: #f5f8ff; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.extension-token-result small { color: #b54708; font-size: 11px; font-weight: 700; }
+.extension-token-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.extension-review-card .panel-heading { margin-bottom: 0; }
+.extension-coupon-list { display: grid; gap: 10px; }
+.extension-coupon-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; border: 1px solid #e4e7ec; border-radius: 12px; background: #fff; }
+.extension-coupon-row > div:first-child { min-width: 0; display: grid; gap: 4px; }
+.extension-coupon-row strong { overflow: hidden; color: #101828; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.extension-coupon-row span { color: #175cd3; font-size: 11px; font-weight: 800; }
+.extension-coupon-row small { overflow: hidden; color: #667085; font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.extension-coupon-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.extension-coupon-actions .button { min-height: 34px; padding-inline: 10px; font-size: 11px; }
+.extension-install-card { grid-template-columns: 1fr auto; align-items: center; border-color: #dbe5f5; background: #f8fbff; }
+.extension-install-card h2 { margin: 5px 0; font-size: 17px; }
+.extension-install-card p { max-width: 720px; margin: 0; color: #667085; font-size: 12px; line-height: 1.55; }
+.extension-install-card code { padding: 2px 5px; border-radius: 5px; color: #1849a9; background: #eaf2ff; font-size: 11px; }
+.extension-install-steps { display: grid; gap: 8px; color: #344054; font-size: 11px; font-weight: 800; }
+.extension-install-steps span { padding: 8px 10px; border-radius: 8px; background: #eaf2ff; }
 .google-search-preview { display: grid; gap: 12px; margin-top: 4px; padding: 16px; border: 1px solid #dfe5ef; border-radius: 14px; background: linear-gradient(180deg, #f8fbff 0%, #fff 100%); }
 .google-search-preview-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .google-search-preview-heading h3 { margin: 5px 0 0; color: #182230; font-size: 15px; }
@@ -5197,6 +5235,9 @@ button {
   .analytics-detail-grid { grid-template-columns: 1fr; }
   .health-check-grid { grid-template-columns: 1fr; }
   .backup-panel { align-items: stretch; flex-direction: column; }
+  .extension-grid { grid-template-columns: 1fr; }
+  .extension-hero { align-items: flex-start; flex-direction: column; }
+  .extension-install-card { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 600px) {
@@ -5211,6 +5252,12 @@ button {
   .google-search-preview-heading small { max-width: none; text-align: left; }
   .google-search-result { padding: 13px; }
   .google-search-result-title { font-size: 18px; }
+  .extension-admin-layout { gap: 14px; }
+  .extension-settings-card, .extension-token-card, .extension-review-card, .extension-install-card { padding: 16px; }
+  .extension-coupon-row { align-items: stretch; flex-direction: column; }
+  .extension-coupon-row strong, .extension-coupon-row small { white-space: normal; }
+  .extension-coupon-actions { justify-content: stretch; }
+  .extension-coupon-actions .button { flex: 1 1 100%; }
   .settings-save-bar { bottom: 8px; align-items: stretch; flex-direction: column; }
   .settings-save-bar .button { width: 100%; }
   .health-summary { align-items: stretch; flex-direction: column; }
