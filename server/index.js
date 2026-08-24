@@ -4311,6 +4311,7 @@ app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) =
       groupLink: audience?.whatsappLink,
       bio: req.body?.bio,
       ctaText: req.body?.ctaText,
+      manualLinkPlacement: Boolean(req.body?.manualLinkPlacement),
       showQrCode: Boolean(req.body?.showQrCode)
     }, data.config, String(req.body?.themeId || ''));
     const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');

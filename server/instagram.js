@@ -34,11 +34,10 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-// SVG rendering on the server does not consistently support emoji fonts. Strip
-// emoji-only glyphs from editable labels so they never become tofu/black boxes.
+// Normalize editable labels while keeping emoji. The production image includes
+// Noto Color Emoji, so the bio can use the same emojis as the Instagram profile.
 function svgText(value) {
   return String(value || '')
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200D]/gu, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
@@ -228,25 +227,30 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const defaultBio = templateType === 'group'
     ? `Ofertas selecionadas para ${groupName}\nReceba novidades e descontos\nEntre pelo link da bio`
     : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
-  const bioLines = splitParagraphLines(svgText(options.bio || defaultBio), 34, 3);
-  const titleText = templateType === 'group' ? groupName : profile ? `@${profile}` : 'PromoShop';
+  const bioLines = splitParagraphLines(svgText(options.bio || defaultBio), 34, templateType === 'group' ? 3 : 4);
+  const titleText = templateType === 'group' ? groupName : profile ? `@${profile}` : '';
   const titleLines = splitLines(titleText, templateType === 'group' ? 28 : 25, 2);
   const titleSize = templateType === 'group' ? 50 : 62;
   const titleTspans = titleLines.map((line, index) => `<tspan x="540" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
   const bioTspans = bioLines.map((line, index) => `<tspan x="540" dy="${index ? 52 : 0}">${escapeXml(line)}</tspan>`).join('');
   const groupLink = validHttps(options.groupLink);
   const showQrCode = Boolean(options.showQrCode && groupLink);
-  const qrLabel = showQrCode ? 'Aponte a câmera para entrar' : 'Link do grupo na bio';
-  const cta = escapeXml(svgText(String(options.ctaText || (templateType === 'group' ? 'Conheça este grupo' : 'Conheça o perfil')).slice(0, 48)));
+  const manualLinkPlacement = Boolean(options.manualLinkPlacement && templateType === 'group');
+  const qrLabel = manualLinkPlacement ? '' : showQrCode ? 'Aponte a câmera para entrar' : 'Link do grupo na bio';
+  const defaultCta = templateType === 'group' ? 'Conheça este grupo' : 'Conheça o perfil';
+  const rawCta = Object.prototype.hasOwnProperty.call(options, 'ctaText') ? options.ctaText : defaultCta;
+  const cta = escapeXml(svgText(String(rawCta || '').slice(0, 48)));
   const domainY = showQrCode ? 1700 : 1530;
   const titleY = templateType === 'group' ? 700 : 735;
   const codeBadge = templateType === 'group' && groupCode
     ? `<rect x="445" y="830" width="190" height="56" rx="28" fill="${theme.accent}"/><text x="540" y="867" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
     : '';
   const bioY = templateType === 'group' && groupCode ? 960 : 900;
-  const profileFooter = profile ? `Siga @${profile}` : 'Siga a PromoShop';
+  const profileFooter = profile ? `Siga @${profile}` : '';
+  const ctaMarkup = cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
+  const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
-    <defs><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter></defs>
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter><clipPath id="cardClip"><rect x="54" y="225" width="972" height="1500" rx="58"/></clipPath></defs>
     <rect width="1080" height="1920" fill="${theme.background}"/>
     <circle cx="1030" cy="160" r="250" fill="${theme.background2}" opacity=".52"/>
     <circle cx="40" cy="1800" r="210" fill="${theme.background2}" opacity=".35"/>
@@ -256,16 +260,15 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <rect x="54" y="225" width="972" height="1500" rx="58" fill="#ffffff" filter="url(#shadow)"/>
     <rect x="54" y="225" width="972" height="360" rx="58" fill="${theme.background2}"/>
     <rect x="54" y="435" width="972" height="150" fill="${theme.background2}"/>
-    <rect x="54" y="585" width="972" height="1140" fill="#ffffff"/>
+    <rect x="54" y="585" width="972" height="1140" fill="#ffffff" clip-path="url(#cardClip)"/>
     <text x="540" y="303" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="800" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPO WHATSAPP' : 'PERFIL OFICIAL'}</text>
     <circle cx="540" cy="440" r="108" fill="#edf3ff"/>
-    <text x="540" y="${titleY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${titleSize}" font-weight="900" fill="#101828">${titleTspans}</text>
+    <text x="540" y="${titleY}" text-anchor="middle" font-family="${bodyFont}" font-size="${titleSize}" font-weight="900" fill="#101828">${titleTspans}</text>
     ${codeBadge}
     <line x1="170" y1="805" x2="910" y2="805" stroke="#e4e7ec" stroke-width="3"/>
-    <text x="540" y="${bioY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="600" fill="#475467">${bioTspans}</text>
-    <rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/>
-    <text x="540" y="1292" text-anchor="middle" font-family="Arial,sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>
-    <text x="540" y="1450" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>
+    <text x="540" y="${bioY}" text-anchor="middle" font-family="${bodyFont}" font-size="34" font-weight="600" fill="#475467">${bioTspans}</text>
+    ${ctaMarkup}
+    <text x="540" y="1450" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>
     <text x="540" y="${domainY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
   </svg>`);
   const logo = await logoBuffer(templateType === 'group' ? 210 : 230);
