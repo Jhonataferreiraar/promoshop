@@ -147,6 +147,9 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
   const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? 62 : 0}">${escapeXml(line)}</tspan>`).join('');
   const disclosure = escapeXml(config.instagramDisclosureText || 'Publicidade · link de afiliado');
   const cta = escapeXml(config.instagramCtaText || 'Acesse o link da bio');
+  const showQrCode = Boolean(config.instagramShowQrCode && validHttps(story.link));
+  const domainX = showQrCode ? 420 : 540;
+  const disclosureY = showQrCode ? 1870 : 1838;
 
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".2"/></filter></defs>
@@ -163,8 +166,8 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
     <text x="92" y="1510" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.text}">${escapeXml(price || 'Confira a oferta')}</text>
     <rect x="72" y="1570" width="936" height="116" rx="38" fill="${theme.accent}"/>
     <text x="540" y="1643" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="900" fill="#111827">${cta}  →</text>
-    <text x="420" y="1772" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
-    <text x="540" y="1870" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="${theme.text}" opacity=".72">${disclosure}</text>
+    <text x="${domainX}" y="1772" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+    <text x="540" y="${disclosureY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="${theme.text}" opacity=".72">${disclosure}</text>
   </svg>`);
 
   let product;
@@ -179,7 +182,7 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
   const composites = [];
   if (product) composites.push({ input: product, left: 130, top: 282 });
   if (logo) composites.push({ input: logo, left: 78, top: 55 });
-  if (config.instagramShowQrCode && validHttps(story.link)) {
+  if (showQrCode) {
     const qr = await QRCode.toBuffer(story.link, { type: 'png', width: 150, margin: 1, color: { dark: '#111827', light: '#ffffff' } });
     // Keep the QR code in the footer column, below the CTA button.
     composites.push({ input: qr, left: 850, top: 1698 });
