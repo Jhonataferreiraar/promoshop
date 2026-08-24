@@ -64,6 +64,7 @@ import {
   cleanupInstagramAssets,
   enqueueInstagramFromWhatsapp,
   finishInstagramAuthorization,
+  generateInstagramShareTemplate,
   generateInstagramStory,
   instagramAssetPath,
   processInstagramQueue,
@@ -4282,6 +4283,32 @@ app.post('/api/admin/instagram/share-preview', requireAdmin, async (req, res) =>
       ...sample,
       shareProfile: String(req.body?.profile || '').slice(0, 60)
     }, shareConfig, String(req.body?.themeId || ''));
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    res.json({ ok: true, themeId: asset.themeId, imageUrl: `${canonical}/media/instagram/${asset.fileName}`, fileName: asset.fileName });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const templateType = req.body?.templateType === 'group' ? 'group' : 'profile';
+    const profile = String(req.body?.profile || 'sonapromoshop').trim();
+    const audience = templateType === 'group'
+      ? (data.config.whatsappAudiences || []).find((item) => String(item.code) === String(req.body?.groupCode || '') && item.enabled !== false)
+      : null;
+    if (templateType === 'group' && !audience) return res.status(404).json({ error: 'Selecione um grupo do WhatsApp ativo.' });
+    const asset = await generateInstagramShareTemplate({
+      templateType,
+      profile,
+      groupName: audience?.name,
+      groupCode: audience?.code,
+      groupLink: audience?.whatsappLink,
+      bio: req.body?.bio,
+      ctaText: req.body?.ctaText,
+      showQrCode: Boolean(req.body?.showQrCode)
+    }, data.config, String(req.body?.themeId || ''));
     const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
     res.json({ ok: true, themeId: asset.themeId, imageUrl: `${canonical}/media/instagram/${asset.fileName}`, fileName: asset.fileName });
   } catch (error) {
