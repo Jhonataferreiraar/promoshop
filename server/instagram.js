@@ -42,6 +42,28 @@ function svgText(value) {
     .trim();
 }
 
+function bioLineMarkup(line, baseline, fontFamily) {
+  const match = String(line || '').match(/^(⚡|💸|🛒|👇)\s*(.*)$/u);
+  if (!match) {
+    return `<text x="540" y="${baseline}" text-anchor="middle" font-family="${fontFamily}" font-size="34" font-weight="600" fill="#475467">${escapeXml(line)}</text>`;
+  }
+
+  const [, emoji, label] = match;
+  const safeLabel = String(label || '').trim();
+  const textWidth = Math.max(90, Math.min(760, safeLabel.length * 18));
+  const iconSize = 34;
+  const gap = 12;
+  const startX = 540 - ((iconSize + gap + textWidth) / 2);
+  const iconY = baseline - 29;
+  const icons = {
+    '⚡': `<path d="M20 0 4 19h11L10 38l24-25H22z" fill="#f59e0b"/>`,
+    '💸': `<rect x="1" y="4" width="34" height="26" rx="6" fill="#10b981"/><circle cx="18" cy="17" r="7" fill="none" stroke="#fff" stroke-width="2"/><path d="M18 11v12M15 14h5M15 20h5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>`,
+    '🛒': `<path d="M2 4h5l3 18h18l4-12H9" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="31" r="3" fill="#2563eb"/><circle cx="27" cy="31" r="3" fill="#2563eb"/>`,
+    '👇': `<path d="M17 1v21l-7-7-5 5 16 17 16-17-5-5-7 7V1z" fill="#ef4444"/>`
+  };
+  return `<g transform="translate(${startX} ${iconY}) scale(.82)">${icons[emoji]}<text x="${(iconSize + gap) / .82}" y="36" font-family="${fontFamily}" font-size="34" font-weight="600" fill="#475467">${escapeXml(safeLabel)}</text></g>`;
+}
+
 function splitLines(value, maxCharacters = 31, maxLines = 4) {
   const words = String(value || '').trim().split(/\s+/).filter(Boolean);
   const lines = [];
@@ -232,7 +254,6 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const titleLines = splitLines(titleText, templateType === 'group' ? 28 : 25, 2);
   const titleSize = templateType === 'group' ? 50 : 62;
   const titleTspans = titleLines.map((line, index) => `<tspan x="540" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
-  const bioTspans = bioLines.map((line, index) => `<tspan x="540" dy="${index ? 52 : 0}">${escapeXml(line)}</tspan>`).join('');
   const groupLink = validHttps(options.groupLink);
   const showQrCode = Boolean(options.showQrCode && groupLink);
   const manualLinkPlacement = Boolean(options.manualLinkPlacement && templateType === 'group');
@@ -249,6 +270,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const profileFooter = profile ? `Siga @${profile}` : 'Siga @sonapromoshop';
   const ctaMarkup = cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
+  const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * 52), bodyFont)).join('');
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter><clipPath id="cardClip"><rect x="54" y="225" width="972" height="1500" rx="58"/></clipPath></defs>
     <rect width="1080" height="1920" fill="${theme.background}"/>
@@ -266,7 +288,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <text x="540" y="${titleY}" text-anchor="middle" font-family="${bodyFont}" font-size="${titleSize}" font-weight="900" fill="#101828">${titleTspans}</text>
     ${codeBadge}
     <line x1="170" y1="805" x2="910" y2="805" stroke="#e4e7ec" stroke-width="3"/>
-    <text x="540" y="${bioY}" text-anchor="middle" font-family="${bodyFont}" font-size="34" font-weight="600" fill="#475467">${bioTspans}</text>
+    ${bioMarkup}
     ${ctaMarkup}
     <text x="540" y="1450" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>
     <text x="540" y="${domainY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
