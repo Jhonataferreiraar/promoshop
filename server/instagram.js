@@ -53,7 +53,10 @@ function bioLineMarkup(line, baseline, fontFamily) {
   const textWidth = Math.max(90, Math.min(760, safeLabel.length * 18));
   const iconSize = 34;
   const gap = 12;
-  const startX = 540 - ((iconSize + gap + textWidth) / 2);
+  // O grupo é reduzido para .82; calcular a largura já reduzida evita que
+  // a transformação empurre a linha alguns pixels para a esquerda.
+  const scaledWidth = (iconSize + gap + textWidth) * 0.82;
+  const startX = 540 - (scaledWidth / 2);
   const iconY = baseline - 29;
   const icons = {
     '⚡': `<path d="M20 0 4 19h11L10 38l24-25H22z" fill="#f59e0b"/>`,
