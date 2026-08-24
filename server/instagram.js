@@ -42,15 +42,15 @@ function svgText(value) {
     .trim();
 }
 
-function bioLineMarkup(line, baseline, fontFamily) {
+function bioLineMarkup(line, baseline, fontFamily, fontSize = 34) {
   const match = String(line || '').match(/^(⚡|💸|🛒|👇)\s*(.*)$/u);
   if (!match) {
-    return `<text x="540" y="${baseline}" text-anchor="middle" font-family="${fontFamily}" font-size="34" font-weight="600" fill="#475467">${escapeXml(line)}</text>`;
+    return `<text x="540" y="${baseline}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize}" font-weight="600" fill="#475467">${escapeXml(line)}</text>`;
   }
 
   const [, emoji, label] = match;
   const safeLabel = String(label || '').trim();
-  const textWidth = Math.max(90, Math.min(760, safeLabel.length * 18));
+  const textWidth = Math.max(90, Math.min(760, safeLabel.length * fontSize * 0.53));
   const iconSize = 34;
   const gap = 12;
   // O grupo é reduzido para .82; calcular a largura já reduzida evita que
@@ -64,7 +64,7 @@ function bioLineMarkup(line, baseline, fontFamily) {
     '🛒': `<path d="M2 4h5l3 18h18l4-12H9" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="31" r="3" fill="#2563eb"/><circle cx="27" cy="31" r="3" fill="#2563eb"/>`,
     '👇': `<path d="M17 1v21l-7-7-5 5 16 17 16-17-5-5-7 7V1z" fill="#ef4444"/>`
   };
-  return `<g transform="translate(${startX} ${iconY}) scale(.82)">${icons[emoji]}<text x="${(iconSize + gap) / .82}" y="36" font-family="${fontFamily}" font-size="34" font-weight="600" fill="#475467">${escapeXml(safeLabel)}</text></g>`;
+  return `<g transform="translate(${startX} ${iconY}) scale(.82)">${icons[emoji]}<text x="${(iconSize + gap) / .82}" y="36" font-family="${fontFamily}" font-size="${fontSize}" font-weight="600" fill="#475467">${escapeXml(safeLabel)}</text></g>`;
 }
 
 function splitLines(value, maxCharacters = 31, maxLines = 4) {
@@ -255,7 +255,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     : isSite
       ? 'Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas'
       : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
-  const bioLines = splitParagraphLines(svgText(isSite ? (options.siteDescription || defaultBio) : (options.bio || defaultBio)), 34, templateType === 'group' ? 3 : isSite ? 3 : 4);
+  const bioLines = splitParagraphLines(svgText(isSite ? (options.siteDescription || defaultBio) : (options.bio || defaultBio)), isSite ? 60 : 34, templateType === 'group' ? 3 : 4);
   const siteTitle = svgText(String(options.siteTitle || 'PromoShop - Ofertas Diárias')).slice(0, 100);
   const titleText = templateType === 'group' ? groupName : isSite ? siteTitle : profile ? `@${profile}` : '';
   const titleLines = splitLines(titleText, templateType === 'group' ? 28 : isSite ? 24 : 25, 2);
@@ -278,7 +278,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const siteLinkArea = isSite ? `<rect x="150" y="1140" width="780" height="150" rx="26" fill="#ffffff" stroke="#d0d5dd" stroke-width="4" stroke-dasharray="12 12"/>` : '';
   const ctaMarkup = !isSite && cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
-  const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * 52), bodyFont)).join('');
+  const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * (isSite ? 48 : 52)), bodyFont, isSite ? 28 : 34)).join('');
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter><clipPath id="cardClip"><rect x="54" y="225" width="972" height="1500" rx="58"/></clipPath></defs>
     <rect width="1080" height="1920" fill="${theme.background}"/>
