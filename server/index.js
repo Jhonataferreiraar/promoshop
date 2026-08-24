@@ -3269,7 +3269,7 @@ app.put(
           monitoringCollectionHours: [6, 1, 168],
           monitoringFailedQueueLimit: [10, 1, 500],
           instagramIntervalMinutes: [20, 1, 1440],
-          instagramMaxPerDay: [15, 1, 100],
+          instagramMaxPerDay: [15, 1, 1500],
           instagramMinimumDiscount: [20, 0, 99],
           instagramDuplicateDays: [7, 1, 365],
           instagramAssetRetentionHours: [72, 24, 720]
