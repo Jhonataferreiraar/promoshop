@@ -163,8 +163,8 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
     <text x="92" y="1510" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.text}">${escapeXml(price || 'Confira a oferta')}</text>
     <rect x="72" y="1570" width="936" height="116" rx="38" fill="${theme.accent}"/>
     <text x="540" y="1643" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="900" fill="#111827">${cta}  →</text>
-    <text x="540" y="1790" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
-    <text x="540" y="1840" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="${theme.text}" opacity=".72">${disclosure}</text>
+    <text x="420" y="1772" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+    <text x="540" y="1870" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="${theme.text}" opacity=".72">${disclosure}</text>
   </svg>`);
 
   let product;
@@ -181,7 +181,8 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
   if (logo) composites.push({ input: logo, left: 78, top: 55 });
   if (config.instagramShowQrCode && validHttps(story.link)) {
     const qr = await QRCode.toBuffer(story.link, { type: 'png', width: 150, margin: 1, color: { dark: '#111827', light: '#ffffff' } });
-    composites.push({ input: qr, left: 830, top: 1680 });
+    // Keep the QR code in the footer column, below the CTA button.
+    composites.push({ input: qr, left: 850, top: 1698 });
   }
 
   const fileName = `story-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
