@@ -696,6 +696,12 @@ a {
 .instagram-save-bar > div { display: grid; gap: 2px; }
 .instagram-save-bar strong { color: #101828; }
 .instagram-save-bar span { color: #667085; font-size: 12px; }
+.personal-share-layout { grid-template-columns: minmax(0, 1fr) minmax(260px, 330px); align-items: start; }
+.personal-share-panel { min-width: 0; }
+.personal-share-form { margin-top: 22px; }
+.personal-share-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.personal-share-actions .button { min-width: 145px; }
+.personal-share-preview-panel { min-width: 0; }
 
 @media (max-width: 1100px) {
   .instagram-toggle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -709,6 +715,7 @@ a {
   .instagram-account-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .instagram-account-actions .button { width: 100%; }
   .instagram-filter-grid, .instagram-template-layout { grid-template-columns: 1fr; }
+  .personal-share-layout { grid-template-columns: 1fr; }
   .instagram-preview { position: static; width: min(310px, 100%); margin-inline: auto; }
   .instagram-save-bar { position: static; right: auto; bottom: auto; left: auto; order: 20; }
 }
@@ -728,6 +735,8 @@ a {
   .instagram-queue-actions button { width: 100%; }
   .instagram-save-bar { align-items: stretch; flex-direction: column; gap: 10px; }
   .instagram-save-bar .button { width: 100%; }
+  .personal-share-actions { display: grid; grid-template-columns: 1fr; }
+  .personal-share-actions .button { width: 100%; }
 }
 
 .card-two {

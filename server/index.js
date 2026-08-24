@@ -4248,6 +4248,47 @@ app.post('/api/admin/instagram/preview', requireAdmin, async (req, res) => {
   }
 });
 
+app.post('/api/admin/instagram/share-preview', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const kind = req.body?.kind === 'coupon' ? 'coupon' : 'offer';
+    const id = String(req.body?.id || '').trim();
+    const source = kind === 'coupon'
+      ? (data.coupons || []).find((coupon) => String(coupon.id) === id && coupon.active !== false)
+      : (data.offers || []).find((offer) => String(offer.id) === id && offer.status !== 'paused');
+    if (!source) return res.status(404).json({ error: 'Selecione uma oferta ou cupom ativo.' });
+
+    const sample = kind === 'coupon'
+      ? {
+        kind: 'coupon',
+        title: source.title,
+        store: source.store,
+        price: 0,
+        originalPrice: 0,
+        discount: source.discountType === 'percent' ? source.discountValue : 0,
+        image: source.image,
+        link: source.shortUrl || source.link
+      }
+      : {
+        ...source,
+        link: source.affiliateUrl || source.link
+      };
+    const shareConfig = {
+      ...data.config,
+      instagramShowQrCode: Boolean(req.body?.showQrCode),
+      instagramCtaText: String(req.body?.ctaText || 'Acesse o link da bio').slice(0, 80)
+    };
+    const asset = await generateInstagramStory({
+      ...sample,
+      shareProfile: String(req.body?.profile || '').slice(0, 60)
+    }, shareConfig, String(req.body?.themeId || ''));
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    res.json({ ok: true, themeId: asset.themeId, imageUrl: `${canonical}/media/instagram/${asset.fileName}`, fileName: asset.fileName });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.post('/api/admin/instagram/queue/:id/publish', requireAdmin, async (req, res) => {
   const data = await readStore();
   const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);

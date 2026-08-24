@@ -143,6 +143,8 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
   const originalPrice = money(story.originalPrice);
   const discount = Math.max(0, Math.round(Number(story.discount || 0)));
   const store = String(story.store || 'Oferta').toUpperCase().slice(0, 28);
+  const shareProfile = String(story.shareProfile || '').trim().replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '').slice(0, 40);
+  const headerSubtitle = escapeXml(shareProfile ? `Siga @${shareProfile}` : 'OFERTA SELECIONADA');
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? 62 : 0}">${escapeXml(line)}</tspan>`).join('');
   const disclosure = escapeXml(config.instagramDisclosureText || 'Publicidade · link de afiliado');
@@ -156,7 +158,7 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
     <rect width="1080" height="1920" fill="url(#bg)"/>
     ${decorationSvg(theme)}
     <text x="220" y="118" font-family="Arial,sans-serif" font-size="52" font-weight="800" fill="${theme.text}">PromoShop</text>
-    <text x="220" y="161" font-family="Arial,sans-serif" font-size="26" font-weight="600" fill="${theme.text}" opacity=".84">OFERTA SELECIONADA</text>
+    <text x="220" y="161" font-family="Arial,sans-serif" font-size="26" font-weight="600" fill="${theme.text}" opacity=".84">${headerSubtitle}</text>
     <rect x="72" y="238" width="936" height="870" rx="58" fill="#ffffff" filter="url(#shadow)"/>
     <rect x="92" y="1138" width="250" height="56" rx="28" fill="${theme.accent}"/>
     <text x="217" y="1176" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="800" fill="#111827">${escapeXml(store)}</text>
