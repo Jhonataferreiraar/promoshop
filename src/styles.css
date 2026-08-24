@@ -3755,6 +3755,20 @@ button {
   gap: 10px;
 }
 
+.inbox-detail-actions .danger-text {
+  color: #b42318;
+}
+
+.inbox-detail-actions .danger-text:hover:not(:disabled) {
+  color: #912018;
+  text-decoration: underline;
+}
+
+.inbox-detail-actions .danger-text:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 .inbox-status {
   padding: 5px 9px;
   border-radius: 999px;

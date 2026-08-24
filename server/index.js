@@ -2396,6 +2396,25 @@ app.patch(
   }
 );
 
+app.delete(
+  '/api/admin/inbox/:id',
+  requireAdmin,
+  async (req, res) => {
+    let removed = false;
+
+    await updateStore((data) => {
+      const inbox = Array.isArray(data.inbox) ? data.inbox : [];
+      const previousLength = inbox.length;
+      data.inbox = inbox.filter((item) => item.id !== req.params.id);
+      removed = data.inbox.length < previousLength;
+    });
+
+    if (!removed) return res.status(404).json({ error: 'Mensagem não encontrada.' });
+    await addLog('Mensagem da caixa de entrada excluída pelo administrador.', 'info');
+    res.json({ ok: true });
+  }
+);
+
 app.post(
   '/api/admin/inbox/:id/reply',
   requireAdmin,

@@ -976,7 +976,7 @@ const publicInfoPages = {
     intro: 'Você pode solicitar a exclusão de informações relacionadas ao PromoShop ou revogar uma integração autorizada.',
     updatedAt: '23 de agosto de 2026',
     sections: [
-      { title: 'Visitantes e contatos', paragraphs: ['Para solicitar acesso, correção ou exclusão de uma mensagem enviada pelo site, use o Fale Conosco com o assunto “Privacidade e dados pessoais”. Informe somente o necessário para localizarmos a solicitação e confirmarmos sua legitimidade.'], contact: true },
+      { title: 'Visitantes e contatos', paragraphs: ['Para solicitar acesso, correção ou exclusão de uma mensagem enviada pelo site, use o Fale Conosco com o assunto “Privacidade e dados pessoais”. Informe somente o necessário para localizarmos a solicitação e confirmarmos sua legitimidade.', 'O pedido será recebido na caixa de entrada do painel administrativo. Depois da confirmação necessária, o administrador poderá excluir a mensagem e o histórico relacionado pela opção “Excluir mensagem”. A medição de acessos usa registros anônimos e não permite localizar uma pessoa específica.'], contact: true },
       { title: 'Integração com Instagram e Meta', paragraphs: ['A integração é usada apenas pelo administrador da conta profissional do PromoShop. Ela pode ser revogada no painel administrativo em Instagram Stories, usando “Desconectar”, e também nas configurações de aplicativos e sites da conta Meta ou Instagram.', 'Ao desconectar no PromoShop, removemos do armazenamento protegido o token de acesso, o identificador, o nome de usuário e a imagem de perfil obtidos pela integração. Registros técnicos mínimos de publicações já realizadas podem permanecer pelo prazo necessário à segurança e à comprovação da operação.'] },
       { title: 'Prazo e contato', paragraphs: ['Buscamos enviar resposta inicial em até 5 dias úteis. A conclusão seguirá o prazo aplicável à natureza do pedido e poderá exigir confirmação de identidade ou de titularidade da conta.'] , contact: true }
     ]
@@ -1794,6 +1794,15 @@ function AdminApp() {
       setMessage(`Não foi possível atualizar a mensagem: ${error.message}`);
     }
   }
+  async function removeInboxMessage(id) {
+    try {
+      await authApi(`/admin/inbox/${id}`, { method: 'DELETE' });
+      await load({ preserveConfig: true });
+      setMessage('Mensagem excluída da caixa de entrada.');
+    } catch (error) {
+      setMessage(`Não foi possível excluir a mensagem: ${error.message}`);
+    }
+  }
   async function replyInboxMessage(id, replyText) {
     const result = await authApi(`/admin/inbox/${id}/reply`, {
       method: 'POST',
@@ -2539,7 +2548,7 @@ function AdminApp() {
       </form>
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).length} cadastrado(s). O disparo respeita os grupos escolhidos no cadastro.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).length && <div className="empty"><strong>Nenhum cupom cadastrado</strong><p>Preencha o formulário ao lado para publicar seu primeiro cupom.</p></div>}</div></section>
     </div>}
-    {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onSetup={setupInboxInbound} />}
+    {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} /></section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
@@ -3304,7 +3313,7 @@ function AdminApp() {
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
 }
 
-function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSetup }) {
+function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDelete, onSetup }) {
   const sortedMessages = [...messages].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const [selectedId, setSelectedId] = useState(sortedMessages[0]?.id || '');
   const [replyText, setReplyText] = useState('');
@@ -3312,6 +3321,7 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSe
   const [inboundDomain, setInboundDomain] = useState(inboxConfig.inboxInboundDomain || 'reply.jhonatafaraujo.com.br');
   const [setupBusy, setSetupBusy] = useState(false);
   const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const selected = sortedMessages.find((item) => item.id === selectedId) || sortedMessages[0] || null;
   const unreadCount = sortedMessages.filter((item) => item.status === 'unread').length;
 
@@ -3351,6 +3361,18 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSe
     }
   }
 
+  async function deleteSelected() {
+    if (!selected || deleting) return;
+    const confirmed = window.confirm('Excluir esta mensagem e todo o histórico da conversa? Essa ação não pode ser desfeita.');
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete(selected.id);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function submitInboundSetup(event) {
     event.preventDefault();
     if (!inboundDomain.trim() || setupBusy) return;
@@ -3380,7 +3402,7 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onSe
     </section>
     <section className="panel inbox-detail-panel">
       {selected ? <>
-        <div className="inbox-detail-head"><div><span className="section-step">MENSAGEM</span><h2>{selected.name || 'Visitante'}</h2><a href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="inbox-detail-actions"><span className={`inbox-status ${selected.status}`}>{selected.status === 'unread' ? 'Não lida' : selected.status === 'replied' ? 'Respondida' : 'Lida'}</span><button className="text-button" type="button" onClick={() => onMarkRead(selected.id, selected.status === 'unread' ? 'read' : 'unread')}>{selected.status === 'unread' ? 'Marcar como lida' : 'Marcar como não lida'}</button></div></div>
+        <div className="inbox-detail-head"><div><span className="section-step">MENSAGEM</span><h2>{selected.name || 'Visitante'}</h2><a href={`mailto:${selected.email}`}>{selected.email}</a></div><div className="inbox-detail-actions"><span className={`inbox-status ${selected.status}`}>{selected.status === 'unread' ? 'Não lida' : selected.status === 'replied' ? 'Respondida' : 'Lida'}</span><button className="text-button" type="button" onClick={() => onMarkRead(selected.id, selected.status === 'unread' ? 'read' : 'unread')}>{selected.status === 'unread' ? 'Marcar como lida' : 'Marcar como não lida'}</button><button className="text-button danger-text" type="button" onClick={deleteSelected} disabled={deleting}>{deleting ? 'Excluindo…' : 'Excluir mensagem'}</button></div></div>
         <div className="inbox-meta"><span>Recebida em {selected.createdAt ? new Date(selected.createdAt).toLocaleString('pt-BR') : '—'}</span>{selected.subject && <span>Assunto: {selected.subject}</span>}{selected.deliveryStatus === 'failed' && <span className="inbox-delivery-error">A notificação por e-mail falhou, mas a mensagem foi salva aqui.</span>}</div>
         <div className="inbox-message-body">{selected.message}</div>
         {(selected.replies || []).length > 0 && <div className="inbox-replies"><h3>Histórico da conversa</h3>{selected.replies.map((reply) => <article className={reply.direction === 'inbound' ? 'inbound' : 'outbound'} key={reply.id}><div><strong>{reply.direction === 'inbound' ? (reply.name || selected.name || 'Visitante') : 'Você'}</strong><time>{reply.createdAt ? new Date(reply.createdAt).toLocaleString('pt-BR') : ''}</time></div><p>{reply.message}</p></article>)}</div>}
