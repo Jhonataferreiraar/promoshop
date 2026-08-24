@@ -275,7 +275,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     : '';
   const bioY = templateType === 'group' && groupCode ? 960 : 900;
   const profileFooter = profile ? `Siga @${profile}` : 'Siga @sonapromoshop';
-  const siteLinkArea = isSite ? `<rect x="120" y="1100" width="840" height="250" rx="28" fill="#ffffff" stroke="#d0d5dd" stroke-width="4" stroke-dasharray="12 12"/><text x="540" y="1198" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="800" fill="#98a2b3">ESPAÇO PARA O LINK</text><text x="540" y="1245" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#98a2b3">Adicione o adesivo de link no Story</text>` : '';
+  const siteLinkArea = isSite ? `<rect x="150" y="1140" width="780" height="150" rx="26" fill="#ffffff" stroke="#d0d5dd" stroke-width="4" stroke-dasharray="12 12"/>` : '';
   const ctaMarkup = !isSite && cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
   const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * 52), bodyFont)).join('');
@@ -299,7 +299,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     ${bioMarkup}
     ${siteLinkArea}
     ${ctaMarkup}
-    <text x="540" y="${isSite ? 1490 : 1450}" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : isSite ? 'Cole o link da página no Story' : profileFooter)}</text>
+    ${!isSite ? `<text x="540" y="1450" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>` : ''}
     <text x="540" y="${domainY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
   </svg>`);
   const logoSize = templateType === 'group' ? 210 : 230;
