@@ -218,30 +218,32 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
   const bioLines = splitParagraphLines(options.bio || defaultBio, 31, 4);
   const titleLines = splitLines(templateType === 'group' ? groupName : `@${profile}`, 24, 2);
-  const titleTspans = titleLines.map((line, index) => `<tspan x="100" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
-  const bioTspans = bioLines.map((line, index) => `<tspan x="100" dy="${index ? 54 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const titleTspans = titleLines.map((line, index) => `<tspan x="540" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const bioTspans = bioLines.map((line, index) => `<tspan x="540" dy="${index ? 52 : 0}">${escapeXml(line)}</tspan>`).join('');
   const groupLink = validHttps(options.groupLink);
   const showQrCode = Boolean(options.showQrCode && groupLink);
   const qrLabel = showQrCode ? 'Aponte a câmera para entrar' : 'Link do grupo na bio';
   const cta = escapeXml(String(options.ctaText || (templateType === 'group' ? 'Conheça este grupo' : 'Conheça o perfil')).slice(0, 48));
-  const titleY = templateType === 'group' ? 740 : 760;
+  const titleY = templateType === 'group' ? 720 : 735;
   const codeBadge = templateType === 'group' && groupCode
-    ? `<rect x="100" y="885" width="190" height="58" rx="29" fill="${theme.accent}"/><text x="195" y="924" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
+    ? `<rect x="445" y="885" width="190" height="58" rx="29" fill="${theme.accent}"/><text x="540" y="924" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
     : '';
-  const bioY = templateType === 'group' && groupCode ? 1015 : 970;
+  const bioY = templateType === 'group' && groupCode ? 1015 : 950;
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
-    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter></defs>
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><linearGradient id="cardTop" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".25"/></filter></defs>
     <rect width="1080" height="1920" fill="url(#bg)"/>
     ${decorationSvg(theme)}
-    <text x="220" y="118" font-family="Arial,sans-serif" font-size="52" font-weight="800" fill="${theme.text}">PromoShop</text>
-    <text x="220" y="161" font-family="Arial,sans-serif" font-size="26" font-weight="600" fill="${theme.text}" opacity=".84">${templateType === 'group' ? 'ENTRE NO GRUPO CERTO' : 'CONHEÇA O PERFIL'}</text>
-    <rect x="58" y="238" width="964" height="1375" rx="62" fill="#ffffff" filter="url(#shadow)"/>
-    <circle cx="540" cy="445" r="164" fill="${theme.background}" opacity=".10"/>
-    <text x="540" y="620" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="800" fill="${theme.background}">${templateType === 'group' ? 'GRUPO PROMOSHOP' : 'PERFIL OFICIAL'}</text>
-    <text x="100" y="${titleY}" font-family="Arial,sans-serif" font-size="62" font-weight="900" fill="#101828">${titleTspans}</text>
+    <text x="70" y="112" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
+    <text x="70" y="153" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
+    <rect x="54" y="225" width="972" height="1410" rx="62" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="54" y="225" width="972" height="345" rx="62" fill="url(#cardTop)"/>
+    <rect x="54" y="475" width="972" height="116" fill="url(#cardTop)"/>
+    <circle cx="540" cy="432" r="168" fill="#ffffff" opacity=".16"/>
+    <text x="540" y="300" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="800" fill="${theme.text}" opacity=".88">${templateType === 'group' ? 'GRUPO WHATSAPP' : 'PERFIL OFICIAL'}</text>
+    <text x="540" y="${titleY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="64" font-weight="900" fill="#101828">${titleTspans}</text>
     ${codeBadge}
-    <text x="100" y="${bioY}" font-family="Arial,sans-serif" font-size="36" font-weight="600" fill="#475467">${bioTspans}</text>
-    <rect x="100" y="1250" width="880" height="124" rx="40" fill="${theme.accent}"/>
+    <text x="540" y="${bioY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="36" font-weight="600" fill="#475467">${bioTspans}</text>
+    <rect x="100" y="1235" width="880" height="124" rx="40" fill="${theme.accent}"/>
     <text x="540" y="1327" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="900" fill="#111827">${cta}  →</text>
     <text x="540" y="1500" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : `Siga @${profile}`)}</text>
     <text x="540" y="1570" text-anchor="middle" font-family="Arial,sans-serif" font-size="29" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
