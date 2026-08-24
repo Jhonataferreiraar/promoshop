@@ -136,14 +136,15 @@ export async function cleanupInstagramAssets(maximumAgeHours = 72) {
 export async function generateInstagramStory(story, config, requestedThemeId = '') {
   await fs.mkdir(mediaDir, { recursive: true });
   const theme = selectInstagramTheme(config, new Date(), requestedThemeId || story.themeId);
-  const titleLines = splitLines(story.title, 31, 4);
+  // Keep dedicated vertical areas for the title, price and CTA. Marketplace
+  // titles can be very long, so cap them at two lines to prevent overlap.
+  const titleLines = splitLines(story.title, 34, 2);
   const price = money(story.price);
   const originalPrice = money(story.originalPrice);
   const discount = Math.max(0, Math.round(Number(story.discount || 0)));
   const store = String(story.store || 'Oferta').toUpperCase().slice(0, 28);
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? 66 : 0}">${escapeXml(line)}</tspan>`).join('');
-  const priceY = 1398 + Math.max(0, titleLines.length - 2) * 18;
+  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? 62 : 0}">${escapeXml(line)}</tspan>`).join('');
   const disclosure = escapeXml(config.instagramDisclosureText || 'Publicidade · link de afiliado');
   const cta = escapeXml(config.instagramCtaText || 'Acesse o link da bio');
 
@@ -153,15 +154,15 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
     ${decorationSvg(theme)}
     <text x="220" y="118" font-family="Arial,sans-serif" font-size="52" font-weight="800" fill="${theme.text}">PromoShop</text>
     <text x="220" y="161" font-family="Arial,sans-serif" font-size="26" font-weight="600" fill="${theme.text}" opacity=".84">OFERTA SELECIONADA</text>
-    <rect x="72" y="238" width="936" height="930" rx="58" fill="#ffffff" filter="url(#shadow)"/>
-    <rect x="92" y="1198" width="250" height="56" rx="28" fill="${theme.accent}"/>
-    <text x="217" y="1236" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="800" fill="#111827">${escapeXml(store)}</text>
-    ${discount > 0 ? `<rect x="764" y="1198" width="244" height="56" rx="28" fill="${theme.accent}"/><text x="886" y="1236" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
-    <text x="92" y="1325" font-family="Arial,sans-serif" font-size="55" font-weight="800" fill="${theme.text}">${titleTspans}</text>
-    ${originalPrice ? `<text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="30" fill="${theme.text}" opacity=".72">De ${escapeXml(originalPrice)}</text><line x1="142" y1="${priceY - 10}" x2="${145 + originalPrice.length * 17}" y2="${priceY - 10}" stroke="${theme.accent}" stroke-width="5"/>` : ''}
-    <text x="92" y="${priceY + 82}" font-family="Arial,sans-serif" font-size="78" font-weight="900" fill="${theme.text}">${escapeXml(price || 'Confira a oferta')}</text>
-    <rect x="72" y="${priceY + 135}" width="936" height="122" rx="40" fill="${theme.accent}"/>
-    <text x="540" y="${priceY + 213}" text-anchor="middle" font-family="Arial,sans-serif" font-size="43" font-weight="900" fill="#111827">${cta}  →</text>
+    <rect x="72" y="238" width="936" height="870" rx="58" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="92" y="1138" width="250" height="56" rx="28" fill="${theme.accent}"/>
+    <text x="217" y="1176" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="800" fill="#111827">${escapeXml(store)}</text>
+    ${discount > 0 ? `<rect x="764" y="1138" width="244" height="56" rx="28" fill="${theme.accent}"/><text x="886" y="1176" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
+    <text x="92" y="1270" font-family="Arial,sans-serif" font-size="50" font-weight="800" fill="${theme.text}">${titleTspans}</text>
+    ${originalPrice ? `<text x="92" y="1432" font-family="Arial,sans-serif" font-size="30" fill="${theme.text}" opacity=".72">De ${escapeXml(originalPrice)}</text><line x1="142" y1="1422" x2="${145 + originalPrice.length * 17}" y2="1422" stroke="${theme.accent}" stroke-width="5"/>` : ''}
+    <text x="92" y="1510" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.text}">${escapeXml(price || 'Confira a oferta')}</text>
+    <rect x="72" y="1570" width="936" height="116" rx="38" fill="${theme.accent}"/>
+    <text x="540" y="1643" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="900" fill="#111827">${cta}  →</text>
     <text x="540" y="1790" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     <text x="540" y="1840" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="${theme.text}" opacity=".72">${disclosure}</text>
   </svg>`);
@@ -169,7 +170,7 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
   let product;
   try {
     const source = await fetchBuffer(story.image);
-    if (source) product = await sharp(source).rotate().resize(820, 840, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
+    if (source) product = await sharp(source).rotate().resize(820, 780, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
   } catch (error) {
     await addLog(`Instagram: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
   }
