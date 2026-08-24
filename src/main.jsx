@@ -1735,8 +1735,18 @@ function AdminApp() {
       setMessage('Não foi possível copiar o link curto neste navegador.');
     }
   }
-  async function removeCoupon(id) {
-    if (!window.confirm('Excluir este cupom?')) return;
+  function removeCoupon(id) {
+    const coupon = data.coupons.find((item) => item.id === id);
+    setDialog({
+      type: 'confirm-action',
+      eyebrow: 'EXCLUIR CUPOM',
+      title: 'Excluir este cupom?',
+      body: coupon?.title ? `“${coupon.title}” será removido do site e da fila de publicação. Esta ação não poderá ser desfeita.` : 'O cupom será removido do site e da fila de publicação. Esta ação não poderá ser desfeita.',
+      confirmLabel: 'Excluir cupom',
+      onConfirm: () => deleteCoupon(id)
+    });
+  }
+  async function deleteCoupon(id) {
     try {
       await authApi(`/admin/coupons/${id}`, { method: 'DELETE' });
       await load();
@@ -1759,6 +1769,12 @@ function AdminApp() {
     setDialog({ type: 'delete-offer', offer });
   }
   async function confirmRemoveOffer() {
+    if (typeof dialog?.onConfirm === 'function') {
+      const action = dialog.onConfirm;
+      setDialog(null);
+      await action();
+      return;
+    }
     if (!dialog?.offer?.id) return;
     try {
       await authApi(`/admin/offers/${dialog.offer.id}`, { method: 'DELETE' });
@@ -1771,17 +1787,25 @@ function AdminApp() {
   async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await load(); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
   async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await load(); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
   async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await load(); setMessage('Item removido da fila.'); }
-  async function clearFailedQueue() {
+  function clearFailedQueue() {
     const failedCount = data.queue.filter((item) => item.status === 'failed').length;
-    if (!failedCount || !window.confirm(`Excluir ${failedCount} publicação(ões) com falha da fila?`)) return;
-
-    try {
-      const result = await authApi('/admin/queue/failed', { method: 'DELETE' });
-      await load();
-      setMessage(`${result.removed || failedCount} publicação(ões) com falha removida(s).`);
-    } catch (error) {
-      setMessage(`Não foi possível excluir as falhas: ${error.message}`);
-    }
+    if (!failedCount) return;
+    setDialog({
+      type: 'confirm-action',
+      eyebrow: 'LIMPAR FILA',
+      title: 'Excluir publicações com falha?',
+      body: `${failedCount} publicação(ões) com falha serão removidas da fila. Esta ação não poderá ser desfeita.`,
+      confirmLabel: 'Excluir falhas',
+      onConfirm: async () => {
+        try {
+          const result = await authApi('/admin/queue/failed', { method: 'DELETE' });
+          await load();
+          setMessage(`${result.removed || failedCount} publicação(ões) com falha removida(s).`);
+        } catch (error) {
+          setMessage(`Não foi possível excluir as falhas: ${error.message}`);
+        }
+      }
+    });
   }
   async function markInboxMessage(id, status = 'read') {
     try {
@@ -3310,7 +3334,12 @@ function AdminApp() {
     </form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
-  </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>EXCLUIR OFERTA</span><h2 id="modal-title">Tem certeza?</h2><p>A oferta será removida do painel. Esta ação não poderá ser desfeita.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Manter oferta</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>Excluir oferta</button></div></div>}</section></div>}</div>;
+  </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' || dialog.type === 'confirm-action' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{dialog.eyebrow || 'EXCLUIR OFERTA'}</span><h2 id="modal-title">{dialog.title || 'Tem certeza?'}</h2><p>{dialog.body || 'A oferta será removida do painel. Esta ação não poderá ser desfeita.'}</p></div>{dialog.offer && <div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div>}<div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>{dialog.cancelLabel || 'Cancelar'}</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>{dialog.confirmLabel || 'Excluir oferta'}</button></div></div>}</section></div>}</div>;
+}
+
+function ConfirmationModal({ open, eyebrow = 'CONFIRMAR AÇÃO', title, body, confirmLabel = 'Confirmar', onCancel, onConfirm, busy = false }) {
+  if (!open) return null;
+  return <div className="modal-backdrop" onMouseDown={onCancel}><section className="app-modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="confirmation-modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{eyebrow}</span><h2 id="confirmation-modal-title">{title}</h2><p>{body}</p></div><div className="modal-actions"><button className="button subtle" type="button" onClick={onCancel} disabled={busy}>Cancelar</button><button className="button danger-button" type="button" onClick={onConfirm} disabled={busy}>{busy ? 'Excluindo…' : confirmLabel}</button></div></section></div>;
 }
 
 function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDelete, onSetup }) {
@@ -3322,6 +3351,7 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDe
   const [setupBusy, setSetupBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const selected = sortedMessages.find((item) => item.id === selectedId) || sortedMessages[0] || null;
   const unreadCount = sortedMessages.filter((item) => item.status === 'unread').length;
 
@@ -3363,10 +3393,14 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDe
 
   async function deleteSelected() {
     if (!selected || deleting) return;
-    const confirmed = window.confirm('Excluir esta mensagem e todo o histórico da conversa? Essa ação não pode ser desfeita.');
-    if (!confirmed) return;
+    setConfirmDelete(true);
+  }
+
+  async function confirmDeleteSelected() {
+    if (!selected || deleting) return;
     setDeleting(true);
     try {
+      setConfirmDelete(false);
       await onDelete(selected.id);
     } finally {
       setDeleting(false);
@@ -3386,7 +3420,7 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDe
     }
   }
 
-  return <div className="inbox-page">
+  return <><div className="inbox-page">
     <section className="panel inbox-setup-panel">
       <div className="inbox-setup-copy"><span className="section-step">RESPOSTAS AUTOMÁTICAS</span><h2>{inboxConfig.inboxInboundEnabled ? 'Respostas por e-mail ativas' : 'Receba respostas nesta caixa'}</h2><p>{inboxConfig.inboxInboundEnabled ? `As respostas serão direcionadas para a conversa pelo subdomínio ${inboxConfig.inboxInboundDomain}.` : 'Para transformar o painel em uma caixa de entrada completa, use um subdomínio separado para receber as respostas.'}</p></div>
       <form className="inbox-setup-form" onSubmit={submitInboundSetup}><label>Subdomínio de recebimento<input required type="text" value={inboundDomain} onChange={(event) => setInboundDomain(event.target.value)} placeholder="reply.jhonatafaraujo.com.br" /></label><button className="button primary" type="submit" disabled={setupBusy}>{setupBusy ? 'Ativando…' : inboxConfig.inboxInboundEnabled ? 'Atualizar configuração' : 'Ativar recebimento'}</button></form>
@@ -3410,7 +3444,7 @@ function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDe
       </> : <div className="empty inbox-empty"><strong>Selecione uma mensagem</strong><p>Escolha uma mensagem na lista para ler e responder.</p></div>}
     </section>
     </div>
-  </div>;
+  </div><ConfirmationModal open={confirmDelete} eyebrow="EXCLUIR MENSAGEM" title="Excluir esta mensagem?" body="A mensagem e todo o histórico da conversa serão removidos. Esta ação não poderá ser desfeita." confirmLabel="Excluir mensagem" onCancel={() => setConfirmDelete(false)} onConfirm={confirmDeleteSelected} busy={deleting} /></>
 }
 
 function AnalyticsDashboard({ analytics = {}, config = {}, secrets = {}, secretForm = {}, setSecretForm, searchConsole, onConnect, onRefreshSearchConsole, setConfigField }) {
