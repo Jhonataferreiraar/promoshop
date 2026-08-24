@@ -625,7 +625,7 @@ function mailboxName(value) {
 }
 
 const analyticsSessionWindowMs = 30 * 60 * 1000;
-const privacyPolicyVersion = '2026-08-23-v4';
+const privacyPolicyVersion = '2026-08-23-v5';
 
 function boundedNumber(value, fallback, minimum, maximum) {
   const number = Number(value);

@@ -74,7 +74,7 @@ const initialData = {
     legalContactRetentionMonths: 12,
     legalConsentRetentionYears: 5,
     legalAffiliatePrograms: 'Mercado Livre, Shopee, AliExpress e Magalu',
-    legalPolicyVersion: '2026-08-23-v4',
+    legalPolicyVersion: '2026-08-23-v5',
     legalAboutCustomText: '',
     legalContactCustomText: '',
     legalTermsCustomText: '',
@@ -301,7 +301,7 @@ export async function readStore() {
     data.config.seoDescription = initialData.config.seoDescription;
   }
 
-  if (['2026-08-23', '2026-08-23-v2', '2026-08-23-v3'].includes(data.config.legalPolicyVersion)) {
+  if (['2026-08-23', '2026-08-23-v2', '2026-08-23-v3', '2026-08-23-v4'].includes(data.config.legalPolicyVersion)) {
     data.config.legalPolicyVersion = initialData.config.legalPolicyVersion;
   }
 
