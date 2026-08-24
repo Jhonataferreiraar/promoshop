@@ -56,6 +56,16 @@ function splitLines(value, maxCharacters = 31, maxLines = 4) {
   return lines;
 }
 
+function splitParagraphLines(value, maxCharacters = 31, maxLines = 4) {
+  const lines = [];
+  for (const paragraph of String(value || '').split(/\r?\n/)) {
+    if (lines.length >= maxLines) break;
+    const remaining = maxLines - lines.length;
+    lines.push(...splitLines(paragraph, maxCharacters, remaining).slice(0, remaining));
+  }
+  return lines.slice(0, maxLines);
+}
+
 function money(value) {
   const amount = Number(value || 0);
   return amount > 0
@@ -108,10 +118,10 @@ function decorationSvg(theme) {
   return shapes[theme.decoration] || shapes.spark;
 }
 
-async function logoBuffer() {
+async function logoBuffer(size = 118) {
   for (const candidate of ['favicon-original.png', 'favicon-512.png']) {
     try {
-      return await sharp(path.join(root, 'public', candidate)).resize(118, 118, { fit: 'contain' }).png().toBuffer();
+      return await sharp(path.join(root, 'public', candidate)).resize(size, size, { fit: 'contain' }).png().toBuffer();
     } catch { /* tenta o próximo */ }
   }
   return null;
@@ -203,37 +213,45 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const profile = String(options.profile || 'sonapromoshop').trim().replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '').slice(0, 40) || 'sonapromoshop';
   const groupName = String(options.groupName || 'Ofertas PromoShop').trim().slice(0, 100);
   const groupCode = String(options.groupCode || '').trim().toUpperCase().slice(0, 10);
-  const bioLines = splitLines(options.bio || 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade', 28, 4);
+  const defaultBio = templateType === 'group'
+    ? `Ofertas selecionadas para ${groupName}\nReceba novidades e descontos\nEntre pelo link da bio`
+    : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
+  const bioLines = splitParagraphLines(options.bio || defaultBio, 31, 4);
   const titleLines = splitLines(templateType === 'group' ? groupName : `@${profile}`, 24, 2);
-  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? 68 : 0}">${escapeXml(line)}</tspan>`).join('');
-  const bioTspans = bioLines.map((line, index) => `<tspan x="92" dy="${index ? 47 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const titleTspans = titleLines.map((line, index) => `<tspan x="100" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const bioTspans = bioLines.map((line, index) => `<tspan x="100" dy="${index ? 54 : 0}">${escapeXml(line)}</tspan>`).join('');
   const groupLink = validHttps(options.groupLink);
   const showQrCode = Boolean(options.showQrCode && groupLink);
   const qrLabel = showQrCode ? 'Aponte a câmera para entrar' : 'Link do grupo na bio';
   const cta = escapeXml(String(options.ctaText || (templateType === 'group' ? 'Conheça este grupo' : 'Conheça o perfil')).slice(0, 48));
+  const titleY = templateType === 'group' ? 740 : 760;
+  const codeBadge = templateType === 'group' && groupCode
+    ? `<rect x="100" y="885" width="190" height="58" rx="29" fill="${theme.accent}"/><text x="195" y="924" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
+    : '';
+  const bioY = templateType === 'group' && groupCode ? 1015 : 970;
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter></defs>
     <rect width="1080" height="1920" fill="url(#bg)"/>
     ${decorationSvg(theme)}
     <text x="220" y="118" font-family="Arial,sans-serif" font-size="52" font-weight="800" fill="${theme.text}">PromoShop</text>
     <text x="220" y="161" font-family="Arial,sans-serif" font-size="26" font-weight="600" fill="${theme.text}" opacity=".84">${templateType === 'group' ? 'ENTRE NO GRUPO CERTO' : 'CONHEÇA O PERFIL'}</text>
-    <rect x="72" y="238" width="936" height="1230" rx="58" fill="#ffffff" filter="url(#shadow)"/>
-    <circle cx="540" cy="455" r="148" fill="${theme.background}" opacity=".12"/>
-    <text x="540" y="525" text-anchor="middle" font-family="Arial,sans-serif" font-size="140" font-weight="900" fill="${theme.background}">${templateType === 'group' ? '⚡' : '%'}</text>
-    <text x="92" y="745" font-family="Arial,sans-serif" font-size="58" font-weight="900" fill="#101828">${titleTspans}</text>
-    ${templateType === 'group' && groupCode ? `<rect x="92" y="910" width="180" height="54" rx="27" fill="${theme.accent}"/><text x="182" y="947" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>` : ''}
-    <text x="92" y="${templateType === 'group' && groupCode ? 1035 : 910}" font-family="Arial,sans-serif" font-size="30" font-weight="600" fill="#475467">${bioTspans}</text>
-    <rect x="92" y="1210" width="896" height="120" rx="40" fill="${theme.accent}"/>
-    <text x="540" y="1284" text-anchor="middle" font-family="Arial,sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>
-    <text x="540" y="1605" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="800" fill="${theme.text}">${escapeXml(templateType === 'group' ? qrLabel : `Siga @${profile}`)}</text>
-    <text x="540" y="1680" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" fill="${theme.text}" opacity=".86">promoshop.jhonatafaraujo.com.br</text>
+    <rect x="58" y="238" width="964" height="1375" rx="62" fill="#ffffff" filter="url(#shadow)"/>
+    <circle cx="540" cy="445" r="164" fill="${theme.background}" opacity=".10"/>
+    <text x="540" y="620" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="800" fill="${theme.background}">${templateType === 'group' ? 'GRUPO PROMOSHOP' : 'PERFIL OFICIAL'}</text>
+    <text x="100" y="${titleY}" font-family="Arial,sans-serif" font-size="62" font-weight="900" fill="#101828">${titleTspans}</text>
+    ${codeBadge}
+    <text x="100" y="${bioY}" font-family="Arial,sans-serif" font-size="36" font-weight="600" fill="#475467">${bioTspans}</text>
+    <rect x="100" y="1250" width="880" height="124" rx="40" fill="${theme.accent}"/>
+    <text x="540" y="1327" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="900" fill="#111827">${cta}  →</text>
+    <text x="540" y="1500" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : `Siga @${profile}`)}</text>
+    <text x="540" y="1570" text-anchor="middle" font-family="Arial,sans-serif" font-size="29" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
   </svg>`);
-  const logo = await logoBuffer();
+  const logo = await logoBuffer(templateType === 'group' ? 210 : 230);
   const composites = [];
-  if (logo) composites.push({ input: logo, left: 481, top: 307 });
+  if (logo) composites.push({ input: logo, left: templateType === 'group' ? 435 : 425, top: templateType === 'group' ? 340 : 330 });
   if (showQrCode) {
     const qr = await QRCode.toBuffer(groupLink, { type: 'png', width: 180, margin: 1, color: { dark: '#111827', light: '#ffffff' } });
-    composites.push({ input: qr, left: 450, top: 1710 });
+    composites.push({ input: qr, left: 450, top: 1660 });
   }
   const fileName = `share-${templateType}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
   const filePath = path.join(mediaDir, fileName);
