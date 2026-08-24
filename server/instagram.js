@@ -255,8 +255,8 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <circle cx="1030" cy="160" r="250" fill="${theme.background2}" opacity=".52"/>
     <circle cx="40" cy="1800" r="210" fill="${theme.background2}" opacity=".35"/>
     ${decorationSvg(theme)}
-    <text x="540" y="112" text-anchor="middle" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
-    <text x="540" y="153" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
+    <text x="70" y="112" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
+    <text x="70" y="153" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
     <rect x="54" y="225" width="972" height="1500" rx="58" fill="#ffffff" filter="url(#shadow)"/>
     <rect x="54" y="225" width="972" height="360" rx="58" fill="${theme.background2}"/>
     <rect x="54" y="435" width="972" height="150" fill="${theme.background2}"/>
@@ -271,9 +271,10 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <text x="540" y="1450" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>
     <text x="540" y="${domainY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
   </svg>`);
-  const logo = await logoBuffer(templateType === 'group' ? 210 : 230);
+  const logoSize = templateType === 'group' ? 210 : 230;
+  const logo = await logoBuffer(logoSize);
   const composites = [];
-  if (logo) composites.push({ input: logo, left: templateType === 'group' ? 435 : 425, top: 335 });
+  if (logo) composites.push({ input: logo, left: 540 - (logoSize / 2), top: 440 - (logoSize / 2) });
   if (showQrCode) {
     const qr = await QRCode.toBuffer(groupLink, { type: 'png', width: 180, margin: 1, color: { dark: '#111827', light: '#ffffff' } });
     composites.push({ input: qr, left: 450, top: 1485 });
