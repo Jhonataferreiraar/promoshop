@@ -246,7 +246,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     ? `<rect x="445" y="830" width="190" height="56" rx="28" fill="${theme.accent}"/><text x="540" y="867" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
     : '';
   const bioY = templateType === 'group' && groupCode ? 960 : 900;
-  const profileFooter = profile ? `Siga @${profile}` : '';
+  const profileFooter = profile ? `Siga @${profile}` : 'Siga @sonapromoshop';
   const ctaMarkup = cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
@@ -255,8 +255,8 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <circle cx="1030" cy="160" r="250" fill="${theme.background2}" opacity=".52"/>
     <circle cx="40" cy="1800" r="210" fill="${theme.background2}" opacity=".35"/>
     ${decorationSvg(theme)}
-    <text x="70" y="112" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
-    <text x="70" y="153" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
+    <text x="540" y="112" text-anchor="middle" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
+    <text x="540" y="153" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
     <rect x="54" y="225" width="972" height="1500" rx="58" fill="#ffffff" filter="url(#shadow)"/>
     <rect x="54" y="225" width="972" height="360" rx="58" fill="${theme.background2}"/>
     <rect x="54" y="435" width="972" height="150" fill="${theme.background2}"/>
