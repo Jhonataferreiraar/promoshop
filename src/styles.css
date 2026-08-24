@@ -3769,6 +3769,27 @@ button {
   opacity: .65;
 }
 
+.manual-link-share-note {
+  display: grid;
+  align-content: center;
+  min-height: 88px;
+  padding: 14px 16px;
+  border: 1px dashed #b7c8e8;
+  border-radius: 12px;
+  background: #f7faff;
+  color: #175cd3;
+}
+
+.manual-link-share-note strong {
+  font-size: 13px;
+}
+
+.manual-link-share-note small {
+  margin-top: 4px;
+  color: #667085;
+  line-height: 1.45;
+}
+
 .inbox-status {
   padding: 5px 9px;
   border-radius: 999px;

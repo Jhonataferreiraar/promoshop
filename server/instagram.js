@@ -239,7 +239,8 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
 export async function generateInstagramShareTemplate(options = {}, config = {}, requestedThemeId = '') {
   await fs.mkdir(mediaDir, { recursive: true });
   const theme = selectInstagramTheme(config, new Date(), requestedThemeId);
-  const templateType = options.templateType === 'group' ? 'group' : 'profile';
+  const templateType = options.templateType === 'group' ? 'group' : options.templateType === 'site' ? 'site' : 'profile';
+  const isSite = templateType === 'site';
   const profileMode = options.profileMode === 'none' ? 'none' : options.profileMode === 'auto' ? 'auto' : 'manual';
   const profile = profileMode === 'none'
     ? ''
@@ -248,27 +249,31 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const groupCode = String(options.groupCode || '').trim().toUpperCase().slice(0, 10);
   const defaultBio = templateType === 'group'
     ? `Ofertas selecionadas para ${groupName}\nReceba novidades e descontos\nEntre pelo link da bio`
-    : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
-  const bioLines = splitParagraphLines(svgText(options.bio || defaultBio), 34, templateType === 'group' ? 3 : 4);
-  const titleText = templateType === 'group' ? groupName : profile ? `@${profile}` : '';
-  const titleLines = splitLines(titleText, templateType === 'group' ? 28 : 25, 2);
-  const titleSize = templateType === 'group' ? 50 : 62;
+    : isSite
+      ? 'Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas'
+      : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
+  const bioLines = splitParagraphLines(svgText(isSite ? (options.siteDescription || defaultBio) : (options.bio || defaultBio)), 34, templateType === 'group' ? 3 : isSite ? 3 : 4);
+  const siteTitle = svgText(String(options.siteTitle || 'PromoShop - Ofertas Diárias')).slice(0, 100);
+  const titleText = templateType === 'group' ? groupName : isSite ? siteTitle : profile ? `@${profile}` : '';
+  const titleLines = splitLines(titleText, templateType === 'group' ? 28 : isSite ? 24 : 25, 2);
+  const titleSize = templateType === 'group' ? 50 : isSite ? 50 : 62;
   const titleTspans = titleLines.map((line, index) => `<tspan x="540" dy="${index ? 72 : 0}">${escapeXml(line)}</tspan>`).join('');
   const groupLink = validHttps(options.groupLink);
   const showQrCode = Boolean(options.showQrCode && groupLink);
-  const manualLinkPlacement = Boolean(options.manualLinkPlacement && templateType === 'group');
+  const manualLinkPlacement = Boolean(options.manualLinkPlacement && (templateType === 'group' || isSite));
   const qrLabel = manualLinkPlacement ? '' : showQrCode ? 'Aponte a câmera para entrar' : 'Link do grupo na bio';
   const defaultCta = templateType === 'group' ? 'Conheça este grupo' : 'Conheça o perfil';
   const rawCta = Object.prototype.hasOwnProperty.call(options, 'ctaText') ? options.ctaText : defaultCta;
   const cta = escapeXml(svgText(String(rawCta || '').slice(0, 48)));
-  const domainY = showQrCode ? 1700 : 1530;
-  const titleY = templateType === 'group' ? 700 : 735;
+  const domainY = showQrCode ? 1700 : isSite ? 1600 : 1530;
+  const titleY = templateType === 'group' ? 700 : isSite ? 700 : 735;
   const codeBadge = templateType === 'group' && groupCode
     ? `<rect x="445" y="830" width="190" height="56" rx="28" fill="${theme.accent}"/><text x="540" y="867" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="900" fill="#111827">${escapeXml(groupCode)}</text>`
     : '';
   const bioY = templateType === 'group' && groupCode ? 960 : 900;
   const profileFooter = profile ? `Siga @${profile}` : 'Siga @sonapromoshop';
-  const ctaMarkup = cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
+  const siteLinkArea = isSite ? `<rect x="120" y="1100" width="840" height="250" rx="28" fill="#ffffff" stroke="#d0d5dd" stroke-width="4" stroke-dasharray="12 12"/><text x="540" y="1198" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="800" fill="#98a2b3">ESPAÇO PARA O LINK</text><text x="540" y="1245" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#98a2b3">Adicione o adesivo de link no Story</text>` : '';
+  const ctaMarkup = !isSite && cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
   const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * 52), bodyFont)).join('');
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
@@ -278,19 +283,20 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     <circle cx="40" cy="1800" r="210" fill="${theme.background2}" opacity=".35"/>
     ${decorationSvg(theme)}
     <text x="70" y="112" font-family="Arial,sans-serif" font-size="54" font-weight="900" fill="${theme.text}">PromoShop</text>
-    <text x="70" y="153" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
+    <text x="70" y="153" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPOS DE OFERTAS' : isSite ? 'PÁGINA OFICIAL' : 'OFERTAS E CUPONS TODOS OS DIAS'}</text>
     <rect x="54" y="225" width="972" height="1500" rx="58" fill="#ffffff" filter="url(#shadow)"/>
     <rect x="54" y="225" width="972" height="360" rx="58" fill="${theme.background2}"/>
     <rect x="54" y="435" width="972" height="150" fill="${theme.background2}"/>
     <rect x="54" y="585" width="972" height="1140" fill="#ffffff" clip-path="url(#cardClip)"/>
-    <text x="540" y="303" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="800" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPO WHATSAPP' : 'PERFIL OFICIAL'}</text>
+    <text x="540" y="303" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="800" fill="${theme.text}" opacity=".82">${templateType === 'group' ? 'GRUPO WHATSAPP' : isSite ? 'SITE OFICIAL' : 'PERFIL OFICIAL'}</text>
     <circle cx="540" cy="440" r="108" fill="#edf3ff"/>
     <text x="540" y="${titleY}" text-anchor="middle" font-family="${bodyFont}" font-size="${titleSize}" font-weight="900" fill="#101828">${titleTspans}</text>
     ${codeBadge}
     <line x1="170" y1="805" x2="910" y2="805" stroke="#e4e7ec" stroke-width="3"/>
     ${bioMarkup}
+    ${siteLinkArea}
     ${ctaMarkup}
-    <text x="540" y="1450" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : profileFooter)}</text>
+    <text x="540" y="${isSite ? 1490 : 1450}" text-anchor="middle" font-family="${bodyFont}" font-size="30" font-weight="800" fill="#475467">${escapeXml(templateType === 'group' ? qrLabel : isSite ? 'Cole o link da página no Story' : profileFooter)}</text>
     <text x="540" y="${domainY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" fill="#667085">promoshop.jhonatafaraujo.com.br</text>
   </svg>`);
   const logoSize = templateType === 'group' ? 210 : 230;

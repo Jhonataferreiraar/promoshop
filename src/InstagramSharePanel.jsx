@@ -11,6 +11,8 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
   const [profileMode, setProfileMode] = useState('manual');
   const [profile, setProfile] = useState('sonapromoshop');
   const [groupCode, setGroupCode] = useState('');
+  const [siteTitle, setSiteTitle] = useState('PromoShop - Ofertas Diárias');
+  const [siteDescription, setSiteDescription] = useState('Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas');
   const [bio, setBio] = useState('⚡ Ofertas e cupons selecionados\n💸 Preços baixos todos os dias\n🛒 Achados das melhores lojas\n👇 Confira as ofertas');
   const [themeId, setThemeId] = useState('');
   const [ctaText, setCtaText] = useState('Acesse o link da bio');
@@ -23,7 +25,7 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
   const items = useMemo(() => contentType === 'coupon'
     ? (data.coupons || []).filter((coupon) => coupon.active !== false)
     : (data.offers || []).filter((offer) => offer.status !== 'paused'), [data.coupons, data.offers, contentType]);
-  const isTemplate = contentType === 'profile' || contentType === 'group';
+  const isTemplate = contentType === 'profile' || contentType === 'group' || contentType === 'site';
 
   function changeType(value) {
     setContentType(value);
@@ -33,6 +35,7 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
     setPreview('');
     if (value === 'profile') setCtaText('Conheça o perfil');
     else if (value === 'group') setCtaText('Conheça este grupo');
+    else if (value === 'site') setCtaText('');
     else setCtaText('Acesse o link da bio');
   }
 
@@ -43,7 +46,7 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
     try {
       const endpoint = isTemplate ? '/admin/instagram/share-template' : '/admin/instagram/share-preview';
       const body = isTemplate
-        ? { templateType: contentType, profileMode, profile, groupCode, bio, themeId, ctaText: manualLinkPlacement && contentType === 'group' ? '' : ctaText, manualLinkPlacement, showQrCode }
+        ? { templateType: contentType, profileMode, profile, groupCode, siteTitle, siteDescription, bio, themeId, ctaText: manualLinkPlacement && contentType === 'group' ? '' : ctaText, manualLinkPlacement, showQrCode }
         : { kind: contentType, id: selectedId, profile: profileMode === 'none' ? '' : profileMode === 'auto' ? automaticProfile : profile, themeId, ctaText, showQrCode };
       const result = await authApi(endpoint, { method: 'POST', body: JSON.stringify(body) });
       setPreview(`${result.imageUrl}?v=${Date.now()}`);
@@ -68,16 +71,17 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
     }
   }
 
-  const typeLabel = contentType === 'profile' ? 'Perfil PromoShop' : contentType === 'group' ? 'Grupo do WhatsApp' : contentType === 'coupon' ? 'Cupom' : 'Oferta';
+  const typeLabel = contentType === 'profile' ? 'Perfil PromoShop' : contentType === 'group' ? 'Grupo do WhatsApp' : contentType === 'site' ? 'Página do site' : contentType === 'coupon' ? 'Cupom' : 'Oferta';
   const automaticProfile = data.secrets?.instagramUsername || 'sonapromoshop';
   return <div className="instagram-admin-layout personal-share-layout">
     <section className="panel instagram-settings personal-share-panel">
       <div className="panel-heading personal-share-heading"><div><span className="section-step">COMPARTILHAMENTO MANUAL</span><h2>Templates para Stories e Destaques</h2><p>Crie uma arte vertical, baixe no celular e compartilhe no seu Instagram pessoal ou use como capa de Destaque.</p></div><span className="personal-share-format">1080 × 1920</span></div>
       <div className="personal-share-section-title"><span>1</span><div><strong>Escolha o conteúdo</strong><small>Comece pelo tipo de template que deseja criar.</small></div></div>
       <div className="settings-grid two-columns personal-share-form">
-        <label>Modelo<select value={contentType} onChange={(event) => changeType(event.target.value)}><option value="profile">Perfil PromoShop</option><option value="group">Grupo do WhatsApp</option><option value="offer">Oferta</option><option value="coupon">Cupom</option></select><small>Perfil e Grupo são ideais para Stories e Destaques.</small></label>
-        <label className="profile-mode-field">@ do perfil na arte<select value={profileMode} onChange={(event) => setProfileMode(event.target.value)}><option value="auto">Usar automaticamente</option><option value="manual">Digitar manualmente</option><option value="none">Não exibir</option></select><small>{profileMode === 'auto' ? `Conta conectada: @${automaticProfile}` : profileMode === 'none' ? 'O template ficará sem o @ do perfil.' : 'Você define exatamente o @ que será mostrado.'}</small></label>
-        {profileMode === 'manual' && <label>Perfil personalizado<input value={profile} onChange={(event) => setProfile(event.target.value)} placeholder="sonapromoshop" /><small>Digite com ou sem @. A arte normaliza automaticamente.</small></label>}
+        <label>Modelo<select value={contentType} onChange={(event) => changeType(event.target.value)}><option value="profile">Perfil PromoShop</option><option value="site">Página do site</option><option value="group">Grupo do WhatsApp</option><option value="offer">Oferta</option><option value="coupon">Cupom</option></select><small>Perfil, página e grupo são ideais para Stories e Destaques.</small></label>
+        {contentType !== 'site' && <label className="profile-mode-field">@ do perfil na arte<select value={profileMode} onChange={(event) => setProfileMode(event.target.value)}><option value="auto">Usar automaticamente</option><option value="manual">Digitar manualmente</option><option value="none">Não exibir</option></select><small>{profileMode === 'auto' ? `Conta conectada: @${automaticProfile}` : profileMode === 'none' ? 'O template ficará sem o @ do perfil.' : 'Você define exatamente o @ que será mostrado.'}</small></label>}
+        {contentType !== 'site' && profileMode === 'manual' && <label>Perfil personalizado<input value={profile} onChange={(event) => setProfile(event.target.value)} placeholder="sonapromoshop" /><small>Digite com ou sem @. A arte normaliza automaticamente.</small></label>}
+        {contentType === 'site' && <><label>Título da página<input value={siteTitle} onChange={(event) => setSiteTitle(event.target.value)} maxLength={80} /><small>Aparece em destaque no card.</small></label><label className="wide-field">Texto da página<textarea rows="3" value={siteDescription} onChange={(event) => setSiteDescription(event.target.value)} maxLength={220} /><small>Use até três linhas curtas para explicar o que a PromoShop oferece.</small></label></>}
         {contentType === 'group' && <label className="wide-field">Grupo do WhatsApp<select value={groupCode} onChange={(event) => setGroupCode(event.target.value)}><option value="">Selecione um grupo</option>{audiences.map((audience) => <option key={audience.code} value={audience.code}>{audience.name} · {audience.code}</option>)}</select><small>O grupo deve estar cadastrado nas regras do WhatsApp.</small></label>}
         {(contentType === 'offer' || contentType === 'coupon') && <label className="wide-field">{contentType === 'offer' ? 'Oferta' : 'Cupom'}<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione {contentType === 'offer' ? 'uma oferta' : 'um cupom'}</option>{items.map((item) => <option key={item.id} value={item.id}>{labelFor(item, contentType)}</option>)}</select></label>}
         {contentType === 'profile' && <label className="wide-field">Bio do perfil<textarea rows="4" value={bio} onChange={(event) => setBio(event.target.value)} /><small>Até quatro linhas curtas para manter a arte equilibrada.</small></label>}
@@ -85,7 +89,7 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
       <div className="personal-share-section-title"><span>2</span><div><strong>Defina a identidade</strong><small>Escolha o tema e a chamada do card.</small></div></div>
       <div className="settings-grid two-columns personal-share-form personal-share-identity">
         <label>Tema<select value={themeId} onChange={(event) => setThemeId(event.target.value)}><option value="">Automático pela data</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select></label>
-        <label>Chamada principal<input value={ctaText} disabled={manualLinkPlacement && contentType === 'group'} onChange={(event) => setCtaText(event.target.value)} /><small>{manualLinkPlacement && contentType === 'group' ? 'O botão será removido para você inserir o link diretamente no Instagram.' : 'Aparece no botão amarelo. O Instagram não cria botão clicável na imagem.'}</small></label>
+        {contentType !== 'site' ? <label>Chamada principal<input value={ctaText} disabled={manualLinkPlacement && contentType === 'group'} onChange={(event) => setCtaText(event.target.value)} /><small>{manualLinkPlacement && contentType === 'group' ? 'O botão será removido para você inserir o link diretamente no Instagram.' : 'Aparece no botão amarelo. O Instagram não cria botão clicável na imagem.'}</small></label> : <div className="manual-link-share-note"><strong>Link manual no Instagram</strong><small>A arte terá uma área branca reservada. No Story, use o adesivo de link e cole a URL da página.</small></div>}
       </div>
       {contentType === 'group' && <div className="personal-share-options"><label className="toggle-card"><input type="checkbox" checked={manualLinkPlacement} onChange={(event) => setManualLinkPlacement(event.target.checked)} /><span><strong>Deixar espaço para link manual</strong><small>Remove o botão para você adicionar o link no Story pelo Instagram.</small></span></label><label className="toggle-card"><input type="checkbox" checked={showQrCode} onChange={(event) => setShowQrCode(event.target.checked)} /><span><strong>Mostrar QR Code do grupo</strong><small>Só aparece quando o grupo possui um link HTTPS cadastrado.</small></span></label></div>}
       <div className="personal-share-actions"><button className="button primary" type="button" disabled={busy} onClick={generate}>{busy ? 'Gerando…' : `Gerar template de ${typeLabel}`}</button>{preview && <><a className="button subtle" href={preview} download="promoshop-instagram.jpg">Baixar imagem</a>{typeof navigator !== 'undefined' && navigator.share && <button className="button subtle" type="button" onClick={share}>Compartilhar</button>}</>}</div>

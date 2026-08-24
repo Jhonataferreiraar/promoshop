@@ -4312,7 +4312,7 @@ app.post('/api/admin/instagram/share-preview', requireAdmin, async (req, res) =>
 app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) => {
   try {
     const [data, secrets] = await Promise.all([readStore(), readSecrets()]);
-    const templateType = req.body?.templateType === 'group' ? 'group' : 'profile';
+    const templateType = req.body?.templateType === 'group' ? 'group' : req.body?.templateType === 'site' ? 'site' : 'profile';
     const profileMode = req.body?.profileMode === 'none' ? 'none' : req.body?.profileMode === 'auto' ? 'auto' : 'manual';
     const profile = profileMode === 'auto'
       ? String(secrets.instagramUsername || 'sonapromoshop')
@@ -4328,6 +4328,8 @@ app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) =
       groupName: audience?.name,
       groupCode: audience?.code,
       groupLink: audience?.whatsappLink,
+      siteTitle: String(req.body?.siteTitle || '').slice(0, 100),
+      siteDescription: String(req.body?.siteDescription || '').slice(0, 300),
       bio: req.body?.bio,
       ctaText: req.body?.ctaText,
       manualLinkPlacement: Boolean(req.body?.manualLinkPlacement),
