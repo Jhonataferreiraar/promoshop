@@ -76,6 +76,15 @@ const fallbackConfig = {
   legalPrivacyCustomText: ''
 };
 
+function formatSeoPreviewUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
+  } catch {
+    return String(value || 'promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  }
+}
+
 const mercadoLivreCategories = [
   { id: 'MLB5672', name: 'Acessórios para Veículos' },
   { id: 'MLB271599', name: 'Agro' },
@@ -2074,6 +2083,9 @@ function AdminApp() {
     ...current,
     config: { ...current.config, [key]: value }
   }));
+  const seoPreviewTitle = String(data.config.seoTitle || data.config.brandName || 'PromoShop - Ofertas Diárias').trim();
+  const seoPreviewDescription = String(data.config.seoDescription || '').trim() || 'Encontre ofertas e cupons selecionados na PromoShop.';
+  const seoPreviewUrl = formatSeoPreviewUrl(data.config.canonicalUrl);
 
   return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas ativas</span><strong>{data.offers.filter((o) => o.status === 'active').length}</strong><small>Disponíveis no site</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
@@ -3253,13 +3265,22 @@ function AdminApp() {
         <div className="section-title"><div><span className="section-step">SEO</span><h2>Busca e compartilhamento</h2><p>Informações usadas pelo Google e pelas prévias de redes sociais.</p></div></div>
         <div className="settings-grid">
           <label className="wide-field">Endereço oficial do site<input type="url" value={data.config.canonicalUrl ?? ''} onChange={(event) => setConfigField('canonicalUrl', event.target.value)} placeholder="https://promoshop.jhonatafaraujo.com.br" /></label>
-          <label className="wide-field">Nome do site no Google<input maxLength={60} value={data.config.seoSiteName ?? ''} onChange={(event) => setConfigField('seoSiteName', event.target.value)} /><small>Nome preferido exibido acima do endereço. O Google pode levar algum tempo para atualizar.</small></label>
-          <label className="wide-field">Título para buscadores<input maxLength={70} value={data.config.seoTitle ?? ''} onChange={(event) => setConfigField('seoTitle', event.target.value)} /><small>{String(data.config.seoTitle || '').length}/70 caracteres</small></label>
-          <label className="wide-field">Descrição para buscadores<textarea maxLength={180} value={data.config.seoDescription ?? ''} onChange={(event) => setConfigField('seoDescription', event.target.value)} /><small>{String(data.config.seoDescription || '').length}/180 caracteres</small></label>
+          <label className="wide-field">Nome do site no Google<input maxLength={60} value={data.config.seoSiteName ?? ''} onChange={(event) => setConfigField('seoSiteName', event.target.value)} /><small>Nome exibido na linha acima do endereço. O Google pode levar algum tempo para atualizar.</small></label>
+          <label className="wide-field">Título visível no resultado<input maxLength={70} value={data.config.seoTitle ?? ''} onChange={(event) => setConfigField('seoTitle', event.target.value)} /><small>{String(data.config.seoTitle || '').length}/70 caracteres · O Google pode ajustar o título automaticamente.</small></label>
+          <label className="wide-field">Texto visível abaixo do título<textarea maxLength={180} value={data.config.seoDescription ?? ''} onChange={(event) => setConfigField('seoDescription', event.target.value)} /><small>{String(data.config.seoDescription || '').length}/180 caracteres · Esta é a descrição usada na prévia da busca.</small></label>
           <label className="wide-field">Palavras-chave<input value={data.config.seoKeywords ?? ''} onChange={(event) => setConfigField('seoKeywords', event.target.value)} /></label>
           <label className="wide-field">Imagem de compartilhamento<input type="url" value={data.config.seoImageUrl ?? ''} onChange={(event) => setConfigField('seoImageUrl', event.target.value)} placeholder="https://.../imagem.jpg" /></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.seoIndexingEnabled !== false} onChange={(event) => setConfigField('seoIndexingEnabled', event.target.checked)} /><span><strong>Permitir indexação</strong><small>Autoriza buscadores a listar o site.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.seoStructuredDataEnabled !== false} onChange={(event) => setConfigField('seoStructuredDataEnabled', event.target.checked)} /><span><strong>Dados estruturados</strong><small>Identifica o site e a organização para buscadores.</small></span></label>
+        </div>
+        <div className="google-search-preview" aria-label="Prévia do resultado no Google">
+          <div className="google-search-preview-heading"><div><span className="section-step">PRÉVIA AO VIVO</span><h3>Como o resultado pode aparecer no Google</h3></div><small>As alterações são aplicadas ao salvar.</small></div>
+          <div className="google-search-result">
+            <div className="google-search-result-site"><span className="google-search-favicon">%</span><span>{data.config.seoSiteName || data.config.brandName || 'PromoShop'}</span><span className="google-search-more">⋮</span></div>
+            <div className="google-search-result-url">{seoPreviewUrl}</div>
+            <div className="google-search-result-title">{seoPreviewTitle}</div>
+            <p>{seoPreviewDescription}</p>
+          </div>
         </div>
       </section>
 

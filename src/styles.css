@@ -5151,6 +5151,17 @@ button {
 .site-settings-layout .toggle-card span { display: grid; gap: 3px; }
 .site-settings-layout .toggle-card strong { color: #101828; font-size: 13px; }
 .site-settings-layout .toggle-card small { color: #667085; font-size: 11px; font-weight: 600; line-height: 1.4; }
+.google-search-preview { display: grid; gap: 12px; margin-top: 4px; padding: 16px; border: 1px solid #dfe5ef; border-radius: 14px; background: linear-gradient(180deg, #f8fbff 0%, #fff 100%); }
+.google-search-preview-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.google-search-preview-heading h3 { margin: 5px 0 0; color: #182230; font-size: 15px; }
+.google-search-preview-heading small { max-width: 230px; color: #667085; font-size: 11px; line-height: 1.45; text-align: right; }
+.google-search-result { max-width: 720px; padding: 16px; border: 1px solid #e4e7ec; border-radius: 10px; background: #fff; box-shadow: 0 3px 12px rgba(16,24,40,.06); }
+.google-search-result-site { display: flex; align-items: center; gap: 7px; color: #202124; font-size: 13px; }
+.google-search-favicon { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; color: #fff; background: #1269f3; font-size: 13px; font-weight: 800; }
+.google-search-more { margin-left: auto; color: #5f6368; font-size: 18px; line-height: 1; }
+.google-search-result-url { margin: 4px 0 3px 29px; overflow: hidden; color: #5f6368; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.google-search-result-title { overflow: hidden; color: #1a0dab; font-family: Arial, sans-serif; font-size: 20px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.google-search-result p { display: -webkit-box; margin: 4px 0 0; overflow: hidden; color: #4d5156; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .settings-save-bar { position: sticky; z-index: 12; bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 16px; border: 1px solid #d0d5dd; border-radius: 14px; background: rgba(255,255,255,.96); box-shadow: 0 16px 40px rgba(16,24,40,.18); backdrop-filter: blur(12px); }
 .settings-save-bar > div { display: grid; gap: 2px; }
 .settings-save-bar strong { color: #101828; font-size: 13px; }
@@ -5196,6 +5207,10 @@ button {
   .analytics-note-icon { flex-basis: 32px; width: 32px; height: 32px; }
   .site-settings-layout { gap: 14px; }
   .site-settings-layout .settings-section { padding: 16px; }
+  .google-search-preview-heading { flex-direction: column; gap: 7px; }
+  .google-search-preview-heading small { max-width: none; text-align: left; }
+  .google-search-result { padding: 13px; }
+  .google-search-result-title { font-size: 18px; }
   .settings-save-bar { bottom: 8px; align-items: stretch; flex-direction: column; }
   .settings-save-bar .button { width: 100%; }
   .health-summary { align-items: stretch; flex-direction: column; }
