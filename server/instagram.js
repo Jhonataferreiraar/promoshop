@@ -255,7 +255,11 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
     : isSite
       ? 'Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas'
       : 'Ofertas e cupons selecionados\nDescontos de cair o queixo\nSó oferta boa de verdade\nAproveite antes de sumir';
-  const bioLines = splitParagraphLines(svgText(isSite ? (options.siteDescription || defaultBio) : (options.bio || defaultBio)), isSite ? 60 : 34, templateType === 'group' ? 3 : 4);
+  const bioMaxLines = templateType === 'group' ? 3 : 5;
+  const bioCharacters = templateType === 'group' ? 34 : 60;
+  const bioFontSize = templateType === 'group' ? 34 : 28;
+  const bioLineGap = templateType === 'group' ? 52 : 46;
+  const bioLines = splitParagraphLines(svgText(isSite ? (options.siteDescription || defaultBio) : (options.bio || defaultBio)), bioCharacters, bioMaxLines);
   const siteTitle = svgText(String(options.siteTitle || 'PromoShop - Ofertas Diárias')).slice(0, 100);
   const titleText = templateType === 'group' ? groupName : isSite ? siteTitle : profile ? `@${profile}` : '';
   const titleLines = splitLines(titleText, templateType === 'group' ? 28 : isSite ? 24 : 25, 2);
@@ -278,7 +282,7 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const siteLinkArea = isSite ? `<rect x="150" y="1140" width="780" height="150" rx="26" fill="#ffffff" stroke="#d0d5dd" stroke-width="4" stroke-dasharray="12 12"/>` : '';
   const ctaMarkup = !isSite && cta ? `<rect x="100" y="1220" width="880" height="118" rx="32" fill="${theme.accent}"/><text x="540" y="1292" text-anchor="middle" font-family="Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif" font-size="38" font-weight="900" fill="#111827">${cta}  →</text>` : '';
   const bodyFont = 'Arial, Noto Color Emoji, Segoe UI Emoji, sans-serif';
-  const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * (isSite ? 48 : 52)), bodyFont, isSite ? 28 : 34)).join('');
+  const bioMarkup = bioLines.map((line, index) => bioLineMarkup(line, bioY + (index * bioLineGap), bodyFont, bioFontSize)).join('');
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-opacity=".22"/></filter><clipPath id="cardClip"><rect x="54" y="225" width="972" height="1500" rx="58"/></clipPath></defs>
     <rect width="1080" height="1920" fill="${theme.background}"/>
