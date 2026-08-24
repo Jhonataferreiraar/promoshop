@@ -4292,15 +4292,19 @@ app.post('/api/admin/instagram/share-preview', requireAdmin, async (req, res) =>
 
 app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) => {
   try {
-    const data = await readStore();
+    const [data, secrets] = await Promise.all([readStore(), readSecrets()]);
     const templateType = req.body?.templateType === 'group' ? 'group' : 'profile';
-    const profile = String(req.body?.profile || 'sonapromoshop').trim();
+    const profileMode = req.body?.profileMode === 'none' ? 'none' : req.body?.profileMode === 'auto' ? 'auto' : 'manual';
+    const profile = profileMode === 'auto'
+      ? String(secrets.instagramUsername || 'sonapromoshop')
+      : String(req.body?.profile || '').trim();
     const audience = templateType === 'group'
       ? (data.config.whatsappAudiences || []).find((item) => String(item.code) === String(req.body?.groupCode || '') && item.enabled !== false)
       : null;
     if (templateType === 'group' && !audience) return res.status(404).json({ error: 'Selecione um grupo do WhatsApp ativo.' });
     const asset = await generateInstagramShareTemplate({
       templateType,
+      profileMode,
       profile,
       groupName: audience?.name,
       groupCode: audience?.code,
