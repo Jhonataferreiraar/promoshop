@@ -4356,7 +4356,7 @@ app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) 
     const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });

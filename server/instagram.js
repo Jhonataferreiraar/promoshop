@@ -115,6 +115,11 @@ function validHttps(value) {
   }
 }
 
+function isInstagramRateLimitError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return /user is performing too many actions|too many actions|too many requests|rate[ _-]?limit|(#4|#613)/i.test(message);
+}
+
 async function fetchBuffer(url, maximumBytes = 12 * 1024 * 1024) {
   const safeUrl = validHttps(url);
   if (!safeUrl) return null;
@@ -372,7 +377,12 @@ async function metaJson(url, options = {}) {
     const text = await response.text();
     let body = {};
     try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text.slice(0, 400) }; }
-    if (!response.ok || body.error) throw new Error(body.error?.message || body.message || `Meta respondeu ${response.status}`);
+    if (!response.ok || body.error) {
+      const error = new Error(body.error?.message || body.message || `Meta respondeu ${response.status}`);
+      error.metaCode = body.error?.code || body.code || response.status;
+      error.instagramRateLimited = isInstagramRateLimitError(error);
+      throw error;
+    }
     return body;
   } finally {
     clearTimeout(timer);
@@ -483,6 +493,14 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
     if (!forceId && (config.instagramEnabled !== true || !withinSchedule(config))) return { paused: true };
+    const rateLimitUntil = Math.max(
+      0,
+      ...(data.instagramQueue || [])
+        .filter((item) => item.instagramRateLimited === true || isInstagramRateLimitError({ message: item.error }))
+        .map((item) => new Date(item.retryAt || 0).getTime())
+        .filter(Number.isFinite)
+    );
+    if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };
     const sentLastDay = (data.instagramQueue || []).filter((item) => item.status === 'sent' && Date.now() - new Date(item.publishedAt || 0).getTime() < DAY);
     if (!forceId && sentLastDay.length >= Math.max(1, Number(config.instagramMaxPerDay || 15))) return { limited: true };
     const lastSentAt = sentLastDay.reduce((latest, item) => Math.max(latest, new Date(item.publishedAt || 0).getTime()), 0);
@@ -503,22 +521,35 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     await updateStore((fresh) => {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
-      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, assetFileName: asset.fileName, themeId: asset.themeId, containerId: published.containerId, mediaId: published.mediaId, error: null, retryAt: null });
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, assetFileName: asset.fileName, themeId: asset.themeId, containerId: published.containerId, mediaId: published.mediaId, error: null, retryAt: null, instagramRateLimited: false });
     });
     await addLog(`Instagram: Story publicado — ${selected.title}.`, 'success');
     return { ok: true, id: selected.id, ...published };
   } catch (error) {
     if (selected) {
+      const rateLimited = Boolean(error?.instagramRateLimited) || isInstagramRateLimitError(error);
       await updateStore((fresh) => {
         const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
         if (!item) return;
         item.attempts = Number(item.attempts || 0) + 1;
-        item.status = item.attempts >= 3 ? 'failed' : 'pending';
-        item.error = String(error.message || error).slice(0, 500);
+        item.status = rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
+        item.instagramRateLimited = rateLimited;
+        item.error = rateLimited
+          ? 'A Meta limitou temporariamente as publicações por excesso de ações. A fila ficará pausada e tentará novamente mais tarde.'
+          : String(error.message || error).slice(0, 500);
         item.publishingAt = null;
-        item.retryAt = item.status === 'pending' ? new Date(Date.now() + Math.min(60, 5 * 2 ** item.attempts) * 60_000).toISOString() : null;
+        const retryDelay = rateLimited
+          ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000
+          : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
+        item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
       });
-      await addLog(`Instagram: falha ao publicar ${selected.title}: ${error.message}`, 'error');
+      if (rateLimited) {
+        const nextAttempt = Number(selected.attempts || 0) + 1;
+        const retryAt = new Date(Date.now() + Math.min(24, 6 * 2 ** Math.min(Math.max(0, nextAttempt - 1), 2)) * 60 * 60_000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        await addLog(`Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${retryAt}.`, 'warning');
+      } else {
+        await addLog(`Instagram: falha ao publicar ${selected.title}: ${error.message}`, 'error');
+      }
     }
     throw error;
   } finally {
