@@ -46,7 +46,7 @@
     return { title, store, code: code.toUpperCase(), description: clean(text, 500), ...discount, minPurchase: 0, expiresAt: extractExpiry(text), link, image };
   }
   function scanPage(store) {
-    const selectors = ['[class*="coupon"]', '[class*="cupom"]', '[class*="voucher"]', '[data-testid*="coupon"]', '[data-testid*="voucher"]', '[data-testid*="code"]', 'article', 'li', 'section', '[role="button"]', 'button', 'a'];
+    const selectors = ['[class*="coupon"]', '[class*="cupom"]', '[class*="voucher"]', '[data-testid*="coupon"]', '[data-testid*="voucher"]', '[data-testid*="code"]', '[class*="card"]', '[data-testid*="card"]', 'article', 'li', 'section', '[role="button"]', 'button', 'a'];
     const elements = [...new Set(selectors.flatMap((selector) => [...document.querySelectorAll(selector)]))];
     const candidates = elements.map((element) => candidateFromElement(element, store)).filter(Boolean);
     if (!candidates.length) {
