@@ -5158,17 +5158,21 @@ button {
 .extension-status { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 11px 13px; border: 1px solid #d0d5dd; border-radius: 999px; color: #475467; background: #fff; font-size: 11px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #98a2b3; }
 .status-dot.active { background: #12b76a; box-shadow: 0 0 0 4px #dcfae6; }
-.extension-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 20px; }
+.extension-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; gap: 20px; }
 .extension-settings-card, .extension-token-card, .extension-review-card, .extension-install-card { display: grid; gap: 16px; padding: 22px; }
+.extension-token-card { align-self: start; }
 .extension-settings-card label:not(.toggle-card) { display: grid; gap: 7px; color: #344054; font-size: 12px; font-weight: 800; }
 .extension-settings-card label > input[type="number"] { min-height: 44px; padding: 9px 11px; border: 1px solid #d0d5dd; border-radius: 10px; color: #101828; font: inherit; font-weight: 600; }
 .extension-settings-card label small, .extension-choice > small { color: #667085; font-size: 11px; font-weight: 600; line-height: 1.4; }
 .extension-settings-card .toggle-card { min-height: 68px; }
-.extension-choice { display: grid; gap: 8px; padding-top: 6px; border-top: 1px solid #eaecf0; color: #344054; font-size: 12px; font-weight: 800; }
-.extension-choice label { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.extension-choice input { width: 16px; height: 16px; }
+.extension-choice { display: grid; gap: 9px; padding-top: 14px; border-top: 1px solid #eaecf0; color: #344054; font-size: 13px; font-weight: 800; }
+.extension-choice label { display: flex; align-items: center; gap: 9px; min-height: 28px; font-weight: 700; line-height: 1.25; }
+.extension-choice input { flex: 0 0 16px; width: 16px; height: 16px; margin: 0; }
+.extension-store-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+.extension-audience-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; }
+.extension-audience-list label { align-items: flex-start; }
 .extension-choice label span { display: grid; gap: 2px; }
-.extension-choice label span small { color: #667085; font-size: 10px; font-weight: 600; }
+.extension-choice label span small { color: #667085; font-size: 11px; font-weight: 600; }
 .extension-token-empty { padding: 17px; border: 1px dashed #b2ccff; border-radius: 11px; color: #475467; background: #f5f8ff; font-size: 12px; line-height: 1.5; }
 .extension-token-result { display: grid; gap: 8px; }
 .extension-token-result textarea { min-height: 92px; resize: vertical; padding: 11px; border: 1px solid #b2ccff; border-radius: 10px; color: #1849a9; background: #f5f8ff; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
@@ -5258,6 +5262,7 @@ button {
   .extension-coupon-row strong, .extension-coupon-row small { white-space: normal; }
   .extension-coupon-actions { justify-content: stretch; }
   .extension-coupon-actions .button { flex: 1 1 100%; }
+  .extension-store-list, .extension-audience-list { grid-template-columns: 1fr; }
   .settings-save-bar { bottom: 8px; align-items: stretch; flex-direction: column; }
   .settings-save-bar .button { width: 100%; }
   .health-summary { align-items: stretch; flex-direction: column; }
