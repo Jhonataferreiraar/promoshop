@@ -9,7 +9,7 @@
     return '';
   }
   function extractCode(text) {
-    const match = clean(text, 1200).match(/(?:c[oó]digo|cupom|use|utilize)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_-]{3,24})/i);
+    const match = clean(text, 1200).match(/(?:c[oó]digo|cupom|use|utilize)\s*[:\-]?\s*#?([A-Z0-9][A-Z0-9_-]{3,79})/i);
     if (match?.[1]) {
       const code = String(match[1]).toUpperCase();
       if (!ignoredCodes.has(code)) return code;
@@ -41,7 +41,8 @@
     const image = element?.querySelector('img[src]')?.src || '';
     const title = firstText(element, ['h1', 'h2', 'h3', 'h4', '[class*="title"]', '[class*="name"]', '[data-testid*="title"]']) || clean(document.title, 180);
     const discount = extractDiscount(text);
-    const code = clean(element?.getAttribute?.('data-code') || element?.getAttribute?.('data-coupon-code') || firstText(element, ['[class*="code"]', '[class*="coupon-code"]', '[data-testid*="code"]']), 80) || extractCode(text);
+    const rawCode = clean(element?.getAttribute?.('data-code') || element?.getAttribute?.('data-coupon-code') || firstText(element, ['[class*="coupon-code"]', '[data-testid*="code"]']), 80);
+    const code = /^[A-Z0-9][A-Z0-9_-]{3,79}$/i.test(rawCode) ? rawCode : extractCode(text);
     return { title, store, code: code.toUpperCase(), description: clean(text, 500), ...discount, minPurchase: 0, expiresAt: extractExpiry(text), link, image };
   }
   function scanPage(store) {

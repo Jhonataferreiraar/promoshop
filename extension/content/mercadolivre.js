@@ -21,9 +21,18 @@
   }
   const scan = () => {
     if (!generatedCouponsTabIsActive()) return [];
-    return window.PromoShopCouponScanner && typeof window.PromoShopCouponScanner.scanPage === 'function'
+    const candidates = window.PromoShopCouponScanner && typeof window.PromoShopCouponScanner.scanPage === 'function'
       ? window.PromoShopCouponScanner.scanPage(store)
       : [];
+    const seenCodes = new Set();
+    return candidates.filter((candidate) => {
+      const code = String(candidate.code || '').trim().toUpperCase();
+      const description = String(candidate.description || '');
+      if (!code || /\b(inativo|inactive)\b/i.test(description)) return false;
+      if (seenCodes.has(code)) return false;
+      seenCodes.add(code);
+      return true;
+    });
   };
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== 'SCAN_COUPONS') return false;
