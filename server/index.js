@@ -135,6 +135,21 @@ function activePublicationRound(data) {
       : null;
 }
 
+function isPublishingWindow(config = {}, now = new Date()) {
+  const hourMinute = now.toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  const publishingStart = String(config.publishingStart || config.quietEnd || '08:00');
+  const publishingEnd = String(config.publishingEnd || config.quietStart || '23:00');
+  if (publishingStart === publishingEnd) return true;
+  return publishingStart < publishingEnd
+    ? hourMinute >= publishingStart && hourMinute < publishingEnd
+    : hourMinute >= publishingStart || hourMinute < publishingEnd;
+}
+
 async function rememberCollectionRequest() {
   await updateStore(
     (data) => {
@@ -152,7 +167,8 @@ async function rememberCollectionRequest() {
 }
 
 async function runCollectionWhenIdle({
-  requestedByAdmin = false
+  requestedByAdmin = false,
+  allowOutsidePublishingWindow = false
 } = {}) {
   if (collectionInProgress) {
     if (requestedByAdmin) {
@@ -182,7 +198,11 @@ async function runCollectionWhenIdle({
         data
       );
 
-    if (round) {
+    const manualOutsideSchedule = requestedByAdmin
+      && allowOutsidePublishingWindow
+      && !isPublishingWindow(data.config || {});
+
+    if (round && !manualOutsideSchedule) {
       if (requestedByAdmin) {
         await rememberCollectionRequest();
       }
@@ -205,6 +225,10 @@ async function runCollectionWhenIdle({
         queued: true,
         reason: 'publication-round'
       };
+    }
+
+    if (round && manualOutsideSchedule) {
+      await addLog('Coleta manual iniciada fora do horário de publicação; a rodada existente foi mantida.', 'info');
     }
 
     const result =
@@ -4780,7 +4804,8 @@ app.post(
   ) =>
     res.json(
       await runCollectionWhenIdle({
-        requestedByAdmin: true
+        requestedByAdmin: true,
+        allowOutsidePublishingWindow: true
       })
     )
 );
