@@ -9,7 +9,8 @@
     for (let level = 0; level < 12 && current; level += 1) {
       const currentText = String(current.innerText || '').replace(/\s+/g, ' ').trim();
       const currentClass = String(current.className || '').toLowerCase();
-      const hasCode = codePattern.test(currentText);
+      const codeCount = (currentText.match(/seu código\s*:/gi) || []).length;
+      const hasCode = codeCount === 1 && codePattern.test(currentText);
       const disabledControl = current.querySelector && current.querySelector('button:disabled, [aria-disabled="true"], [data-disabled="true"]');
       if (hasCode && (/\b(inativo|inactive|expirado|expired|desativado|disabled)\b/i.test(currentText)
         || /\b(inactive|disabled|expired)\b/.test(currentClass)
