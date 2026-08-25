@@ -1,5 +1,5 @@
 (function () {
-  const ignoredCodes = new Set(['CUPOM', 'DESCONTO', 'PROMO', 'OFFER', 'SHOP', 'SALE', 'CODE', 'USE']);
+  const ignoredCodes = new Set(['CUPOM', 'CUPONS', 'DESCONTO', 'PROMO', 'OFFER', 'SHOP', 'SALE', 'CODE', 'USE', 'COPIAR', 'ATIVAR', 'APLICAR', 'EXCLUSIVO', 'GERADOS', 'PAINEL', 'AFILIADO', 'MERCADO', 'LIVRE']);
   const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
   function firstText(element, selectors) {
     for (const selector of selectors) {
@@ -10,8 +10,15 @@
   }
   function extractCode(text) {
     const match = clean(text, 1200).match(/(?:c[oó]digo|cupom|use|utilize)\s*[:\-]?\s*([A-Z0-9][A-Z0-9_-]{3,24})/i);
-    const code = String(match?.[1] || '').toUpperCase();
-    return code && !ignoredCodes.has(code) ? code : '';
+    if (match?.[1]) {
+      const code = String(match[1]).toUpperCase();
+      if (!ignoredCodes.has(code)) return code;
+    }
+    const standalone = clean(text, 1200).match(/\b[A-Z][A-Z0-9_-]{4,23}\b/g)?.find((value) => {
+      const code = value.toUpperCase();
+      return !ignoredCodes.has(code) && /\d|[_-]/.test(code);
+    });
+    return standalone ? standalone.toUpperCase() : '';
   }
   function extractDiscount(text) {
     const percent = clean(text, 1200).match(/(\d{1,2})\s*%\s*(?:off|de desconto|desconto)?/i);
@@ -30,14 +37,15 @@
   function candidateFromElement(element, store) {
     const text = clean(element?.innerText || element?.textContent, 1200);
     if (!text || !/(cupom|c[oó]digo|desconto|voucher|off)/i.test(text)) return null;
-    const link = element?.closest('a')?.href || element?.querySelector('a[href]')?.href || window.location.href;
+    const link = element?.getAttribute?.('data-link') || element?.getAttribute?.('data-url') || element?.closest('a')?.href || element?.querySelector('a[href]')?.href || window.location.href;
     const image = element?.querySelector('img[src]')?.src || '';
-    const title = firstText(element, ['h1', 'h2', 'h3', 'h4', '[class*="title"]', '[class*="name"]']) || clean(document.title, 180);
+    const title = firstText(element, ['h1', 'h2', 'h3', 'h4', '[class*="title"]', '[class*="name"]', '[data-testid*="title"]']) || clean(document.title, 180);
     const discount = extractDiscount(text);
-    return { title, store, code: extractCode(text), description: clean(text, 500), ...discount, minPurchase: 0, expiresAt: extractExpiry(text), link, image };
+    const code = clean(element?.getAttribute?.('data-code') || element?.getAttribute?.('data-coupon-code') || firstText(element, ['[class*="code"]', '[class*="coupon-code"]', '[data-testid*="code"]']), 80) || extractCode(text);
+    return { title, store, code: code.toUpperCase(), description: clean(text, 500), ...discount, minPurchase: 0, expiresAt: extractExpiry(text), link, image };
   }
   function scanPage(store) {
-    const selectors = ['[class*="coupon"]', '[class*="cupom"]', '[class*="voucher"]', '[data-testid*="coupon"]', '[data-testid*="voucher"]', 'button', 'a'];
+    const selectors = ['[class*="coupon"]', '[class*="cupom"]', '[class*="voucher"]', '[data-testid*="coupon"]', '[data-testid*="voucher"]', '[data-testid*="code"]', 'article', 'li', 'section', '[role="button"]', 'button', 'a'];
     const elements = [...new Set(selectors.flatMap((selector) => [...document.querySelectorAll(selector)]))];
     const candidates = elements.map((element) => candidateFromElement(element, store)).filter(Boolean);
     if (!candidates.length) {
