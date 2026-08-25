@@ -4,6 +4,20 @@
   const visible = (element) => Boolean(element && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
   const normalized = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
   const codePattern = /seu código\s*:\s*#?([A-Z0-9][A-Z0-9_-]{3,79})/i;
+  function hasInactiveMarker(node) {
+    let current = node;
+    for (let level = 0; level < 12 && current; level += 1) {
+      const currentText = String(current.innerText || '').replace(/\s+/g, ' ').trim();
+      const currentClass = String(current.className || '').toLowerCase();
+      const hasCode = codePattern.test(currentText);
+      const disabledControl = current.querySelector && current.querySelector('button:disabled, [aria-disabled="true"], [data-disabled="true"]');
+      if (hasCode && (/\b(inativo|inactive|expirado|expired|desativado|disabled)\b/i.test(currentText)
+        || /\b(inactive|disabled|expired)\b/.test(currentClass)
+        || disabledControl)) return true;
+      current = current.parentElement;
+    }
+    return false;
+  }
   function generatedCouponsTabIsActive() {
     const bodyText = normalized(document.body && document.body.innerText);
     if (!bodyText.includes('seu código:')) return false;
@@ -36,7 +50,7 @@
       }
       const text = String(card.innerText || '').replace(/\s+/g, ' ').trim();
       const match = text.match(codePattern);
-      if (!match || /\b(inativo|inactive)\b/i.test(text)) continue;
+      if (!match || hasInactiveMarker(node) || /\b(inativo|inactive|expirado|expired|desativado|disabled)\b/i.test(text)) continue;
       const code = String(match[1]).toUpperCase();
       const percent = text.match(/(\d{1,2})\s*%\s*off/i);
       const condition = /em produtos selecionados/i.test(text)
