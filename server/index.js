@@ -3331,8 +3331,8 @@ app.put(
           ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
           : previousConfig.instagramAudienceCodes || [];
         data.config.extensionStores = Array.isArray(data.config.extensionStores)
-          ? [...new Set(data.config.extensionStores.map((entry) => String(entry).trim()).filter((entry) => ['Mercado Livre', 'Shopee'].includes(entry)))]
-          : previousConfig.extensionStores || ['Mercado Livre', 'Shopee'];
+          ? [...new Set(data.config.extensionStores.map((entry) => String(entry).trim()).filter((entry) => ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'].includes(entry)))]
+          : previousConfig.extensionStores || ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
         data.config.extensionAudienceCodes = Array.isArray(data.config.extensionAudienceCodes)
           ? [...new Set(data.config.extensionAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
           : previousConfig.extensionAudienceCodes || ['G01'];
@@ -4528,9 +4528,14 @@ function extensionValidLink(store, link) {
   try {
     const url = new URL(String(link));
     if (url.protocol !== 'https:') return false;
-    const hosts = String(store).toLowerCase() === 'mercado livre'
+    const normalizedStore = String(store).toLowerCase();
+    const hosts = normalizedStore === 'mercado livre'
       ? ['mercadolivre.com.br', 'mercadolivre.com', 'meli.la']
-      : ['shopee.com.br', 'shopee.com'];
+      : normalizedStore === 'shopee'
+        ? ['shopee.com.br', 'shopee.com']
+        : normalizedStore === 'aliexpress'
+          ? ['aliexpress.com', 'aliexpress.com.br']
+          : ['magazineluiza.com.br', 'magalu.com', 'magazinevoce.com.br'];
     return hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
   } catch {
     return false;

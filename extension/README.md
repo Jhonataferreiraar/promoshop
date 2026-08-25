@@ -1,6 +1,6 @@
 # Extensão PromoShop — Cupons
 
-Esta primeira versão lê cupons visíveis em uma página aberta do Mercado Livre ou da Shopee e envia os dados ao PromoShop.
+Esta primeira versão lê cupons visíveis em uma página aberta do Mercado Livre, Shopee, AliExpress ou Magalu e envia os dados ao PromoShop.
 
 A extensão usa a logo oficial da PromoShop no ícone do navegador e no popup.
 

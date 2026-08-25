@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 
-const stores = ['Mercado Livre', 'Shopee'];
+const stores = ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
 
 export default function ExtensionPanel({ data, setData, authApi, setMessage, load, audiences = [] }) {
   const [token, setToken] = useState('');

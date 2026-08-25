@@ -24,7 +24,7 @@ async function scanPage() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return setStatus('Não encontrei uma página ativa.');
   try { const response = await chrome.tabs.sendMessage(tab.id, { type: 'SCAN_COUPONS' }); candidates = response?.coupons || []; renderCandidates(); setStatus(candidates.length ? `${candidates.length} cupom(ns) encontrado(s). Confira antes de enviar.` : 'Nenhum cupom encontrado nesta página.'); }
-  catch { setStatus('Abra uma página do Mercado Livre ou Shopee e atualize a aba.'); }
+  catch { setStatus('Abra uma página de cupons do Mercado Livre, Shopee, AliExpress ou Magalu e atualize a aba.'); }
 }
 async function sendSelected({ allowDuplicate = false } = {}) {
   const selected = [...results.querySelectorAll('input[data-index]:checked')].map((input) => candidates[Number(input.dataset.index)]).filter(Boolean);

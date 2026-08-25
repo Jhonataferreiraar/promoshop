@@ -77,7 +77,7 @@ const fallbackConfig = {
   legalPrivacyCustomText: '',
   extensionEnabled: true,
   extensionAutoApprove: false,
-  extensionStores: ['Mercado Livre', 'Shopee'],
+  extensionStores: ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'],
   extensionAudienceCodes: ['G01'],
   extensionMaxCouponsPerRequest: 10
 };

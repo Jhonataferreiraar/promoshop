@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const store = 'Shopee';
+  const store = 'AliExpress';
   const scan = () => window.PromoShopCouponScanner && typeof window.PromoShopCouponScanner.scanPage === 'function'
     ? window.PromoShopCouponScanner.scanPage(store)
     : [];
