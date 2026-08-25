@@ -2,7 +2,7 @@
 body { width: 340px; margin: 0; padding: 16px; color: #172033; background: #f7f9fc; font: 13px Arial, sans-serif; }
 header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
 header strong { display: block; font-size: 17px; } header small { display: block; margin-top: 3px; color: #667085; font-size: 10px; }
-.mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: #fff; background: #1269f3; font-size: 20px; font-weight: 800; transform: rotate(-6deg); }
+.brand-logo { width: 34px; height: 34px; border-radius: 11px; object-fit: cover; box-shadow: 0 3px 10px rgba(5, 31, 94, .22); }
 label { display: grid; gap: 6px; margin: 10px 0; color: #344054; font-size: 11px; font-weight: 700; }
 input { width: 100%; min-height: 36px; padding: 8px 9px; border: 1px solid #d0d5dd; border-radius: 8px; color: #172033; background: #fff; font: inherit; }
 .switch { display: flex; align-items: center; gap: 8px; font-weight: 600; } .switch input { width: 16px; min-height: 16px; }
