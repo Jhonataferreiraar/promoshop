@@ -39,6 +39,9 @@
       if (!match || /\b(inativo|inactive)\b/i.test(text)) continue;
       const code = String(match[1]).toUpperCase();
       const percent = text.match(/(\d{1,2})\s*%\s*off/i);
+      const condition = /em produtos selecionados/i.test(text)
+        ? 'Em produtos selecionados'
+        : 'Condições conforme as regras da loja.';
       const productAnchor = [...card.querySelectorAll('a[href]')].find((anchor) => /ver produtos/i.test(anchor.innerText || ''));
       const firstAnchor = card.querySelector('a[href]');
       const link = productAnchor ? productAnchor.href : firstAnchor ? firstAnchor.href : window.location.href;
@@ -46,7 +49,7 @@
         title: percent ? `${percent[1]}% OFF` : 'Cupom gerado',
         store,
         code,
-        description: text.slice(0, 500),
+        description: condition,
         discountType: 'percent',
         discountValue: percent ? Number(percent[1]) : 0,
         minPurchase: 0,
