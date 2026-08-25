@@ -2050,7 +2050,7 @@ function publicHomeCoupons(coupons, req) {
       return Number.isNaN(expiresAt) || expiresAt >= now;
     })
     .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-    .slice(0, 100)
+    .slice(0, 6)
     .map(({ targetAudienceCodes, ...coupon }) => ({
       ...coupon,
       shortUrl: couponShortUrl(coupon, req)
@@ -2069,10 +2069,17 @@ function publicHomeAudiences(config) {
 
 app.get('/api/home', async (req, res) => {
   const data = await readStore();
+  const activeCoupons = (Array.isArray(data.coupons) ? data.coupons : []).filter((coupon) => {
+    if (coupon.active === false) return false;
+    if (!coupon.expiresAt) return true;
+    const expiresAt = new Date(coupon.expiresAt).getTime();
+    return Number.isNaN(expiresAt) || expiresAt >= Date.now();
+  });
   res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
   res.json({
     config: publicHomeConfig(data.config),
     coupons: publicHomeCoupons(data.coupons, req),
+    couponTotal: activeCoupons.length,
     audiences: publicHomeAudiences(data.config)
   });
 });
@@ -2206,7 +2213,7 @@ app.get(
           return Number.isNaN(expiresAt) || expiresAt >= now;
         })
         .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-        .slice(0, 100)
+        .slice(0, 300)
         .map(({ targetAudienceCodes, ...coupon }) => ({
           ...coupon,
           shortUrl: couponShortUrl(coupon, req)
@@ -7610,6 +7617,7 @@ function xmlEscape(value) {
 
 function pageSeo(config, pathname, origin, offers = []) {
   const pages = {
+    '/cupons': ['Cupons de desconto — PromoShop', 'Encontre cupons de desconto ativos e selecione uma oferta para ativar diretamente na loja.'],
     '/sobre': ['Sobre o PromoShop', 'Conheça o PromoShop, sua curadoria independente de ofertas e cupons de lojas parceiras.'],
     '/contato': ['Fale Conosco — PromoShop', 'Entre em contato com o PromoShop sobre ofertas, cupons, parcerias ou privacidade.'],
     '/termos-de-uso': ['Termos de Uso — PromoShop', 'Consulte as condições de uso, responsabilidades e transparência do PromoShop.'],
@@ -7704,7 +7712,7 @@ app.get('/sitemap.xml', async (req, res) => {
   const origin = publicSiteOrigin(config, req);
   const lastmod = String(config.legalPolicyVersion || privacyPolicyVersion).slice(0, 10);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
-  const paths = ['/', '/sobre', '/contato', '/termos-de-uso', '/privacidade', '/exclusao-de-dados'];
+  const paths = ['/', '/cupons', '/sobre', '/contato', '/termos-de-uso', '/privacidade', '/exclusao-de-dados'];
   const catalogPaths = [
     ...new Set(eligible.map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
     ...new Set(eligible.map((offer) => `/loja/${catalogSlug(offer.store)}`).filter((path) => !path.endsWith('/'))),

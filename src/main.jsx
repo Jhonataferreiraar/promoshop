@@ -354,6 +354,23 @@ function OfferCard({ offer, config, favorite = false, onFavorite }) {
   </article>;
 }
 
+function CouponCard({ coupon, config, copied = false, onCopy }) {
+  return <article className="coupon-card">
+    <div className="coupon-card-top">
+      <span className="coupon-store">{coupon.store || 'Magalu'}</span>
+      <small>{coupon.expiresAt ? `Até ${new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}` : 'Validade não informada'}</small>
+    </div>
+    <h3>{coupon.title}</h3>
+    {coupon.description && <p>{coupon.description}</p>}
+    <div className="coupon-card-actions">
+      {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
+      {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={onCopy}>{copied ? 'Copiado' : 'Copiar'}</button></div>}
+      <small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small>
+      <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('coupon', { id: coupon.id, label: coupon.title, store: coupon.store })}>Ativar cupom <span>↗</span></a>
+    </div>
+  </article>;
+}
+
 function PublicSite() {
   const [config, setConfig] = useState(fallbackConfig);
   const [offers, setOffers] = useState([]);
@@ -363,6 +380,7 @@ function PublicSite() {
   const [topDiscount, setTopDiscount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [coupons, setCoupons] = useState([]);
+  const [couponTotal, setCouponTotal] = useState(0);
   const [couponCopied, setCouponCopied] = useState('');
   const pathParts = window.location.pathname.split('/').filter(Boolean);
   const initialParams = new URLSearchParams(window.location.search);
@@ -394,9 +412,10 @@ function PublicSite() {
 
   useEffect(() => {
     api('/home')
-      .then(({ config: configData, coupons: couponData, audiences: audienceData }) => {
+      .then(({ config: configData, coupons: couponData, couponTotal: couponCount, audiences: audienceData }) => {
         setConfig({ ...fallbackConfig, ...(configData || {}) });
         setCoupons(Array.isArray(couponData) ? couponData : []);
+        setCouponTotal(Number(couponCount || couponData?.length || 0));
         setAudiences(Array.isArray(audienceData) ? audienceData : []);
       })
       .catch(() => { });
@@ -475,6 +494,7 @@ function PublicSite() {
       api('/coupons')
         .then((couponData) => {
           setCoupons(Array.isArray(couponData) ? couponData : []);
+          setCouponTotal(Array.isArray(couponData) ? couponData.length : 0);
         })
         .catch(() => { });
     };
@@ -628,25 +648,10 @@ function PublicSite() {
                 <h2>Cupons para usar hoje</h2>
                 <p>Copie o código, confira as regras e ative direto na loja.</p>
               </div>
-              <span className="results-count"><strong>{coupons.length}</strong> cupons ativos</span>
+              <div className="coupon-heading-actions"><span className="results-count"><strong>{couponTotal || coupons.length}</strong> cupons ativos</span><a className="button subtle" href="/cupons">Ver todos os cupons <span>→</span></a></div>
             </div>
             <div className="coupon-grid">
-              {coupons.map((coupon) => (
-                <article className="coupon-card" key={coupon.id}>
-                  <div className="coupon-card-top">
-                    <span className="coupon-store">{coupon.store || 'Magalu'}</span>
-                    <small>{coupon.expiresAt ? `Até ${new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}` : 'Validade não informada'}</small>
-                  </div>
-                  <h3>{coupon.title}</h3>
-                  {coupon.description && <p>{coupon.description}</p>}
-                  <div className="coupon-card-actions">
-                    {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
-                    {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }}>{couponCopied === coupon.id ? 'Copiado' : 'Copiar'}</button></div>}
-                    <small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small>
-                    <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('coupon', { id: coupon.id, label: coupon.title, store: coupon.store })}>Ativar cupom <span>↗</span></a>
-                  </div>
-                </article>
-              ))}
+              {coupons.map((coupon) => <CouponCard coupon={coupon} config={config} copied={couponCopied === coupon.id} onCopy={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }} key={coupon.id} />)}
             </div>
           </div>
         </section>
@@ -853,6 +858,56 @@ function PublicSite() {
   </div>;
 }
 
+function CouponsPage() {
+  const [config, setConfig] = useState(fallbackConfig);
+  const [coupons, setCoupons] = useState([]);
+  const [couponCopied, setCouponCopied] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  usePublicAnalytics();
+
+  useEffect(() => {
+    Promise.all([api('/config/public'), api('/coupons')])
+      .then(([configData, couponData]) => {
+        setConfig({ ...fallbackConfig, ...(configData || {}) });
+        setCoupons(Array.isArray(couponData) ? couponData : []);
+      })
+      .catch(() => { })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--primary', config.primaryColor || fallbackConfig.primaryColor);
+    document.title = `Cupons de desconto — ${config.brandName || fallbackConfig.brandName}`;
+  }, [config]);
+
+  return <div className="site-shell">
+    <header className={`topbar ${config.mobileCompactMenu !== false ? 'compact-mobile-nav' : ''}`}>
+      <div className="container nav-wrap">
+        <Logo name={config.brandName || fallbackConfig.brandName} />
+        {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label="Abrir menu" onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
+        <nav className={mobileMenuOpen ? 'mobile-open' : ''}><a href="/#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a><a href="/cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a><a href="/#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a><a href="/#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a></nav>
+        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
+      </div>
+    </header>
+    <main>
+      <section className="coupons-section coupons-page">
+        <div className="container">
+          <div className="section-heading">
+            <div><span className="eyebrow dark">ECONOMIA EXTRA</span><h1>Todos os cupons</h1><p>Copie o código, confira as regras e ative direto na loja.</p></div>
+            {!loading && <span className="results-count"><strong>{coupons.length}</strong> cupons ativos</span>}
+          </div>
+          {loading && <p className="notice">Carregando cupons…</p>}
+          {!loading && coupons.length > 0 && <div className="coupon-grid">{coupons.map((coupon) => <CouponCard coupon={coupon} config={config} copied={couponCopied === coupon.id} onCopy={() => { navigator.clipboard?.writeText(coupon.code); setCouponCopied(coupon.id); window.setTimeout(() => setCouponCopied(''), 1800); }} key={coupon.id} />)}</div>}
+          {!loading && !coupons.length && <div className="empty"><strong>Nenhum cupom ativo no momento</strong><p>Volte em breve para conferir novas oportunidades.</p><a className="button primary" href="/">Ver ofertas atuais</a></div>}
+        </div>
+      </section>
+    </main>
+    <SiteFooter config={config} />
+    <PrivacyConsent policyVersion={config.legalPolicyVersion} />
+  </div>;
+}
+
 function ProductDetail({ slug }) {
   const [config, setConfig] = useState(fallbackConfig);
   const [data, setData] = useState(null);
@@ -903,7 +958,7 @@ function SiteFooter({ config = fallbackConfig }) {
         <h3>PromoShop</h3>
         <a href="/sobre">Sobre nós</a>
         <a href="/#ofertas">Ofertas</a>
-        <a href="/#cupons">Cupons</a>
+        <a href="/cupons">Cupons</a>
         <a href="/#grupos">Grupos do WhatsApp</a>
       </div>
       <div className="footer-column">
@@ -3547,5 +3602,6 @@ function QueueTable({ queue, onRemove, onForce, onRetry }) {
 const isAdmin = window.location.pathname.startsWith('/admin');
 const normalizedPublicPath = window.location.pathname.replace(/\/+$/, '') || '/';
 const isInfoPage = Object.prototype.hasOwnProperty.call(publicInfoPages, normalizedPublicPath);
+const isCouponsPage = normalizedPublicPath === '/cupons';
 const productSlug = normalizedPublicPath.match(/^\/oferta\/([^/]+)$/)?.[1] || '';
-createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
+createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
