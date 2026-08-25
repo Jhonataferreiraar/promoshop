@@ -17,19 +17,19 @@ async function getSettings() {
   return { ...settings, endpoint: cleanEndpoint(settings.endpoint) };
 }
 
-async function sendCoupons(coupons) {
+async function sendCoupons(coupons, { allowDuplicate = false } = {}) {
   const settings = await getSettings();
   if (!settings.token) throw new Error('Informe o token da extensão no popup.');
   const list = (Array.isArray(coupons) ? coupons : [coupons]).filter(Boolean).slice(0, 50);
   if (!list.length) throw new Error('Nenhum cupom encontrado na página.');
   const known = new Set(settings.sentFingerprints || []);
-  const fresh = list.filter((coupon) => !known.has(couponFingerprint(coupon)));
+  const fresh = allowDuplicate ? list : list.filter((coupon) => !known.has(couponFingerprint(coupon)));
   if (!fresh.length) return { sent: 0, duplicates: list.length, message: 'Estes cupons já foram enviados.' };
   await fetch(`${settings.endpoint}/api/extension/coupons`, {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: JSON.stringify({ token: settings.token, coupons: fresh })
+    body: JSON.stringify({ token: settings.token, coupons: fresh, allowDuplicate })
   });
   const nextFingerprints = [...known, ...fresh.map(couponFingerprint)].slice(-500);
   await chrome.storage.local.set({ sentFingerprints: nextFingerprints });
@@ -41,7 +41,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     const settings = await getSettings();
     if (message.type === 'AUTO_COUPONS' && settings.autoSend !== true) return { sent: 0, skipped: true };
-    return sendCoupons(message.coupons || []);
+    return sendCoupons(message.coupons || [], { allowDuplicate: message.allowDuplicate === true });
   })().then(sendResponse).catch((error) => sendResponse({ error: error.message || 'Não foi possível enviar.' }));
   return true;
 });

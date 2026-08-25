@@ -4555,6 +4555,7 @@ app.post('/api/extension/coupons', async (req, res) => {
   const config = data.config || {};
   if (config.extensionEnabled === false) return res.status(403).json({ error: 'A extensão está desativada no painel.' });
   const incoming = Array.isArray(body.coupons) ? body.coupons : [body];
+  const allowDuplicate = body.allowDuplicate === true;
   const maximum = boundedNumber(config.extensionMaxCouponsPerRequest, 10, 1, 50);
   const candidates = incoming.slice(0, maximum);
   const existingFingerprints = new Set((data.coupons || []).map(extensionCouponFingerprint));
@@ -4576,7 +4577,21 @@ app.post('/api/extension/coupons', async (req, res) => {
       if (parsed.error) { errors.push(parsed.error); continue; }
       if (!extensionValidLink(storeName, parsed.fields.link)) { errors.push('Link não pertence à loja informada.'); continue; }
       const fingerprint = extensionCouponFingerprint(parsed.fields);
-      if (existingFingerprints.has(fingerprint)) { duplicates.push(parsed.fields.title); continue; }
+      if (existingFingerprints.has(fingerprint)) {
+        if (!allowDuplicate) { duplicates.push(parsed.fields.title); continue; }
+        const existing = storeData.coupons.find((entry) => extensionCouponFingerprint(entry) === fingerprint);
+        if (!existing) { duplicates.push(parsed.fields.title); continue; }
+        Object.assign(existing, parsed.fields, {
+          source: 'extension',
+          approvalStatus: config.extensionAutoApprove === true ? 'approved' : 'pending',
+          active: config.extensionAutoApprove === true,
+          importedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          shortUrl: couponShortUrl(existing, req)
+        });
+        imported.push({ id: existing.id, title: existing.title, status: existing.approvalStatus, reimported: true });
+        continue;
+      }
       existingFingerprints.add(fingerprint);
       const coupon = {
         id: createId('coupon'),
