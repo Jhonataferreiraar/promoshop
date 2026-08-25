@@ -4708,6 +4708,21 @@ app.post('/api/admin/extension/coupons/:id/approve', requireAdmin, async (req, r
   res.json({ ok: true, coupon: updated });
 });
 
+app.post('/api/admin/extension/coupons/approve-all', requireAdmin, async (_req, res) => {
+  let approved = 0;
+  await updateStore((data) => {
+    for (const coupon of data.coupons || []) {
+      if (coupon.source !== 'extension' || coupon.approvalStatus !== 'pending') continue;
+      coupon.active = true;
+      coupon.approvalStatus = 'approved';
+      coupon.updatedAt = new Date().toISOString();
+      approved += 1;
+    }
+  });
+  if (approved) await addLog(`${approved} cupom(ns) importado(s) aprovado(s) em lote.`, 'success');
+  res.json({ ok: true, approved });
+});
+
 app.post('/api/admin/extension/coupons/reject-all', requireAdmin, async (_req, res) => {
   let rejected = 0;
   await updateStore((data) => {

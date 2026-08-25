@@ -3245,7 +3245,7 @@ function AdminApp() {
     </div>}
     {tab === 'instagram' && <InstagramPanel data={data} setData={setData} secretForm={secretForm} setSecretForm={setSecretForm} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} />}
     {tab === 'instagramShare' && <InstagramSharePanel data={data} authApi={authApi} setMessage={setMessage} />}
-    {tab === 'extension' && <ExtensionPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} />}
+    {tab === 'extension' && <ExtensionPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} onGoCoupons={() => setTab('coupons')} />}
     {tab === 'health' && <div className="health-layout">
       <section className={`panel health-summary ${data.systemHealth?.status || 'attention'}`}><div><span className="section-step">DIAGNÓSTICO</span><h2>{data.systemHealth?.status === 'healthy' ? 'Sistema funcionando normalmente' : data.systemHealth?.status === 'critical' ? 'O sistema precisa de atenção imediata' : 'Há itens para revisar'}</h2><p>Verificação atualizada em {data.systemHealth?.checkedAt ? new Date(data.systemHealth.checkedAt).toLocaleString('pt-BR') : '—'}.</p></div><button className="button subtle" type="button" onClick={() => load()}>Verificar novamente</button></section>
       <div className="health-check-grid">{(data.systemHealth?.checks || []).map((check) => <article className={`panel health-check ${check.ok ? 'ok' : 'warning'}`} key={check.id}><span>{check.ok ? '✓' : '!'}</span><div><h3>{check.label}</h3><p>{check.detail}</p></div></article>)}</div>

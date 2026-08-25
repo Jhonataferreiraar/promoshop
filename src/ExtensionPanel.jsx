@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 
 const stores = ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
 
-export default function ExtensionPanel({ data, setData, authApi, setMessage, load, audiences = [] }) {
+export default function ExtensionPanel({ data, setData, authApi, setMessage, load, audiences = [], onGoCoupons }) {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState('');
   const config = data.config || {};
@@ -47,6 +47,13 @@ export default function ExtensionPanel({ data, setData, authApi, setMessage, loa
     setMessage(`${Number(result.rejected || 0)} cupom(ns) recusado(s).`);
   });
 
+  const approveAll = () => run('approve-all', async () => {
+    const result = await authApi('/admin/extension/coupons/approve-all', { method: 'POST', body: '{}' });
+    await load();
+    setMessage(`${Number(result.approved || 0)} cupom(ns) aprovado(s). Eles já estão disponíveis na aba Cupons.`);
+    if (typeof onGoCoupons === 'function') onGoCoupons();
+  });
+
   const queueCoupon = (id) => run(`queue-${id}`, async () => {
     await authApi(`/admin/extension/coupons/${encodeURIComponent(id)}/approve`, { method: 'POST', body: '{}' });
     await authApi(`/admin/coupons/${encodeURIComponent(id)}/queue`, { method: 'POST', body: '{}' });
@@ -78,7 +85,7 @@ export default function ExtensionPanel({ data, setData, authApi, setMessage, loa
     </div>
 
     <section className="panel extension-review-card">
-      <div className="panel-heading"><div><span className="section-step">REVISÃO</span><h2>Cupons recebidos</h2><p>{pendingCoupons.length} aguardando revisão. Só cupons aprovados aparecem na área de Cupons.</p></div><div className="extension-review-heading-actions"><button className="button subtle" type="button" onClick={() => load()}>Atualizar</button>{pendingCoupons.length > 0 && <button className="button danger" type="button" disabled={Boolean(busy)} onClick={rejectAll}>Recusar todos</button>}</div></div>
+      <div className="panel-heading"><div><span className="section-step">REVISÃO</span><h2>Cupons recebidos</h2><p>{pendingCoupons.length} aguardando revisão. Só cupons aprovados aparecem na área de Cupons.</p></div><div className="extension-review-heading-actions"><button className="button subtle" type="button" onClick={() => load()}>Atualizar</button>{pendingCoupons.length > 0 && <><button className="button primary" type="button" disabled={Boolean(busy)} onClick={approveAll}>{busy === 'approve-all' ? 'Aprovando…' : 'Aprovar todos'}</button><button className="button danger" type="button" disabled={Boolean(busy)} onClick={rejectAll}>Recusar todos</button></>}</div></div>
       <div className="extension-coupon-list">{pendingCoupons.map((coupon) => <article className="extension-coupon-row" key={coupon.id}><div><strong>{coupon.title}</strong><span>{coupon.store}{coupon.code ? ` · ${coupon.code}` : ''}{coupon.discountValue ? ` · ${coupon.discountValue}${coupon.discountType === 'percent' ? '% OFF' : ' OFF'}` : ''}</span><small>{coupon.description || 'Sem descrição'} · recebido em {coupon.importedAt ? new Date(coupon.importedAt).toLocaleString('pt-BR') : '—'}</small></div><div className="extension-coupon-actions"><button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => reviewCoupon(coupon.id, 'approve')}>Aprovar</button><button className="button subtle" type="button" disabled={Boolean(busy)} onClick={() => queueCoupon(coupon.id)}>Aprovar e disparar</button><button className="button danger" type="button" disabled={Boolean(busy)} onClick={() => reviewCoupon(coupon.id, 'reject')}>Recusar</button></div></article>)}{!pendingCoupons.length && <div className="empty"><strong>Nenhum cupom aguardando revisão</strong><p>Quando a extensão enviar um cupom, ele aparecerá aqui.</p></div>}</div>
     </section>
 
