@@ -41,6 +41,12 @@ export default function ExtensionPanel({ data, setData, authApi, setMessage, loa
     setMessage(decision === 'approve' ? 'Cupom aprovado.' : 'Cupom recusado.');
   });
 
+  const rejectAll = () => run('reject-all', async () => {
+    const result = await authApi('/admin/extension/coupons/reject-all', { method: 'POST', body: '{}' });
+    await load();
+    setMessage(`${Number(result.rejected || 0)} cupom(ns) recusado(s).`);
+  });
+
   const queueCoupon = (id) => run(`queue-${id}`, async () => {
     await authApi(`/admin/extension/coupons/${encodeURIComponent(id)}/approve`, { method: 'POST', body: '{}' });
     await authApi(`/admin/coupons/${encodeURIComponent(id)}/queue`, { method: 'POST', body: '{}' });
@@ -72,7 +78,7 @@ export default function ExtensionPanel({ data, setData, authApi, setMessage, loa
     </div>
 
     <section className="panel extension-review-card">
-      <div className="panel-heading"><div><span className="section-step">REVISÃO</span><h2>Cupons recebidos</h2><p>{pendingCoupons.length} aguardando revisão. Cupons recusados não aparecem no site.</p></div><button className="button subtle" type="button" onClick={() => load()}>Atualizar</button></div>
+      <div className="panel-heading"><div><span className="section-step">REVISÃO</span><h2>Cupons recebidos</h2><p>{pendingCoupons.length} aguardando revisão. Só cupons aprovados aparecem na área de Cupons.</p></div><div className="extension-review-heading-actions"><button className="button subtle" type="button" onClick={() => load()}>Atualizar</button>{pendingCoupons.length > 0 && <button className="button danger" type="button" disabled={Boolean(busy)} onClick={rejectAll}>Recusar todos</button>}</div></div>
       <div className="extension-coupon-list">{pendingCoupons.map((coupon) => <article className="extension-coupon-row" key={coupon.id}><div><strong>{coupon.title}</strong><span>{coupon.store}{coupon.code ? ` · ${coupon.code}` : ''}{coupon.discountValue ? ` · ${coupon.discountValue}${coupon.discountType === 'percent' ? '% OFF' : ' OFF'}` : ''}</span><small>{coupon.description || 'Sem descrição'} · recebido em {coupon.importedAt ? new Date(coupon.importedAt).toLocaleString('pt-BR') : '—'}</small></div><div className="extension-coupon-actions"><button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => reviewCoupon(coupon.id, 'approve')}>Aprovar</button><button className="button subtle" type="button" disabled={Boolean(busy)} onClick={() => queueCoupon(coupon.id)}>Aprovar e disparar</button><button className="button danger" type="button" disabled={Boolean(busy)} onClick={() => reviewCoupon(coupon.id, 'reject')}>Recusar</button></div></article>)}{!pendingCoupons.length && <div className="empty"><strong>Nenhum cupom aguardando revisão</strong><p>Quando a extensão enviar um cupom, ele aparecerá aqui.</p></div>}</div>
     </section>
 

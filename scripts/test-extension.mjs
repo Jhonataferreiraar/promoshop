@@ -40,6 +40,11 @@ try {
   assert.equal(coupon.approvalStatus, 'pending');
   const approved = await fetch(`${origin}/api/admin/extension/coupons/${coupon.id}/approve`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(approved.status, 200);
+  const secondIngest = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ token, coupons: [{ title: 'Cupom para recusa em lote', store: 'Shopee', code: 'RECUSAR10', discountType: 'percent', discountValue: 10, link: 'https://shopee.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
+  assert.equal(secondIngest.status, 202);
+  const rejected = await fetch(`${origin}/api/admin/extension/coupons/reject-all`, { method: 'POST', headers: adminHeaders, body: '{}' });
+  assert.equal(rejected.status, 200);
+  assert.equal((await rejected.json()).rejected, 1);
   console.log('Extensão: token, recebimento, revisão e aprovação validados.');
 } finally {
   child.kill();
