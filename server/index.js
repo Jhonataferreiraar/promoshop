@@ -3149,6 +3149,24 @@ app.post(
  * ==========================================================
  */
 
+function adminQueueItem(item = {}) {
+  return {
+    id: String(item.id || ''),
+    kind: String(item.kind || 'offer'),
+    offerId: item.offerId || null,
+    couponId: item.couponId || null,
+    offerTitle: String(item.offerTitle || ''),
+    store: String(item.store || ''),
+    targetAudienceCodes: Array.isArray(item.targetAudienceCodes) ? item.targetAudienceCodes : [],
+    status: String(item.status || 'pending'),
+    attempts: Number(item.attempts || 0),
+    createdAt: item.createdAt || null,
+    sentAt: item.sentAt || null,
+    error: item.error || null,
+    force: Boolean(item.force)
+  };
+}
+
 app.get(
   '/api/admin/dashboard',
   requireAdmin,
@@ -3199,6 +3217,7 @@ app.get(
           isStale: !offerIsFresh(offer, data.config)
         };
       }),
+      queue: (Array.isArray(data.queue) ? data.queue : []).map(adminQueueItem),
       coupons: (Array.isArray(data.coupons) ? data.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
