@@ -189,6 +189,9 @@ const initialData = {
     whatsappCommunityEnabled: true,
     whatsappCommunityName: 'PromoShop - Ofertas',
 
+    // A marcação coletiva é opcional para evitar excesso de notificações.
+    whatsappMentionAllEnabled: false,
+
     whatsappMaxPerHour: 100,
     whatsappIntervalMinutes: 15,
 

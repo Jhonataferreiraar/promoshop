@@ -7200,7 +7200,10 @@ app.get(
         String(
           config.whatsappCommunityName ||
           'PromoShop - Ofertas'
-        ).slice(0, 160)
+        ).slice(0, 160),
+
+      mentionAllEnabled:
+        config.whatsappMentionAllEnabled === true
     });
   }
 );

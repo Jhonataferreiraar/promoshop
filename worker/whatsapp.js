@@ -33,6 +33,7 @@ let selectedGroups = [];
 let maxPerHour = 10;
 let communityEnabled = true;
 let communityName = 'PromoShop - Ofertas';
+let mentionAllEnabled = false;
 const initialStore = await readStore();
 const chromiumArgs = [
   '--disable-dev-shm-usage',
@@ -106,6 +107,7 @@ async function refreshConfig() {
   maxPerHour = Number(config.maxPerHour || 10);
   communityEnabled = config.communityEnabled !== false;
   communityName = String(config.communityName || 'PromoShop - Ofertas').trim();
+  mentionAllEnabled = config.mentionAllEnabled === true;
 }
 
 function normalizeGroupName(value) {
@@ -128,6 +130,23 @@ function isWhatsAppChannel(id) {
 
 function isWhatsAppDestination(id) {
   return isWhatsAppGroup(id) || isWhatsAppChannel(id);
+}
+
+function buildDelivery(destination, message) {
+  const mentionEveryone = mentionAllEnabled && isWhatsAppGroup(destination.id);
+
+  return {
+    message: mentionEveryone ? `@todos\n\n${message}` : message,
+    options: {
+      // A marcação do próprio grupo é o formato usado pelo WhatsApp para
+      // representar o novo @todos sem expor os telefones dos participantes.
+      ...(mentionEveryone
+        ? { groupMentions: [{ subject: 'todos', id: destination.id }] }
+        : {}),
+      // Canais não possuem conversa a ser marcada como lida antes do envio.
+      sendSeen: !isWhatsAppChannel(destination.id)
+    }
+  };
 }
 
 async function refreshActivePage() {
@@ -409,6 +428,7 @@ async function processQueue() {
     );
     if (!destinations.length) throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
     for (const destination of destinations) {
+      const delivery = buildDelivery(destination, item.message);
       let sent = false;
       let lastSendError;
       for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
@@ -427,10 +447,13 @@ async function processQueue() {
               );
 
               const sentMedia = await client.sendMessage(destination.id, media, {
-                caption: item.message,
+                ...delivery.options,
+                caption: delivery.message,
                 waitUntilMsgSent: true
               });
-              if (!sentMedia || sentMedia.hasMedia === false) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
+              // Uma mensagem recém-criada pode chegar com hasMedia=false antes
+              // da sincronização, embora o WhatsApp já tenha aceitado a mídia.
+              if (!sentMedia) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
 
               console.log(
                 `Imagem e mensagem enviadas: ${item.offerTitle}`
@@ -445,14 +468,17 @@ async function processQueue() {
               }
 
               console.log('Enviando somente o texto como alternativa no grupo.');
-              await client.sendMessage(destination.id, item.message, { waitUntilMsgSent: true });
+              await client.sendMessage(destination.id, delivery.message, {
+                ...delivery.options,
+                waitUntilMsgSent: true
+              });
             }
           } else {
             console.warn(
               `Oferta sem imagem: "${item.offerTitle}"`
             );
 
-            await client.sendMessage(destination.id, item.message);
+            await client.sendMessage(destination.id, delivery.message, delivery.options);
           }
 
           sent = true;

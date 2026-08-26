@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-whatsapp-web.mjs",
     "dev": "concurrently -n SITE,API -c blue,green \"vite\" \"node --watch server/index.js\"",
     "dev:web": "vite",
     "dev:api": "node --watch server/index.js",
@@ -16,6 +17,7 @@
     "test:messages": "node scripts/test-message-sanitizer.mjs",
     "test:group-directory": "node scripts/test-group-directory.mjs",
     "test:whatsapp-media": "node scripts/test-whatsapp-media.mjs",
+    "test:whatsapp-patch": "node scripts/test-whatsapp-patch.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",
     "test:extension": "node scripts/test-extension.mjs",
     "preview": "vite preview",
