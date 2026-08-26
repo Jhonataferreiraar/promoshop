@@ -361,17 +361,22 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
   const cardY = square ? 90 : 170;
   const cardHeight = square ? 850 : 1100;
   const imageTop = cardY + (square ? 40 : 55);
-  const imageHeight = square ? 320 : 585;
-  const titleLines = splitLines(story.title, square ? 32 : 34, 2);
-  const titleY = imageTop + imageHeight + (square ? 125 : 105);
-  const priceY = titleY + (titleLines.length * (square ? 42 : 54)) + (square ? 52 : 82);
-  const ctaButtonY = priceY + (square ? 28 : 48);
+  // Deixe o produto respirar, mas reserve espaço para títulos longos. No
+  // retrato cabem até três linhas sem cortar o nome da oferta.
+  const imageHeight = square ? 300 : 510;
+  const titleMaxLines = square ? 2 : 3;
+  const titleLineHeight = square ? 38 : 48;
+  const titleFontSize = square ? 32 : 40;
+  const titleLines = splitLines(story.title, square ? 32 : 38, titleMaxLines);
+  const titleY = imageTop + imageHeight + (square ? 108 : 115);
+  const priceY = titleY + (titleLines.length * titleLineHeight) + (square ? 44 : 52);
+  const ctaButtonY = priceY + (square ? 28 : 38);
   const ctaButtonHeight = square ? 72 : 86;
   const ctaBaseline = ctaButtonY + (square ? 46 : 54);
   const price = money(story.price);
   const discount = Math.max(0, Math.round(Number(story.discount || 0)));
   const store = String(story.store || 'Oferta').toUpperCase().slice(0, 22);
-  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? (square ? 42 : 54) : 0}">${escapeXml(line)}</tspan>`).join('');
+  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const cta = 'Acesse a bio do perfil';
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
@@ -384,8 +389,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     <rect x="92" y="${imageTop + imageHeight + 28}" width="210" height="48" rx="24" fill="${theme.accent}"/>
     <text x="197" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="900" fill="#111827">${escapeXml(store)}</text>
     ${discount > 0 ? `<rect x="780" y="${imageTop + imageHeight + 28}" width="220" height="48" rx="24" fill="${theme.accent}"/><text x="890" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
-    <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 34 : 43}" font-weight="900" fill="#101828">${titleTspans}</text>
-    ${story.originalPrice ? `<text x="92" y="${priceY - 76}" font-family="Arial,sans-serif" font-size="26" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+    <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${titleFontSize}" font-weight="900" fill="#101828">${titleTspans}</text>
+    ${story.originalPrice ? `<text x="92" y="${priceY - 68}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="26" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
     <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 60 : 68}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
     <rect x="92" y="${ctaButtonY}" width="896" height="${ctaButtonHeight}" rx="28" fill="${theme.accent}"/>
     <text x="540" y="${ctaBaseline}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 24 : 30}" font-weight="900" fill="#111827">${cta} →</text>
