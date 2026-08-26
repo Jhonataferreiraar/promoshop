@@ -8,6 +8,7 @@ export const DEFAULT_INSTAGRAM_THEMES = [
   { id: 'valentine', name: 'Dia dos Namorados', enabled: true, automatic: true, start: '06-01', end: '06-12', priority: 25, background: '#dc2626', background2: '#881337', accent: '#fda4af', text: '#ffffff', decoration: 'hearts' },
   { id: 'june', name: 'Festa Junina', enabled: true, automatic: true, start: '06-13', end: '07-10', priority: 20, background: '#c2410c', background2: '#7c2d12', accent: '#fde047', text: '#ffffff', decoration: 'flags' },
   { id: 'fathers', name: 'Dia dos Pais', enabled: true, automatic: true, start: '08-01', end: '08-15', priority: 25, background: '#172554', background2: '#0f172a', accent: '#fbbf24', text: '#ffffff', decoration: 'lines' },
+  { id: 'independence', name: 'Independência do Brasil', enabled: true, automatic: true, start: '09-01', end: '09-08', priority: 35, background: '#009c3b', background2: '#006b2c', accent: '#ffdf00', text: '#ffffff', decoration: 'independence' },
   { id: 'consumer', name: 'Semana do Consumidor', enabled: true, automatic: true, start: '03-08', end: '03-18', priority: 30, background: '#1269f3', background2: '#1d4ed8', accent: '#fde047', text: '#ffffff', decoration: 'tags' },
   { id: 'black-friday', name: 'Black Friday', enabled: true, automatic: true, start: '11-15', end: '11-30', priority: 40, background: '#09090b', background2: '#18181b', accent: '#facc15', text: '#ffffff', decoration: 'lightning' },
   { id: 'christmas', name: 'Natal', enabled: true, automatic: true, start: '12-01', end: '12-26', priority: 30, background: '#b91c1c', background2: '#14532d', accent: '#fbbf24', text: '#ffffff', decoration: 'snow' },
@@ -23,7 +24,12 @@ function cleanColor(value, fallback) {
 }
 
 export function sanitizeInstagramThemes(value) {
-  const source = Array.isArray(value) && value.length ? value : DEFAULT_INSTAGRAM_THEMES;
+  const storedThemes = Array.isArray(value) && value.length ? value : [];
+  // Built-in campaigns are added to older configurations automatically. This
+  // keeps new seasonal templates available without overwriting custom themes.
+  const source = storedThemes.length
+    ? [...storedThemes, ...DEFAULT_INSTAGRAM_THEMES.filter((theme) => !storedThemes.some((entry) => String(entry?.id || '') === theme.id))]
+    : DEFAULT_INSTAGRAM_THEMES;
   const seen = new Set();
 
   return source.slice(0, 24).map((theme, index) => {

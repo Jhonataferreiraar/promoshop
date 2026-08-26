@@ -150,6 +150,7 @@ function decorationSvg(theme) {
     fireworks: `<g stroke="${accent}" stroke-width="10" opacity=".3"><path d="M120 290l-65-65m65 65l65-65m-65 65v-95m0 95h95M920 720l-70-70m70 70l70-70m-70 70v-100"/></g>` ,
     lightning: `<path d="M115 225h95l-55 90h66L95 450l31-105H62zM940 690h72l-42 68h50l-96 103 24-80h-50z" ${common}/>` ,
     lines: `<path d="M-80 310L500 80M620 1920l540-330" stroke="${accent}" stroke-width="55" opacity=".15"/>`,
+    independence: `<g opacity=".28"><path d="M-80 340L1160 30" stroke="${accent}" stroke-width="34"/><path d="M-80 430L1160 120" stroke="#ffffff" stroke-width="13"/><path d="M80 1650L1150 1380" stroke="${accent}" stroke-width="30"/><path d="M70 1730L1150 1460" stroke="#ffffff" stroke-width="12"/><path d="M540 110l88 42-88 42-88-42z" fill="#002776"/><circle cx="540" cy="152" r="25" fill="none" stroke="#ffffff" stroke-width="7"/></g>`,
     tags: `<path d="M70 240h155l65 65-155 155-65-65zm850 470h100l42 42-100 100-42-42z" ${common}/>` ,
     spark: `<path d="M110 260l20 52 52 20-52 20-20 52-20-52-52-20 52-20zm850 470l15 40 40 15-40 15-15 40-15-40-40-15 40-15z" ${common}/>`
   };

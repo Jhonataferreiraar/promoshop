@@ -25,6 +25,8 @@ const config = {
 assert.equal(selectInstagramTheme(config, new Date('2026-12-20T12:00:00-03:00')).id, 'christmas');
 assert.equal(selectInstagramTheme(config, new Date('2026-11-25T12:00:00-03:00')).id, 'black-friday');
 assert.equal(selectInstagramTheme(config, new Date('2026-01-02T12:00:00-03:00')).id, 'new-year');
+assert.equal(selectInstagramTheme(config, new Date('2026-09-07T12:00:00-03:00')).id, 'independence');
+assert.ok(sanitizeInstagramThemes([{ id: 'default', name: 'PromoShop' }]).some((theme) => theme.id === 'independence'), 'temas sazonais novos devem aparecer em configurações antigas');
 assert.equal(sanitizeInstagramThemes([{ id: 'x', name: 'X', background: 'invalid' }])[0].background, '#1269f3');
 
 const signedPayload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: '123' })).toString('base64url');
