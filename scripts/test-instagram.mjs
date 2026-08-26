@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
+import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
 const config = {
   canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
@@ -28,6 +29,7 @@ assert.equal(selectInstagramTheme(config, new Date('2026-01-02T12:00:00-03:00'))
 assert.equal(selectInstagramTheme(config, new Date('2026-09-07T12:00:00-03:00')).id, 'independence');
 assert.ok(sanitizeInstagramThemes([{ id: 'default', name: 'PromoShop' }]).some((theme) => theme.id === 'independence'), 'temas sazonais novos devem aparecer em configurações antigas');
 assert.equal(sanitizeInstagramThemes([{ id: 'x', name: 'X', background: 'invalid' }])[0].background, '#1269f3');
+assert.equal(sanitizeInstagramHighlights([{ id: 'offers', name: 'Ofertas', icon: 'invalid', description: 'Teste' }])[0].icon, 'star');
 
 const signedPayload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: '123' })).toString('base64url');
 const signedSecret = 'app-secret-for-test';
@@ -75,6 +77,19 @@ try {
   assert.equal(feedAsset.template, 'editorial');
 } finally {
   await fs.unlink(feedAsset.filePath).catch(() => {});
+}
+
+for (const variant of ['cover', 'story']) {
+  const highlightAsset = await generateInstagramHighlightAsset({ name: 'Ofertas', icon: 'bolt', description: 'Achados e promoções selecionadas todos os dias.' }, config, 'default', variant);
+  try {
+    const metadata = await sharp(highlightAsset.filePath).metadata();
+    assert.equal(metadata.format, 'jpeg');
+    assert.equal(metadata.width, 1080);
+    assert.equal(metadata.height, 1920);
+    assert.equal(highlightAsset.variant, variant);
+  } finally {
+    await fs.unlink(highlightAsset.filePath).catch(() => {});
+  }
 }
 
 for (const templateMode of ['classic', 'spotlight', 'split', 'showcase', 'minimal', 'flash']) {

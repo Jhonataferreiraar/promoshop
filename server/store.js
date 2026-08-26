@@ -6,6 +6,7 @@ import {
   DEFAULT_WHATSAPP_AUDIENCES
 } from './audienceRouting.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramThemes.js';
+import { DEFAULT_INSTAGRAM_HIGHLIGHTS, sanitizeInstagramHighlights } from './instagramHighlights.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -240,6 +241,7 @@ const initialData = {
     instagramThemeMode: 'automatic',
     instagramManualThemeId: 'default',
     instagramThemes: DEFAULT_INSTAGRAM_THEMES.map((theme) => ({ ...theme })),
+    instagramHighlights: DEFAULT_INSTAGRAM_HIGHLIGHTS.map((item) => ({ ...item })),
     instagramCtaText: 'Acesse o link da bio',
     instagramDisclosureText: 'Publicidade · link de afiliado',
     instagramShowQrCode: false,
@@ -414,6 +416,7 @@ export async function readStore() {
   };
 
   data.config.instagramThemes = sanitizeInstagramThemes(data.config.instagramThemes);
+  data.config.instagramHighlights = sanitizeInstagramHighlights(data.config.instagramHighlights);
   data.config.instagramStores = Array.isArray(data.config.instagramStores)
     ? data.config.instagramStores.map((entry) => String(entry).trim()).filter(Boolean)
     : [...initialData.config.instagramStores];

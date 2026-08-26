@@ -68,6 +68,7 @@ import {
   enqueueInstagramFromWhatsapp,
   finishInstagramAuthorization,
   generateInstagramFeedAsset,
+  generateInstagramHighlightAsset,
   generateInstagramShareTemplate,
   generateInstagramStory,
   instagramAssetPath,
@@ -78,6 +79,7 @@ import {
   verifyInstagramSignedRequest
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
+import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 
 const app = express();
 
@@ -3443,6 +3445,9 @@ app.put(
         if (Object.prototype.hasOwnProperty.call(body, 'instagramThemes')) {
           data.config.instagramThemes = sanitizeInstagramThemes(body.instagramThemes);
         }
+        if (Object.prototype.hasOwnProperty.call(body, 'instagramHighlights')) {
+          data.config.instagramHighlights = sanitizeInstagramHighlights(body.instagramHighlights);
+        }
         data.config.instagramStores = Array.isArray(data.config.instagramStores)
           ? [...new Set(data.config.instagramStores.map((entry) => String(entry).trim()).filter(Boolean))]
           : previousConfig.instagramStores || [];
@@ -4589,6 +4594,45 @@ app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) =
     }, data.config, String(req.body?.themeId || ''));
     const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
     res.json({ ok: true, themeId: asset.themeId, imageUrl: `${canonical}/media/instagram/${asset.fileName}`, fileName: asset.fileName });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/highlights/preview', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const highlight = sanitizeInstagramHighlights([req.body?.highlight])[0];
+    const variant = req.body?.variant === 'story' ? 'story' : 'cover';
+    const asset = await generateInstagramHighlightAsset(highlight, data.config, String(req.body?.themeId || ''), variant);
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    res.json({ ok: true, themeId: asset.themeId, variant, imageUrl: `${canonical}/media/instagram/${asset.fileName}`, fileName: asset.fileName });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/highlights/queue', requireAdmin, async (req, res) => {
+  try {
+    const highlight = sanitizeInstagramHighlights([req.body?.highlight])[0];
+    const item = {
+      id: createId('instagram-highlight'),
+      kind: 'highlight',
+      highlight,
+      title: `Destaque: ${highlight.name}`,
+      store: 'Destaques',
+      themeId: String(req.body?.themeId || ''),
+      status: 'pending',
+      attempts: 0,
+      force: false,
+      createdAt: new Date().toISOString(),
+      publishedAt: null,
+      retryAt: null,
+      error: null
+    };
+    await updateStore((data) => { data.instagramQueue ||= []; data.instagramQueue.push(item); });
+    await addLog(`Instagram: Story de apresentação do Destaque ${highlight.name} adicionado à fila.`, 'success');
+    res.status(201).json({ ok: true, item });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

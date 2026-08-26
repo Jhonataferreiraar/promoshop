@@ -10,6 +10,21 @@ import { addLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
 import { selectInstagramTheme } from './instagramThemes.js';
 
+function highlightIconSvg(icon, color = '#1269f3') {
+  const common = `fill="none" stroke="${escapeXml(color)}" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"`;
+  const icons = {
+    bolt: `<path d="M132 18 55 126h61l-18 96 87-122h-62z" fill="${escapeXml(color)}"/>`,
+    ticket: `<path d="M31 69a28 28 0 0 0 0 56v47h178v-47a28 28 0 0 0 0-56V22H31z" ${common}/><path d="M91 69v56m58-56v56" ${common}/>` ,
+    users: `<circle cx="88" cy="79" r="35" ${common}/><circle cx="166" cy="91" r="27" ${common}/><path d="M25 205c5-51 31-76 64-76s59 25 64 76m-9-63c38-6 64 17 70 61" ${common}/>` ,
+    info: `<circle cx="120" cy="120" r="92" ${common}/><path d="M120 105v65m0-101v2" ${common}/>` ,
+    store: `<path d="M33 91h174l-17-58H50zM45 91v116h150V91M88 207v-68h64v68" ${common}/><path d="M33 91c0 25 36 25 36 0 0 25 36 25 36 0 0 25 36 25 36 0 0 25 36 25 36 0 0 25 30 25 30 0" ${common}/>` ,
+    message: `<path d="M28 42h184v128H95l-55 43 14-43H28z" ${common}/><path d="M72 102h96" ${common}/>` ,
+    heart: `<path d="M120 207C20 145 21 62 72 43c28-10 48 5 48 5s20-15 48-5c51 19 52 102-48 164z" fill="${escapeXml(color)}"/>`,
+    star: `<path d="m120 21 29 60 66 9-48 46 12 66-59-31-59 31 12-66-48-46 66-9z" fill="${escapeXml(color)}"/>`
+  };
+  return icons[icon] || icons.star;
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const mediaDir = path.join(dataDir, 'instagram-stories');
@@ -324,6 +339,40 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   const filePath = path.join(mediaDir, fileName);
   await sharp(svg).composite(composites).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
   return { fileName, filePath, themeId: theme.id, width: 1080, height: 1920 };
+}
+
+export async function generateInstagramHighlightAsset(highlight = {}, config = {}, requestedThemeId = '', requestedVariant = 'cover') {
+  await fs.mkdir(mediaDir, { recursive: true });
+  const theme = selectInstagramTheme(config, new Date(), requestedThemeId);
+  const variant = requestedVariant === 'story' ? 'story' : 'cover';
+  const name = svgText(highlight.name || 'Destaque').slice(0, 30);
+  const description = svgText(highlight.description || 'Confira as novidades da PromoShop.').slice(0, 180);
+  const descriptionLines = splitLines(description, 38, 4);
+  const descriptionMarkup = descriptionLines.map((line, index) => `<tspan x="540" dy="${index ? 54 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const iconColor = variant === 'cover' ? theme.background2 : '#1269f3';
+  const centerY = variant === 'cover' ? 960 : 650;
+  const safeGuide = variant === 'cover'
+    ? `<circle cx="540" cy="960" r="390" fill="#ffffff" opacity=".08"/><circle cx="540" cy="960" r="310" fill="#ffffff" filter="url(#shadow)"/>`
+    : `<rect x="80" y="310" width="920" height="1260" rx="64" fill="#ffffff" filter="url(#shadow)"/>`;
+  const body = variant === 'cover'
+    ? `<circle cx="540" cy="${centerY - 30}" r="170" fill="#edf3ff"/><g transform="translate(420 ${centerY - 150})">${highlightIconSvg(highlight.icon, iconColor)}</g><text x="540" y="${centerY + 245}" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.background2}">${escapeXml(name)}</text><text x="540" y="${centerY + 310}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#667085">PROMOSHOP</text>`
+    : `<circle cx="540" cy="${centerY}" r="170" fill="#edf3ff"/><g transform="translate(420 ${centerY - 120})">${highlightIconSvg(highlight.icon, iconColor)}</g><text x="540" y="910" text-anchor="middle" font-family="Arial,sans-serif" font-size="78" font-weight="900" fill="#101828">${escapeXml(name)}</text><text x="540" y="1040" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="600" fill="#475467">${descriptionMarkup}</text><rect x="150" y="1310" width="780" height="112" rx="34" fill="${theme.accent}"/><text x="540" y="1380" text-anchor="middle" font-family="Arial,sans-serif" font-size="35" font-weight="900" fill="#111827">Veja este Destaque no perfil  →</text>`;
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-opacity=".22"/></filter></defs>
+    <rect width="1080" height="1920" fill="url(#bg)"/>
+    ${decorationSvg(theme)}
+    <text x="540" y="120" text-anchor="middle" font-family="Arial,sans-serif" font-size="48" font-weight="900" fill="${theme.text}">PromoShop</text>
+    <text x="540" y="162" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="${theme.text}" opacity=".82">${variant === 'cover' ? 'CAPA DE DESTAQUE' : 'CONHEÇA NOSSOS DESTAQUES'}</text>
+    ${safeGuide}
+    ${body}
+    <text x="540" y="1810" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+  </svg>`);
+  const logo = await logoBuffer(90);
+  const fileName = `highlight-${variant}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
+  const filePath = path.join(mediaDir, fileName);
+  await sharp(svg).composite(logo ? [{ input: logo, left: 495, top: 188 }] : []).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
+  return { fileName, filePath, themeId: theme.id, width: 1080, height: 1920, variant };
 }
 
 function feedStorySnapshot(source = {}, kind = 'offer') {
@@ -979,7 +1028,9 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (item) { item.status = 'publishing'; item.publishingAt = new Date().toISOString(); item.error = null; }
     });
-    const asset = await generateInstagramStory(selected, config);
+    const asset = selected.kind === 'highlight'
+      ? await generateInstagramHighlightAsset(selected.highlight || selected, config, selected.themeId, 'story')
+      : await generateInstagramStory(selected, config);
     const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
     if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar Stories.');
     const published = await publishAsset(config, secrets, `${canonical}/media/instagram/${asset.fileName}`);
