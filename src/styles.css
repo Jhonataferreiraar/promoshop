@@ -681,6 +681,12 @@ a {
 .instagram-queue-list { display: grid; gap: 10px; margin-top: 18px; }
 .instagram-queue-row { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px; border: 1px solid #eaecf0; border-radius: 14px; }
 .instagram-feed-panel { display: grid; gap: 20px; }
+.instagram-feed-auto-summary { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px; border: 1px solid #fedf89; border-radius: 14px; color: #7a2e0e; background: #fffaeb; }
+.instagram-feed-auto-summary.active { border-color: #abefc6; color: #067647; background: #ecfdf3; }
+.instagram-feed-auto-summary > span { display: grid; flex: 0 0 27px; width: 27px; height: 27px; place-items: center; border-radius: 50%; color: #fff; background: #f79009; font-weight: 900; }
+.instagram-feed-auto-summary.active > span { background: #17b26a; }
+.instagram-feed-auto-summary strong { display: block; color: inherit; }
+.instagram-feed-auto-summary p { margin: 3px 0 0; color: #667085; font-size: 12px; line-height: 1.5; }
 .instagram-feed-days { display: grid; gap: 8px; align-content: start; }
 .instagram-feed-days > strong { color: #344054; font-size: 13px; }
 .instagram-feed-days > small { color: #667085; font-size: 11px; line-height: 1.45; }

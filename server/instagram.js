@@ -795,6 +795,35 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
   return item;
 }
 
+export function backfillInstagramFeedFromRecentWhatsapp(data) {
+  const config = data.config || {};
+  if (config.instagramFeedEnabled !== true || config.instagramFeedAutoFromWhatsapp !== true) return 0;
+  data.instagramFeedQueue ||= [];
+  const carousel = config.instagramFeedPostType === 'carousel';
+  const target = carousel
+    ? Math.max(2, Math.min(10, Number(config.instagramFeedCarouselSize || 4)))
+    : Math.max(1, Math.min(30, Number(config.instagramFeedMaxPerDay || 3)));
+  const pendingCount = () => (data.instagramFeedQueue || [])
+    .filter((entry) => entry.status === 'pending' && entry.origin === 'whatsapp' && entry.postType === (carousel ? 'carousel' : 'single'))
+    .reduce((total, entry) => total + (carousel ? (entry.sourceIds || []).length : 1), 0);
+  if (pendingCount() >= target) return 0;
+
+  const maximumAge = Math.max(1, Number(config.instagramFeedDuplicateDays || 7)) * DAY;
+  const recentSent = (data.queue || [])
+    .filter((entry) => entry.status === 'sent' && Date.now() - new Date(entry.sentAt || entry.createdAt || 0).getTime() <= maximumAge)
+    .sort((a, b) => new Date(b.sentAt || b.createdAt || 0).getTime() - new Date(a.sentAt || a.createdAt || 0).getTime())
+    .slice(0, 300);
+  let added = 0;
+  for (const queueItem of recentSent) {
+    const before = (data.instagramFeedQueue || []).reduce((total, entry) => total + (entry.sourceIds || []).length, 0);
+    enqueueInstagramFeedFromWhatsapp(data, queueItem);
+    const after = (data.instagramFeedQueue || []).reduce((total, entry) => total + (entry.sourceIds || []).length, 0);
+    if (after > before) added += after - before;
+    if (pendingCount() >= target) break;
+  }
+  return added;
+}
+
 async function metaJson(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000);
@@ -1084,6 +1113,14 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
     if (!forceId && (config.instagramFeedEnabled !== true || !withinFeedSchedule(config))) return { paused: true };
+    if (!forceId && config.instagramFeedAutoFromWhatsapp === true) {
+      let backfilled = 0;
+      await updateStore((fresh) => { backfilled = backfillInstagramFeedFromRecentWhatsapp(fresh); });
+      if (backfilled > 0) {
+        data = await readStore();
+        await addLog(`Instagram Feed: ${backfilled} promoção(ões) recente(s) dos grupos adicionada(s) automaticamente à fila.`, 'success');
+      }
+    }
     const queue = Array.isArray(data.instagramFeedQueue) ? data.instagramFeedQueue : [];
     const sentLastDay = queue.filter((item) => item.status === 'sent' && Date.now() - new Date(item.publishedAt || 0).getTime() < DAY);
     if (!forceId && sentLastDay.length >= Math.max(1, Number(config.instagramFeedMaxPerDay || 3))) return { limited: true };

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
@@ -55,6 +55,22 @@ const feedData = {
 };
 assert.ok(enqueueInstagramFeedFromWhatsapp(feedData, { id: 'feed-1', offerId: 'offer-1', targetAudienceCodes: ['G01'] }));
 assert.equal(feedData.instagramFeedQueue[0].postType, 'carousel');
+
+const backfillData = {
+  config: { ...feedData.config, instagramFeedCarouselSize: 2, instagramFeedMinimumDiscount: 20 },
+  offers: [
+    data.offers[0],
+    { id: 'offer-2', title: 'Fone Bluetooth em promoção', store: 'Magalu', price: 79.9, originalPrice: 119.9, discount: 33, image: 'https://example.com/headphone.jpg', affiliateUrl: 'https://example.com/headphone' }
+  ],
+  queue: [
+    { id: 'whatsapp-1', offerId: 'offer-1', status: 'sent', sentAt: new Date().toISOString(), targetAudienceCodes: ['G01'] },
+    { id: 'whatsapp-2', offerId: 'offer-2', status: 'sent', sentAt: new Date().toISOString(), targetAudienceCodes: ['G01'] }
+  ],
+  instagramFeedQueue: []
+};
+assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 2, 'deve recuperar ofertas já enviadas ao WhatsApp');
+assert.equal(backfillData.instagramFeedQueue[0].items.length, 2, 'deve montar o carrossel com as ofertas recentes');
+assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 0, 'não deve duplicar o preenchimento automático');
 
 const asset = await generateInstagramStory({ title: 'Smartphone com câmera de alta resolução', store: 'Magalu', price: 999.9, originalPrice: 1299.9, discount: 23, image: '', link: 'https://example.com/offer' }, config, 'christmas');
 try {
