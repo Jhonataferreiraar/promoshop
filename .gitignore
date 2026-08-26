@@ -9,5 +9,6 @@ data/.secret-key
 data/.data-key
 data/.auth-secret
 data/secrets.enc
+data/instagram-stories/
 npm-debug.log*
 /Projeto de Afiliado/
