@@ -7,6 +7,7 @@ import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
 
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
+const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -2196,12 +2197,12 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extension: 'Extensão de cupons', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extension: 'Importe cupons visíveis no Mercado Livre e na Shopee pelo navegador.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extension: '＋', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extension: 'Extensão de cupons', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extension: 'Importe cupons visíveis no Mercado Livre e na Shopee pelo navegador.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extension: '＋', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
     { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
-    { label: 'Automação', items: ['sources', 'whatsapp', 'instagram', 'instagramFeed', 'instagramShare', 'instagramHighlights', 'extension'] },
+    { label: 'Automação', items: ['sources', 'whatsapp', 'groupDirectory', 'instagram', 'instagramFeed', 'instagramShare', 'instagramHighlights', 'extension'] },
     { label: 'Sistema', items: ['analytics', 'health', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
@@ -3372,6 +3373,7 @@ function AdminApp() {
       </form>
     </div>}
     {tab === 'instagram' && <InstagramPanel data={data} setData={setData} secretForm={secretForm} setSecretForm={setSecretForm} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} />}
+    {tab === 'groupDirectory' && <React.Suspense fallback={<section className="panel"><p>Carregando divulgação…</p></section>}><GroupDirectoryPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} /></React.Suspense>}
     {tab === 'instagramFeed' && <InstagramFeedPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} />}
     {tab === 'instagramShare' && <InstagramSharePanel data={data} authApi={authApi} setMessage={setMessage} />}
     {tab === 'instagramHighlights' && <React.Suspense fallback={<section className="panel"><p>Carregando Destaques…</p></section>}><InstagramHighlightsPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} /></React.Suspense>}

@@ -349,7 +349,7 @@ async function resolveDestinations(item) {
   // A comunidade geral não usa o padrão Gxx no nome. Ela recebe a oferta
   // além do grupo temático, quando estiver habilitada e selecionada no painel.
   const normalizedCommunity = normalizeGroupName(communityName);
-  if (communityEnabled && normalizedCommunity) {
+  if (communityEnabled && normalizedCommunity && item?.skipCommunityDestination !== true) {
     // O mesmo nome pode existir como comunidade/grupo e como canal. Procure
     // em todos os destinos sincronizados, mesmo que o usuário tenha marcado
     // apenas os grupos temáticos.

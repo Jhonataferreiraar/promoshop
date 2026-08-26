@@ -205,6 +205,12 @@ const initialData = {
 
     whatsappAudienceCooldownHours: 24,
 
+    whatsappDirectoryTitle: '📢 Encontre seu grupo PromoShop',
+    whatsappDirectoryIntro: 'Escolha os assuntos que você mais gosta e entre nos grupos:',
+    whatsappDirectoryFooter: '✅ Entre nos seus favoritos e acompanhe as próximas ofertas.',
+    whatsappDirectoryIncludedCodes: [],
+    whatsappDirectoryTargetCodes: [],
+
     whatsappHeadless: true,
     whatsappAutoStart: true,
 

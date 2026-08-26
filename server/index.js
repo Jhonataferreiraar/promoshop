@@ -61,6 +61,7 @@ import {
 } from './audienceRouting.js';
 import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
+import { buildGroupDirectoryMessage, sanitizeGroupDirectoryCodes } from './groupDirectory.js';
 import {
   beginInstagramAuthorization,
   cleanupInstagramAssets,
@@ -1383,7 +1384,7 @@ function getLocalCodesForQueueItem(
   offers,
   config
 ) {
-  if (item?.kind === 'coupon') {
+  if (item?.kind === 'coupon' || item?.kind === 'group-directory') {
     return normalizeCouponAudienceCodes(item.targetAudienceCodes || item.couponSnapshot?.targetAudienceCodes);
   }
 
@@ -3435,8 +3436,8 @@ app.put(
         } catch {
           data.config.canonicalUrl = previousConfig.canonicalUrl || '';
         }
-        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri']) {
-          const maximum = key.endsWith('CustomText') ? 3000 : key === 'heroText' || key === 'disclosure' || key === 'seoDescription' ? 1000 : 300;
+        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri', 'whatsappDirectoryTitle', 'whatsappDirectoryIntro', 'whatsappDirectoryFooter']) {
+          const maximum = key.endsWith('CustomText') ? 3000 : ['heroText', 'disclosure', 'seoDescription'].includes(key) ? 1000 : ['whatsappDirectoryIntro', 'whatsappDirectoryFooter'].includes(key) ? 500 : 300;
           data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);
         }
         if (!/^https:\/\//i.test(data.config.searchConsoleRedirectUri)) data.config.searchConsoleRedirectUri = previousConfig.searchConsoleRedirectUri || '';
@@ -3454,6 +3455,8 @@ app.put(
         data.config.instagramAudienceCodes = Array.isArray(data.config.instagramAudienceCodes)
           ? [...new Set(data.config.instagramAudienceCodes.map((entry) => String(entry).trim().toUpperCase()).filter(Boolean))]
           : previousConfig.instagramAudienceCodes || [];
+        data.config.whatsappDirectoryIncludedCodes = sanitizeGroupDirectoryCodes(data.config.whatsappDirectoryIncludedCodes);
+        data.config.whatsappDirectoryTargetCodes = sanitizeGroupDirectoryCodes(data.config.whatsappDirectoryTargetCodes);
         data.config.extensionStores = Array.isArray(data.config.extensionStores)
           ? [...new Set(data.config.extensionStores.map((entry) => String(entry).trim()).filter((entry) => ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'].includes(entry)))]
           : previousConfig.extensionStores || ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
@@ -5179,6 +5182,49 @@ app.post(
   }
 );
 
+app.post('/api/admin/group-directory/queue', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const audiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
+    const activeCodes = new Set(audiences.filter((audience) => audience.enabled !== false).map((audience) => String(audience.code || '').toUpperCase()));
+    const targetCodes = sanitizeGroupDirectoryCodes(req.body?.targetCodes).filter((code) => activeCodes.has(code));
+    if (!targetCodes.length) return res.status(400).json({ error: 'Selecione pelo menos um grupo que receberá a divulgação.' });
+    const directory = buildGroupDirectoryMessage({
+      title: req.body?.title,
+      intro: req.body?.intro,
+      footer: req.body?.footer,
+      includedCodes: req.body?.includedCodes
+    }, audiences);
+    const force = req.body?.force === true;
+    const destinations = force ? [targetCodes] : targetCodes.map((code) => [code]);
+    const items = destinations.map((codes) => ({
+      id: createId('queue'),
+      kind: 'group-directory',
+      offerId: null,
+      offerTitle: String(req.body?.title || 'Divulgação dos grupos').trim().slice(0, 120) || 'Divulgação dos grupos',
+      store: 'PromoShop',
+      targetAudienceCodes: codes,
+      includedAudienceCodes: directory.groups.map((group) => group.code),
+      skipCommunityDestination: true,
+      message: directory.message,
+      messageSource: 'group-directory',
+      aiStatus: 'not-applicable',
+      image: '',
+      status: 'pending',
+      attempts: 0,
+      createdAt: new Date().toISOString(),
+      sentAt: null,
+      error: null,
+      force
+    }));
+    await updateStore((fresh) => { fresh.queue.push(...items); });
+    await addLog(`Divulgação dos grupos ${force ? 'priorizada' : 'adicionada à fila'}: links ${directory.groups.map((group) => group.code).join(', ')} → destinos ${targetCodes.join(', ')}.`, force ? 'success' : 'info');
+    return res.status(201).json({ ok: true, count: items.length, targetCodes, includedCodes: directory.groups.map((group) => group.code) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
 app.post(
   '/api/admin/collect',
   requireAdmin,
@@ -5850,6 +5896,29 @@ app.get(
       }
 
       try {
+        if (item.kind === 'group-directory') {
+          const selectedCodes = sanitizeGroupDirectoryCodes(item.targetAudienceCodes);
+          const normalizedRoundAudienceCode = normalizeAudienceCode(roundAudienceCode);
+          if (normalizedRoundAudienceCode && !selectedCodes.includes(normalizedRoundAudienceCode)) {
+            return { skippedForAudience: true };
+          }
+          const deliveryAudienceCodes = normalizedRoundAudienceCode ? [normalizedRoundAudienceCode] : selectedCodes;
+          const message = String(item.message || '').trim().slice(0, 4000);
+          if (!deliveryAudienceCodes.length || !message) throw new Error('Divulgação sem mensagem ou grupo de destino.');
+          await updateStore((data) => {
+            const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
+            if (!saved) return;
+            saved.message = message;
+            saved.messageSource = 'group-directory';
+            saved.aiStatus = 'not-applicable';
+            saved.targetAudienceCodes = [...deliveryAudienceCodes];
+            saved.roundAudienceCode = normalizedRoundAudienceCode || null;
+            delete saved.aiRetryAt;
+            delete saved.aiError;
+          });
+          return { ...item, message, messageSource: 'group-directory', aiStatus: 'not-applicable', targetAudienceCodes: deliveryAudienceCodes, roundAudienceCode: normalizedRoundAudienceCode || null };
+        }
+
         if (item.kind === 'coupon') {
           const coupon = item.couponSnapshot || {};
           const selectedCodes = normalizeCouponAudienceCodes(
