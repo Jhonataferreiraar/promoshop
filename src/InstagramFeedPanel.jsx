@@ -48,6 +48,8 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       await authApi('/admin/config', { method: 'PUT', body: JSON.stringify({
         instagramFeedEnabled: Boolean(config.instagramFeedEnabled), instagramFeedAutoFromWhatsapp: Boolean(config.instagramFeedAutoFromWhatsapp),
         instagramFeedPostType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', instagramFeedFormat: format,
+        instagramFeedCarouselFrequency: config.instagramFeedCarouselFrequency === 'weekly' ? 'weekly' : 'daily',
+        instagramFeedCarouselsPerDay: config.instagramFeedCarouselsPerDay ?? 1, instagramFeedCarouselsPerWeek: config.instagramFeedCarouselsPerWeek ?? 3,
         instagramFeedPublishingStart: config.instagramFeedPublishingStart || '09:00', instagramFeedPublishingEnd: config.instagramFeedPublishingEnd || '21:00',
         instagramFeedIntervalMinutes: config.instagramFeedIntervalMinutes ?? 120, instagramFeedMaxPerDay: config.instagramFeedMaxPerDay ?? 3,
         instagramFeedMinimumDiscount: config.instagramFeedMinimumDiscount ?? 20, instagramFeedDuplicateDays: config.instagramFeedDuplicateDays ?? 7,
@@ -110,6 +112,9 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       <label>Formato padrão<select value={config.instagramFeedFormat || 'portrait'} onChange={(event) => { setFormat(event.target.value); setConfig({ instagramFeedFormat: event.target.value }); }}><option value="portrait">Vertical 4:5</option><option value="square">Quadrado 1:1</option></select></label>
       <label>Automação padrão<select value={config.instagramFeedPostType || 'single'} onChange={(event) => setConfig({ instagramFeedPostType: event.target.value })}><option value="single">Posts individuais</option><option value="carousel">Carrosséis</option></select></label>
       <label>Itens por carrossel<input type="number" min="2" max="10" value={config.instagramFeedCarouselSize ?? 4} onChange={(event) => setConfig({ instagramFeedCarouselSize: event.target.value })} /></label>
+      <label>Frequência dos carrosséis<select value={config.instagramFeedCarouselFrequency || 'daily'} onChange={(event) => setConfig({ instagramFeedCarouselFrequency: event.target.value })}><option value="daily">Todos os dias</option><option value="weekly">Por semana</option></select><small>Define o limite para publicações de carrossel.</small></label>
+      <label>Carrosséis por dia<input type="number" min="1" max="10" value={config.instagramFeedCarouselsPerDay ?? 1} onChange={(event) => setConfig({ instagramFeedCarouselsPerDay: event.target.value })} /><small>Usado no modo diário.</small></label>
+      <label>Carrosséis por semana<input type="number" min="1" max="21" value={config.instagramFeedCarouselsPerWeek ?? 3} onChange={(event) => setConfig({ instagramFeedCarouselsPerWeek: event.target.value })} /><small>Usado no modo semanal.</small></label>
       <label>Começar às<input type="time" value={config.instagramFeedPublishingStart || '09:00'} onChange={(event) => setConfig({ instagramFeedPublishingStart: event.target.value })} /></label>
       <label>Terminar às<input type="time" value={config.instagramFeedPublishingEnd || '21:00'} onChange={(event) => setConfig({ instagramFeedPublishingEnd: event.target.value })} /></label>
       <label>Intervalo entre posts<input type="number" min="5" max="1440" value={config.instagramFeedIntervalMinutes ?? 120} onChange={(event) => setConfig({ instagramFeedIntervalMinutes: event.target.value })} /><small>Minutos.</small></label>

@@ -3394,7 +3394,9 @@ app.put(
           instagramFeedMaxPerDay: [3, 1, 30],
           instagramFeedMinimumDiscount: [20, 0, 99],
           instagramFeedDuplicateDays: [7, 1, 365],
-          instagramFeedCarouselSize: [4, 2, 10]
+          instagramFeedCarouselSize: [4, 2, 10],
+          instagramFeedCarouselsPerDay: [1, 1, 10],
+          instagramFeedCarouselsPerWeek: [3, 1, 21]
         };
         for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
           data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
@@ -3436,6 +3438,7 @@ app.put(
         if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
         if (!['single', 'carousel'].includes(String(data.config.instagramFeedPostType || ''))) data.config.instagramFeedPostType = previousConfig.instagramFeedPostType || 'single';
         if (!['square', 'portrait'].includes(String(data.config.instagramFeedFormat || ''))) data.config.instagramFeedFormat = previousConfig.instagramFeedFormat || 'portrait';
+        if (!['daily', 'weekly'].includes(String(data.config.instagramFeedCarouselFrequency || ''))) data.config.instagramFeedCarouselFrequency = previousConfig.instagramFeedCarouselFrequency || 'daily';
         data.config.instagramFeedEnabled = data.config.instagramFeedEnabled === true;
         data.config.instagramFeedAutoFromWhatsapp = data.config.instagramFeedAutoFromWhatsapp === true;
         data.config.instagramFeedCaption = String(data.config.instagramFeedCaption || '').trim().slice(0, 2200);

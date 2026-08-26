@@ -741,6 +741,18 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
       ? queue.find((item) => item.id === forceId && item.status !== 'sent')
       : queue.find((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()));
     if (!selected) return { empty: true };
+    if (!forceId && selected.postType === 'carousel') {
+      const sentCarousels = queue.filter((item) => item.status === 'sent' && item.postType === 'carousel');
+      const todayCarousels = sentCarousels.filter((item) => Date.now() - new Date(item.publishedAt || 0).getTime() < DAY).length;
+      const weekCarousels = sentCarousels.filter((item) => Date.now() - new Date(item.publishedAt || 0).getTime() < 7 * DAY).length;
+      const frequency = config.instagramFeedCarouselFrequency === 'weekly' ? 'weekly' : 'daily';
+      const limit = frequency === 'weekly'
+        ? Math.max(1, Number(config.instagramFeedCarouselsPerWeek || 3))
+        : Math.max(1, Number(config.instagramFeedCarouselsPerDay || 1));
+      if ((frequency === 'weekly' && weekCarousels >= limit) || (frequency === 'daily' && todayCarousels >= limit)) {
+        return { carouselLimitReached: true, frequency, limit };
+      }
+    }
     if (!Array.isArray(selected.items) || !selected.items.length) throw new Error('A publicação do Feed não possui ofertas válidas.');
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
