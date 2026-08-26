@@ -439,7 +439,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     // Editorial: composição de revista compacta, com leitura contínua e sem
     // grandes vazios entre a oferta e a chamada final.
     const cardY = square ? 55 : 150;
-    const cardHeight = square ? 930 : 930;
+    const cardHeight = square ? 930 : 1050;
     const imageTop = square ? 185 : 255;
     productTop = imageTop;
     productWidth = square ? 820 : 500;
@@ -468,8 +468,10 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="${textX}" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 32 : 34}" font-weight="900" fill="#101828">${titleTspans}</text>
       ${story.originalPrice ? `<text x="${textX}" y="${priceY - 38}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
       <text x="${textX}" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 58 : 52}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
-      <rect x="92" y="${square ? 800 : 870}" width="896" height="82" rx="26" fill="${theme.accent}"/>
-      <text x="540" y="${square ? 852 : 922}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#111827">${cta} →</text>
+      ${!square ? `<rect x="92" y="790" width="896" height="92" rx="26" fill="#eef4ff"/><text x="540" y="847" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="900" letter-spacing="1" fill="${theme.background2}">ACHADO SELECIONADO PARA VOCÊ</text>` : ''}
+      <rect x="92" y="${square ? 800 : 910}" width="896" height="82" rx="26" fill="${theme.accent}"/>
+      <text x="540" y="${square ? 852 : 962}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#111827">${cta} →</text>
+      ${!square ? `<text x="540" y="1060" text-anchor="middle" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#667085">Confira antes que a oferta mude</text>` : ''}
       <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     </svg>`;
   } else if (template === 'spotlight') {
@@ -484,8 +486,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     const titleLines = splitLines(story.title, square ? 30 : 34, 2);
     const titleLineHeight = square ? 38 : 48;
     const titleY = square ? 610 : 825;
-    const priceBlockY = square ? 735 : 1040;
-    const ctaY = square ? 850 : 1155;
+    const priceBlockY = square ? 735 : 995;
+    const ctaY = square ? 850 : 1110;
     const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
     svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".24"/></filter></defs>
@@ -532,7 +534,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <rect x="300" y="${cardY}" width="74" height="${cardHeight}" fill="${theme.background2}"/>
       <text x="92" y="${cardY + 70}" font-family="Arial,sans-serif" font-size="22" font-weight="900" letter-spacing="2" fill="${theme.accent}">PROMOSHOP</text>
       <text x="92" y="${cardY + 190}" font-family="Arial,sans-serif" font-size="${square ? 48 : 58}" font-weight="900" fill="#ffffff">${discount > 0 ? `${discount}%` : 'OFERTA'}</text>
-      <text x="92" y="${cardY + 245}" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="#ffffff">DE DESCONTO</text>
+      <text x="92" y="${cardY + 245}" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="#ffffff">${discount > 0 ? 'DE DESCONTO' : 'ESPECIAL'}</text>
       <text x="92" y="${cardY + 330}" font-family="Arial,sans-serif" font-size="20" font-weight="800" fill="${theme.accent}">SELECIONADA</text>
       <rect x="92" y="${cardY + 370}" width="220" height="44" rx="22" fill="${theme.accent}"/>
       <text x="202" y="${cardY + 399}" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="900" fill="#111827">${escapeXml(store)}</text>
@@ -549,9 +551,9 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     // Vitrine: produto amplo, moldura suave e informações concentradas abaixo.
     const cardY = square ? 55 : 150;
     const cardHeight = square ? 930 : 1110;
-    productTop = square ? 195 : 245;
+    productTop = square ? 260 : 270;
     productWidth = 820;
-    productHeight = square ? 315 : 500;
+    productHeight = square ? 280 : 480;
     productLeft = 130;
     const titleLines = splitLines(story.title, square ? 31 : 38, 2);
     const titleLineHeight = square ? 38 : 46;
@@ -578,7 +580,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     </svg>`;
   } else if (template === 'minimal') {
     // Essencial: visual claro e arejado, sem o cartão tradicional.
-    productTop = square ? 205 : 260;
+    productTop = 275;
     productWidth = 700;
     productHeight = square ? 300 : 430;
     productLeft = 190;
@@ -595,8 +597,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
       <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">ESCOLHA ESSENCIAL</text>
       <rect x="70" y="180" width="940" height="${square ? 800 : 1080}" rx="48" fill="#ffffff" stroke="#dbe7ff" stroke-width="4" filter="url(#shadow)"/>
-      <rect x="390" y="205" width="300" height="48" rx="24" fill="${theme.background2}"/>
-      <text x="540" y="237" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="#ffffff">${escapeXml(store)}</text>
+      <rect x="390" y="195" width="300" height="48" rx="24" fill="${theme.background2}"/>
+      <text x="540" y="227" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="#ffffff">${escapeXml(store)}</text>
       <rect x="130" y="${productTop - 22}" width="820" height="${productHeight + 44}" rx="42" fill="#eef4ff"/>
       ${discount > 0 ? `<circle cx="120" cy="${productTop + 35}" r="52" fill="${theme.accent}"/><text x="120" y="${productTop + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${discount}%</text><text x="120" y="${productTop + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="900" fill="#111827">OFF</text>` : ''}
       <text x="540" y="${titleY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 31 : 39}" font-weight="900" fill="#101828">${titleTspans}</text>
@@ -630,8 +632,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="217" y="${cardY + 67}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="${theme.background2}">${escapeXml(store)}</text>
       <rect x="75" y="${productTop - 25}" width="650" height="${productHeight + 50}" rx="36" fill="#ffffff"/>
       <rect x="755" y="${productTop - 25}" width="240" height="${productHeight + 50}" rx="36" fill="${theme.accent}"/>
-      <text x="875" y="${productTop + 135}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 62 : 70}" font-weight="900" fill="#111827">${discount > 0 ? `${discount}%` : 'TOP'}</text>
-      <text x="875" y="${productTop + 190}" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="900" fill="#111827">${discount > 0 ? 'OFF' : 'OFERTA'}</text>
+      <text x="875" y="${productTop + 135}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${discount > 0 ? (square ? 62 : 70) : 42}" font-weight="900" fill="#111827">${discount > 0 ? `${discount}%` : 'ACHADO'}</text>
+      <text x="875" y="${productTop + 190}" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="900" fill="#111827">${discount > 0 ? 'OFF' : 'DO DIA'}</text>
       <path d="M820 ${productTop + 270}h110" stroke="#111827" stroke-width="5" stroke-linecap="round" opacity=".25"/>
       <text x="875" y="${productTop + 330}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="800" fill="#111827">APROVEITE</text>
       <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 31 : 40}" font-weight="900" fill="#ffffff">${titleTspans}</text>
