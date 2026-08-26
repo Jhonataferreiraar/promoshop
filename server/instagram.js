@@ -1156,6 +1156,9 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         .filter((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()))
         .sort((a, b) => feedEntryFreshness(b) - feedEntryFreshness(a))[0];
     if (!selected) return { empty: true };
+    if (!forceId && selected.postType === 'carousel' && (!Array.isArray(selected.items) || selected.items.length < 2)) {
+      return { waitingForCarouselItems: true, currentItems: selected.items?.length || 0 };
+    }
     if (!forceId && selected.postType === 'carousel') {
       const sentCarousels = queue.filter((item) => item.status === 'sent' && item.postType === 'carousel');
       const todayCarousels = sentCarousels.filter((item) => Date.now() - new Date(item.publishedAt || 0).getTime() < DAY).length;
