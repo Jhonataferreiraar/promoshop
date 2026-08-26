@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import InstagramFeedPanel from './InstagramFeedPanel.jsx';
 
 const stores = ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
@@ -148,6 +147,5 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
     </section>
 
     <div className="instagram-save-bar"><div><strong>Importante</strong><span>Salve antes de conectar ou sair desta aba.</span></div><button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => action('save', () => save())}>{busy === 'save' ? 'Salvando…' : 'Salvar configurações do Instagram'}</button></div>
-    <InstagramFeedPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} />
   </div>;
 }

@@ -412,8 +412,8 @@ function storySnapshot(data, queueItem) {
   const offer = data.offers.find((entry) => entry.id === queueItem.offerId) || queueItem.offerSnapshot || {};
   const coupon = queueItem.couponSnapshot || {};
   return queueItem.kind === 'coupon'
-    ? { kind: 'coupon', sourceId: queueItem.couponId || queueItem.id, title: coupon.title || queueItem.offerTitle, store: coupon.store || queueItem.store, price: 0, originalPrice: 0, discount: coupon.discountType === 'percent' ? coupon.discountValue : 0, image: coupon.image || queueItem.image, link: coupon.shortUrl || coupon.link, audienceCodes: queueItem.targetAudienceCodes || [] }
-    : { kind: 'offer', sourceId: queueItem.offerId, title: offer.title || queueItem.offerTitle, store: offer.store || queueItem.store, price: offer.price, originalPrice: offer.originalPrice, discount: offer.discount, image: offer.image || queueItem.image, link: offer.affiliateUrl || queueItem.link, audienceCodes: queueItem.targetAudienceCodes || [] };
+    ? { kind: 'coupon', sourceId: queueItem.couponId || queueItem.id, title: coupon.title || queueItem.offerTitle, store: coupon.store || queueItem.store, price: 0, originalPrice: 0, discount: coupon.discountType === 'percent' ? coupon.discountValue : 0, image: coupon.image || queueItem.image, link: coupon.shortUrl || coupon.link, audienceCodes: queueItem.targetAudienceCodes || [], sourcePublishedAt: queueItem.sentAt || queueItem.createdAt || new Date().toISOString() }
+    : { kind: 'offer', sourceId: queueItem.offerId, title: offer.title || queueItem.offerTitle, store: offer.store || queueItem.store, price: offer.price, originalPrice: offer.originalPrice, discount: offer.discount, image: offer.image || queueItem.image, link: offer.affiliateUrl || queueItem.link, audienceCodes: queueItem.targetAudienceCodes || [], sourcePublishedAt: queueItem.sentAt || queueItem.createdAt || new Date().toISOString() };
 }
 
 export function enqueueInstagramFromWhatsapp(data, queueItem) {
@@ -472,6 +472,7 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
     if (batch) {
       batch.items.push(story);
       batch.sourceIds.push(story.sourceId);
+      batch.latestSourceAt = story.sourcePublishedAt || new Date().toISOString();
       batch.title = `Carrossel com ${batch.items.length} ofertas`;
       batch.caption = sanitizeFeedCaption(config.instagramFeedCaption, batch.items);
       return batch;
@@ -481,6 +482,7 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
     id: createId('instagram-feed'), postType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', format: config.instagramFeedFormat === 'square' ? 'square' : 'portrait',
     items: [story], sourceIds: [story.sourceId], title: story.title, store: story.store,
     caption: sanitizeFeedCaption(config.instagramFeedCaption, [story]), status: 'pending', attempts: 0, force: false,
+    origin: 'whatsapp', latestSourceAt: story.sourcePublishedAt || new Date().toISOString(),
     createdAt: new Date().toISOString(), scheduledFor: null, publishedAt: null, retryAt: null, error: null,
     mediaIds: [], assetFileNames: [], themeId: ''
   };
@@ -636,6 +638,42 @@ function withinFeedSchedule(config, date = new Date()) {
   return start <= end ? now >= start && now <= end : now >= start || now <= end;
 }
 
+function feedEntryFreshness(entry) {
+  const itemDates = (entry?.items || []).map((item) => new Date(item.sourcePublishedAt || 0).getTime()).filter(Number.isFinite);
+  return Math.max(new Date(entry?.latestSourceAt || 0).getTime(), new Date(entry?.createdAt || 0).getTime(), ...itemDates, 0);
+}
+
+// Quando o Feed é alimentado pelos envios do WhatsApp, cada promoção entra na
+// fila no momento em que é confirmada. Antes de publicar, consolidamos os itens
+// mais recentes em um único carrossel para que a arte não fique presa a uma
+// promoção antiga enquanto novas ofertas já foram enviadas aos grupos.
+function latestAutomaticCarousel(data, config) {
+  if (config.instagramFeedPostType !== 'carousel') return null;
+  const size = Math.max(2, Math.min(10, Number(config.instagramFeedCarouselSize || 4)));
+  const candidates = (data.instagramFeedQueue || [])
+    .filter((entry) => entry.status === 'pending' && entry.origin === 'whatsapp' && !entry.scheduledFor && (!entry.retryAt || new Date(entry.retryAt).getTime() <= Date.now()))
+    .sort((a, b) => feedEntryFreshness(b) - feedEntryFreshness(a));
+  if (!candidates.length) return null;
+
+  const stories = [];
+  const sourceIds = new Set();
+  for (const entry of candidates) {
+    for (const story of entry.items || []) {
+      const sourceId = String(story.sourceId || '');
+      if (!sourceId || sourceIds.has(sourceId)) continue;
+      sourceIds.add(sourceId);
+      stories.push(story);
+      if (stories.length >= size) break;
+    }
+    if (stories.length >= size) break;
+  }
+  if (stories.length < 2) return null;
+  stories.sort((a, b) => new Date(b.sourcePublishedAt || 0).getTime() - new Date(a.sourcePublishedAt || 0).getTime());
+  const selected = candidates[0];
+  const consumedIds = candidates.slice(1).filter((entry) => (entry.items || []).some((story) => sourceIds.has(String(story.sourceId || '')))).map((entry) => entry.id);
+  return { selected, stories, sourceIds: [...sourceIds], consumedIds };
+}
+
 export async function processInstagramQueue({ forceId = '' } = {}) {
   if (processing) return { busy: true };
   processing = true;
@@ -737,9 +775,35 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     if (!forceId && sentLastDay.length >= Math.max(1, Number(config.instagramFeedMaxPerDay || 3))) return { limited: true };
     const lastSentAt = sentLastDay.reduce((latest, item) => Math.max(latest, new Date(item.publishedAt || 0).getTime()), 0);
     if (!forceId && lastSentAt && Date.now() - lastSentAt < Math.max(5, Number(config.instagramFeedIntervalMinutes || 120)) * 60_000) return { waiting: true };
-    selected = forceId
+    if (!forceId) {
+      const latest = latestAutomaticCarousel(data, config);
+      if (latest) {
+        selected = latest.selected;
+        await updateStore((fresh) => {
+          const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === latest.selected.id);
+          if (!item) return;
+          item.items = latest.stories;
+          item.sourceIds = latest.sourceIds;
+          item.title = `Carrossel com ${latest.stories.length} promoções recentes`;
+          item.caption = sanitizeFeedCaption(config.instagramFeedCaption, latest.stories);
+          item.latestSourceAt = latest.stories[0]?.sourcePublishedAt || item.latestSourceAt || item.createdAt;
+          for (const entry of fresh.instagramFeedQueue || []) {
+            if (latest.consumedIds.includes(entry.id) && entry.status === 'pending') {
+              entry.status = 'cancelled';
+              entry.error = 'Consolidado no carrossel com as promoções mais recentes dos grupos.';
+              entry.retryAt = null;
+            }
+          }
+        });
+        data = await readStore();
+        selected = (data.instagramFeedQueue || []).find((item) => item.id === latest.selected.id);
+      }
+    }
+    selected ||= forceId
       ? queue.find((item) => item.id === forceId && item.status !== 'sent')
-      : queue.find((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()));
+      : queue
+        .filter((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()))
+        .sort((a, b) => feedEntryFreshness(b) - feedEntryFreshness(a))[0];
     if (!selected) return { empty: true };
     if (!forceId && selected.postType === 'carousel') {
       const sentCarousels = queue.filter((item) => item.status === 'sent' && item.postType === 'carousel');

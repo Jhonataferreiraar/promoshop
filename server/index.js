@@ -4612,6 +4612,7 @@ app.post('/api/admin/instagram/feed/queue', requireAdmin, async (req, res) => {
       id: createId('instagram-feed'), postType, format, items: sources, sourceIds: sources.map((source) => source.id),
       title: postType === 'carousel' ? `Carrossel com ${sources.length} ofertas` : sources[0].title, store: postType === 'carousel' ? 'PromoShop' : sources[0].store,
       caption: String(req.body?.caption || data.config.instagramFeedCaption || '').trim().slice(0, 2200),
+      origin: 'manual',
       status: 'pending', attempts: 0, force: false, createdAt: new Date().toISOString(), scheduledFor: req.body?.scheduledFor ? new Date(req.body.scheduledFor).toISOString() : null,
       publishedAt: null, retryAt: null, error: null, mediaIds: [], assetFileNames: [], themeId: String(req.body?.themeId || '')
     };

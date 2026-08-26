@@ -103,10 +103,10 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
   }
 
   return <section className="panel instagram-feed-panel">
-    <div className="panel-heading"><div><span className="section-step">FEED DO INSTAGRAM</span><h2>Posts e carrosséis automáticos</h2><p>Crie artes no padrão da PromoShop e publique com a chamada “Acesse a bio do perfil”.</p></div></div>
+    <div className="panel-heading"><div><span className="section-step">FEED DO INSTAGRAM</span><h2>Posts e carrosséis automáticos</h2><p>O Feed fica separado dos Stories e, na automação, usa as promoções mais recentes que foram publicadas nos grupos.</p></div></div>
     <div className="instagram-toggle-grid">
       <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramFeedEnabled)} onChange={(event) => setConfig({ instagramFeedEnabled: event.target.checked })} /><span><strong>Ativar Feed</strong><small>Liga ou pausa a publicação automática.</small></span></label>
-      <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramFeedAutoFromWhatsapp)} onChange={(event) => setConfig({ instagramFeedAutoFromWhatsapp: event.target.checked })} /><span><strong>Após o WhatsApp</strong><small>Entra na fila após o envio confirmado.</small></span></label>
+      <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramFeedAutoFromWhatsapp)} onChange={(event) => setConfig({ instagramFeedAutoFromWhatsapp: event.target.checked })} /><span><strong>Após o WhatsApp</strong><small>Escolhe as promoções mais recentes após o envio confirmado nos grupos.</small></span></label>
     </div>
     <div className="settings-grid three-columns">
       <label>Formato padrão<select value={config.instagramFeedFormat || 'portrait'} onChange={(event) => { setFormat(event.target.value); setConfig({ instagramFeedFormat: event.target.value }); }}><option value="portrait">Vertical 4:5</option><option value="square">Quadrado 1:1</option></select></label>
