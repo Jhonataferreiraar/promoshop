@@ -3460,7 +3460,7 @@ app.put(
         if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
         if (!['single', 'carousel'].includes(String(data.config.instagramFeedPostType || ''))) data.config.instagramFeedPostType = previousConfig.instagramFeedPostType || 'single';
         if (!['square', 'portrait'].includes(String(data.config.instagramFeedFormat || ''))) data.config.instagramFeedFormat = previousConfig.instagramFeedFormat || 'portrait';
-        if (!['rotating', 'classic', 'editorial', 'spotlight'].includes(String(data.config.instagramFeedTemplateMode || ''))) data.config.instagramFeedTemplateMode = previousConfig.instagramFeedTemplateMode || 'rotating';
+        if (!['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || ''))) data.config.instagramFeedTemplateMode = previousConfig.instagramFeedTemplateMode || 'rotating';
         if (!['daily', 'weekly'].includes(String(data.config.instagramFeedCarouselFrequency || ''))) data.config.instagramFeedCarouselFrequency = previousConfig.instagramFeedCarouselFrequency || 'daily';
         data.config.instagramFeedEnabled = data.config.instagramFeedEnabled === true;
         data.config.instagramFeedAutoFromWhatsapp = data.config.instagramFeedAutoFromWhatsapp === true;
@@ -4643,7 +4643,7 @@ app.post('/api/admin/instagram/feed/queue', requireAdmin, async (req, res) => {
       title: postType === 'carousel' ? `Carrossel com ${sources.length} ofertas` : sources[0].title, store: postType === 'carousel' ? 'PromoShop' : sources[0].store,
       caption: String(req.body?.caption || data.config.instagramFeedCaption || '').trim().slice(0, 2200),
       origin: 'manual',
-      templateMode: ['rotating', 'classic', 'editorial', 'spotlight'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating',
+      templateMode: ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating',
       status: 'pending', attempts: 0, force: false, createdAt: new Date().toISOString(), scheduledFor: req.body?.scheduledFor ? new Date(req.body.scheduledFor).toISOString() : null,
       publishedAt: null, retryAt: null, error: null, mediaIds: [], assetFileNames: [], themeId: String(req.body?.themeId || '')
     };
