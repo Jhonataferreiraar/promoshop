@@ -5009,6 +5009,8 @@ button {
 .coupon-row-actions button.edit { color: var(--primary); border-color: #b2ccff; background: #f5f8ff; }
 .coupon-row-actions button.force { color: #fff; border-color: var(--primary); background: var(--primary); }
 .coupon-row-actions button.danger { color: #b42318; border-color: #fecdca; background: #fff5f4; }
+.offer-bulk-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.offer-bulk-actions .button { min-height: 36px; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .coupons-admin-layout, .coupon-grid { grid-template-columns: 1fr; }
@@ -5020,6 +5022,8 @@ button {
 }
 
 @media (max-width: 600px) {
+  .offer-bulk-actions { width: 100%; justify-content: stretch; }
+  .offer-bulk-actions .button { flex: 1 1 160px; }
   .coupon-admin-row { align-items: stretch; }
   .coupon-row-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; }
   .coupon-row-actions button { width: 100%; min-width: 0; }

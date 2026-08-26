@@ -1310,6 +1310,7 @@ function AdminApp() {
   });
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [message, setMessage] = useState('');
+  const [bulkQueueing, setBulkQueueing] = useState('');
   const [queueVisibleLimit, setQueueVisibleLimit] = useState(50);
   const [dialog, setDialog] = useState(null);
   const [aiPreview, setAiPreview] = useState('');
@@ -1855,6 +1856,35 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
   async function queueOffer(id, force = false) { await authApi(`/admin/offers/${id}/queue`, { method: 'POST', body: JSON.stringify({ force }) }); await load(); setMessage(force ? 'Publicação priorizada. O envio será feito em alguns segundos.' : 'Oferta colocada na fila do WhatsApp.'); }
+  async function bulkQueueOffers(mode) {
+    setBulkQueueing(mode);
+    try {
+      const result = await authApi('/admin/offers/bulk-queue', { method: 'POST', body: JSON.stringify({ mode }) });
+      await load();
+      const skipped = Number(result.skippedPending || 0) + Number(result.skippedHistory || 0) + Number(result.skippedInvalid || 0) + Number(result.skippedNoAudience || 0);
+      setMessage(`${Number(result.queued || 0)} oferta(s) agendada(s)${skipped ? ` · ${skipped} ignorada(s) pelas regras da fila` : ''}.`);
+    } catch (error) {
+      setMessage(`Não foi possível agendar as ofertas: ${error.message}`);
+    } finally {
+      setBulkQueueing('');
+    }
+  }
+  function confirmBulkQueue(mode) {
+    const missing = mode === 'missing';
+    setDialog({
+      type: 'confirm-action',
+      eyebrow: 'AGENDAR OFERTAS',
+      title: missing ? 'Agendar últimas ofertas?' : 'Agendar todas as ofertas?',
+      body: missing
+        ? 'As ofertas ativas que ainda não possuem histórico na fila serão adicionadas para publicação.'
+        : 'Todas as ofertas ativas que não estiverem aguardando na fila serão adicionadas. Ofertas já enviadas poderão ser publicadas novamente.',
+      confirmLabel: missing ? 'Agendar últimas' : 'Agendar todas',
+      onConfirm: async () => {
+        setDialog(null);
+        await bulkQueueOffers(mode);
+      }
+    });
+  }
   async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await load(); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
   async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await load(); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
   async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await load(); setMessage('Item removido da fila.'); }
@@ -2519,6 +2549,7 @@ function AdminApp() {
                   ofertas
                 </p>
               </div>
+              <div className="offer-bulk-actions"><button className="button subtle" type="button" disabled={Boolean(bulkQueueing)} onClick={() => confirmBulkQueue('missing')}>{bulkQueueing === 'missing' ? 'Agendando…' : 'Agendar últimas'}</button><button className="button primary" type="button" disabled={Boolean(bulkQueueing)} onClick={() => confirmBulkQueue('all')}>{bulkQueueing === 'all' ? 'Agendando…' : 'Agendar todas'}</button></div>
             </div>
 
             <div className="admin-toolbar">

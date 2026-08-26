@@ -4048,6 +4048,56 @@ app.delete(
 );
 
 app.post(
+  '/api/admin/offers/bulk-queue',
+  requireAdmin,
+  async (req, res) => {
+    const mode = String(req.body?.mode || 'all') === 'missing' ? 'missing' : 'all';
+    let queued = 0;
+    let skippedPending = 0;
+    let skippedHistory = 0;
+    let skippedInvalid = 0;
+    let skippedNoAudience = 0;
+
+    await updateStore((data) => {
+      data.queue ||= [];
+      const activeOffers = (data.offers || []).filter((offer) => offer.status === 'active');
+      for (const offer of activeOffers) {
+        if (!offer.title || !offer.affiliateUrl || !(Number(offer.price) > 0)) {
+          skippedInvalid += 1;
+          continue;
+        }
+
+        const history = data.queue.filter((item) => item.offerId === offer.id);
+        if (mode === 'missing' && history.length) {
+          skippedHistory += 1;
+          continue;
+        }
+        if (mode === 'all' && history.some((item) => ['pending', 'publishing'].includes(item.status))) {
+          skippedPending += 1;
+          continue;
+        }
+
+        const queueItem = makeQueueItem(offer, data.config);
+        if (!Array.isArray(queueItem.targetAudienceCodes) || !queueItem.targetAudienceCodes.length) {
+          skippedNoAudience += 1;
+          continue;
+        }
+        data.queue.push(queueItem);
+        queued += 1;
+      }
+    });
+
+    if (queued) {
+      await addLog(
+        `${queued} oferta(s) ${mode === 'missing' ? 'recente(s) fora da fila' : 'ativa(s)'} agendada(s) em lote.`,
+        'success'
+      );
+    }
+    res.json({ ok: true, mode, queued, skippedPending, skippedHistory, skippedInvalid, skippedNoAudience });
+  }
+);
+
+app.post(
   '/api/admin/offers/:id/queue',
   requireAdmin,
   async (
