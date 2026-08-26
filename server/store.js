@@ -210,6 +210,18 @@ const initialData = {
     instagramEnabled: false,
     instagramAutoFromWhatsapp: true,
     instagramIncludeCoupons: true,
+    instagramFeedEnabled: false,
+    instagramFeedAutoFromWhatsapp: false,
+    instagramFeedPostType: 'single',
+    instagramFeedFormat: 'portrait',
+    instagramFeedPublishingStart: '09:00',
+    instagramFeedPublishingEnd: '21:00',
+    instagramFeedIntervalMinutes: 120,
+    instagramFeedMaxPerDay: 3,
+    instagramFeedMinimumDiscount: 20,
+    instagramFeedDuplicateDays: 7,
+    instagramFeedCarouselSize: 4,
+    instagramFeedCaption: '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção',
     instagramApiVersion: 'v25.0',
     instagramRedirectUri: 'https://promoshop.jhonatafaraujo.com.br/api/instagram/callback',
     instagramPublishingStart: '08:00',
@@ -295,6 +307,7 @@ const initialData = {
   privacyConsents: {},
   queue: [],
   instagramQueue: [],
+  instagramFeedQueue: [],
   logs: [],
   analytics: {
     totalPageViews: 0,
@@ -445,6 +458,7 @@ export async function readStore() {
     : {};
   data.queue ||= [];
   data.instagramQueue ||= [];
+  data.instagramFeedQueue ||= [];
   data.logs ||= [];
   data.analytics = {
     ...initialData.analytics,

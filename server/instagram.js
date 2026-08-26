@@ -326,6 +326,88 @@ export async function generateInstagramShareTemplate(options = {}, config = {}, 
   return { fileName, filePath, themeId: theme.id, width: 1080, height: 1920 };
 }
 
+function feedStorySnapshot(source = {}, kind = 'offer') {
+  return kind === 'coupon'
+    ? {
+      sourceId: source.id || source.sourceId || '', kind: 'coupon', title: source.title || 'Cupom PromoShop', store: source.store || 'Loja',
+      price: 0, originalPrice: 0, discount: source.discountType === 'percent' ? Number(source.discountValue || 0) : 0,
+      image: source.image || '', link: source.shortUrl || source.link || ''
+    }
+    : {
+      sourceId: source.id || source.sourceId || '', kind: 'offer', title: source.title || 'Oferta PromoShop', store: source.store || 'Loja',
+      price: Number(source.price || 0), originalPrice: Number(source.originalPrice || 0), discount: Number(source.discount || 0),
+      image: source.image || '', link: source.affiliateUrl || source.link || ''
+    };
+}
+
+function sanitizeFeedCaption(value, stories = []) {
+  const offers = stories.map((story) => `• ${String(story.title || 'Oferta').trim().slice(0, 150)}${story.discount ? ` — ${Math.round(Number(story.discount))}% OFF` : ''}`).join('\n');
+  let caption = String(value || '').trim();
+  if (!caption) caption = '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção';
+  const hadOffersToken = /\{offers\}/i.test(caption);
+  caption = caption.replace(/\{offers\}/gi, offers || '• Confira as ofertas selecionadas da PromoShop');
+  caption = caption.replace(/\{count\}/gi, String(stories.length));
+  caption = caption.replace(/https?:\/\/\S+/gi, 'acesse a bio do perfil');
+  if (!hadOffersToken && offers) caption = `${caption}\n\n${offers}`;
+  return caption.slice(0, 2200);
+}
+
+export async function generateInstagramFeedAsset(story, config, requestedThemeId = '', format = 'portrait') {
+  await fs.mkdir(mediaDir, { recursive: true });
+  const theme = selectInstagramTheme(config, new Date(), requestedThemeId || story.themeId);
+  const square = format === 'square';
+  const width = 1080;
+  const height = square ? 1080 : 1350;
+  const cardY = square ? 90 : 170;
+  const cardHeight = square ? 850 : 1100;
+  const imageTop = cardY + (square ? 40 : 55);
+  const imageHeight = square ? 320 : 585;
+  const titleLines = splitLines(story.title, square ? 32 : 34, 2);
+  const titleY = imageTop + imageHeight + (square ? 125 : 105);
+  const priceY = titleY + (titleLines.length * (square ? 42 : 54)) + (square ? 52 : 82);
+  const ctaButtonY = priceY + (square ? 28 : 48);
+  const ctaButtonHeight = square ? 72 : 86;
+  const ctaBaseline = ctaButtonY + (square ? 46 : 54);
+  const price = money(story.price);
+  const discount = Math.max(0, Math.round(Number(story.discount || 0)));
+  const store = String(story.store || 'Oferta').toUpperCase().slice(0, 22);
+  const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? (square ? 42 : 54) : 0}">${escapeXml(line)}</tspan>`).join('');
+  const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const cta = 'Acesse a bio do perfil';
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".22"/></filter></defs>
+    <rect width="${width}" height="${height}" fill="url(#bg)"/>
+    ${decorationSvg(theme)}
+    <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
+    <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">OFERTAS SELECIONADAS TODOS OS DIAS</text>
+    <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="42" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="92" y="${imageTop + imageHeight + 28}" width="210" height="48" rx="24" fill="${theme.accent}"/>
+    <text x="197" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="900" fill="#111827">${escapeXml(store)}</text>
+    ${discount > 0 ? `<rect x="780" y="${imageTop + imageHeight + 28}" width="220" height="48" rx="24" fill="${theme.accent}"/><text x="890" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
+    <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 34 : 43}" font-weight="900" fill="#101828">${titleTspans}</text>
+    ${story.originalPrice ? `<text x="92" y="${priceY - 76}" font-family="Arial,sans-serif" font-size="26" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+    <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 60 : 68}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
+    <rect x="92" y="${ctaButtonY}" width="896" height="${ctaButtonHeight}" rx="28" fill="${theme.accent}"/>
+    <text x="540" y="${ctaBaseline}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 24 : 30}" font-weight="900" fill="#111827">${cta} →</text>
+    <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+  </svg>`);
+  let product;
+  try {
+    const source = await fetchBuffer(story.image);
+    if (source) product = await sharp(source).rotate().resize(820, imageHeight, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
+  } catch (error) {
+    await addLog(`Instagram Feed: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
+  }
+  const logo = await logoBuffer(106);
+  const composites = [];
+  if (product) composites.push({ input: product, left: 130, top: imageTop });
+  if (logo) composites.push({ input: logo, left: 900, top: 34 });
+  const fileName = `feed-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
+  const filePath = path.join(mediaDir, fileName);
+  await sharp(svg).composite(composites).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
+  return { fileName, filePath, themeId: theme.id, width, height };
+}
+
 function storySnapshot(data, queueItem) {
   const offer = data.offers.find((entry) => entry.id === queueItem.offerId) || queueItem.offerSnapshot || {};
   const coupon = queueItem.couponSnapshot || {};
@@ -367,6 +449,42 @@ export function enqueueInstagramFromWhatsapp(data, queueItem) {
     themeId: ''
   };
   data.instagramQueue.push(item);
+  return item;
+}
+
+export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
+  const config = data.config || {};
+  data.instagramFeedQueue ||= [];
+  if (config.instagramFeedEnabled !== true || config.instagramFeedAutoFromWhatsapp !== true) return null;
+  const story = storySnapshot(data, queueItem);
+  if (story.kind === 'coupon' && config.instagramIncludeCoupons !== true) return null;
+  if (!story.title || !validHttps(story.image)) return null;
+  const stores = Array.isArray(config.instagramStores) ? config.instagramStores.map((entry) => String(entry).toLowerCase()) : [];
+  if (stores.length && !stores.includes(String(story.store || '').toLowerCase())) return null;
+  const audiences = Array.isArray(config.instagramAudienceCodes) ? config.instagramAudienceCodes : [];
+  if (audiences.length && !story.audienceCodes.some((code) => audiences.includes(code))) return null;
+  if (story.kind === 'offer' && Number(story.discount || 0) < Number(config.instagramFeedMinimumDiscount || 0)) return null;
+  const cooldown = Math.max(1, Number(config.instagramFeedDuplicateDays || 7)) * DAY;
+  const duplicate = data.instagramFeedQueue.some((entry) => (entry.sourceIds || []).includes(story.sourceId) && Date.now() - new Date(entry.createdAt || 0).getTime() < cooldown && !['cancelled', 'failed'].includes(entry.status));
+  if (duplicate) return null;
+  if (config.instagramFeedPostType === 'carousel') {
+    const batch = data.instagramFeedQueue.find((entry) => entry.status === 'pending' && entry.postType === 'carousel' && (entry.items || []).length < Math.max(2, Math.min(10, Number(config.instagramFeedCarouselSize || 4))));
+    if (batch) {
+      batch.items.push(story);
+      batch.sourceIds.push(story.sourceId);
+      batch.title = `Carrossel com ${batch.items.length} ofertas`;
+      batch.caption = sanitizeFeedCaption(config.instagramFeedCaption, batch.items);
+      return batch;
+    }
+  }
+  const item = {
+    id: createId('instagram-feed'), postType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', format: config.instagramFeedFormat === 'square' ? 'square' : 'portrait',
+    items: [story], sourceIds: [story.sourceId], title: story.title, store: story.store,
+    caption: sanitizeFeedCaption(config.instagramFeedCaption, [story]), status: 'pending', attempts: 0, force: false,
+    createdAt: new Date().toISOString(), scheduledFor: null, publishedAt: null, retryAt: null, error: null,
+    mediaIds: [], assetFileNames: [], themeId: ''
+  };
+  data.instagramFeedQueue.push(item);
   return item;
 }
 
@@ -465,11 +583,56 @@ async function publishAsset(config, secrets, imageUrl) {
   return { containerId: container.id, mediaId: result.id };
 }
 
+async function waitForMediaContainer(config, secrets, containerId) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const status = await metaJson(`${graphUrl(config, `/${containerId}`)}?fields=status_code&access_token=${encodeURIComponent(secrets.instagramAccessToken)}`);
+    if (!status.status_code || status.status_code === 'FINISHED') return;
+    if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') throw new Error(`A Meta não conseguiu preparar a publicação (${status.status_code}).`);
+    if (attempt === 11) throw new Error('A Meta demorou demais para preparar a publicação.');
+  }
+}
+
+async function publishFeedPost(config, secrets, imageUrls, caption) {
+  const urls = imageUrls.filter((url) => /^https:\/\//i.test(String(url || '')));
+  if (!urls.length) throw new Error('Nenhuma imagem pública foi preparada para o Feed.');
+  if (urls.length === 1) {
+    const params = new URLSearchParams({ image_url: urls[0], caption: String(caption || '').slice(0, 2200), access_token: secrets.instagramAccessToken });
+    const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
+    await waitForMediaContainer(config, secrets, container.id);
+    const publish = new URLSearchParams({ creation_id: container.id, access_token: secrets.instagramAccessToken });
+    const result = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media_publish`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: publish });
+    return { containerId: container.id, mediaId: result.id, childIds: [] };
+  }
+
+  const childIds = [];
+  for (const imageUrl of urls.slice(0, 10)) {
+    const childParams = new URLSearchParams({ image_url: imageUrl, is_carousel_item: 'true', access_token: secrets.instagramAccessToken });
+    const child = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: childParams });
+    await waitForMediaContainer(config, secrets, child.id);
+    childIds.push(child.id);
+  }
+  const carouselParams = new URLSearchParams({ media_type: 'CAROUSEL', children: childIds.join(','), caption: String(caption || '').slice(0, 2200), access_token: secrets.instagramAccessToken });
+  const carousel = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: carouselParams });
+  await waitForMediaContainer(config, secrets, carousel.id);
+  const publish = new URLSearchParams({ creation_id: carousel.id, access_token: secrets.instagramAccessToken });
+  const result = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media_publish`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: publish });
+  return { containerId: carousel.id, mediaId: result.id, childIds };
+}
+
 function withinSchedule(config, date = new Date()) {
   const parts = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
   const now = `${parts.find((part) => part.type === 'hour')?.value || '00'}:${parts.find((part) => part.type === 'minute')?.value || '00'}`;
   const start = /^\d{2}:\d{2}$/.test(config.instagramPublishingStart) ? config.instagramPublishingStart : '08:00';
   const end = /^\d{2}:\d{2}$/.test(config.instagramPublishingEnd) ? config.instagramPublishingEnd : '23:00';
+  return start <= end ? now >= start && now <= end : now >= start || now <= end;
+}
+
+function withinFeedSchedule(config, date = new Date()) {
+  const parts = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
+  const now = `${parts.find((part) => part.type === 'hour')?.value || '00'}:${parts.find((part) => part.type === 'minute')?.value || '00'}`;
+  const start = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingStart) ? config.instagramFeedPublishingStart : '09:00';
+  const end = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingEnd) ? config.instagramFeedPublishingEnd : '21:00';
   return start <= end ? now >= start && now <= end : now >= start || now <= end;
 }
 
@@ -555,5 +718,64 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     throw error;
   } finally {
     processing = false;
+  }
+}
+
+let feedProcessing = false;
+
+export async function processInstagramFeedQueue({ forceId = '' } = {}) {
+  if (feedProcessing) return { busy: true };
+  feedProcessing = true;
+  let selected = null;
+  try {
+    let [data, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const config = data.config || {};
+    if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
+    if (!forceId && (config.instagramFeedEnabled !== true || !withinFeedSchedule(config))) return { paused: true };
+    const queue = Array.isArray(data.instagramFeedQueue) ? data.instagramFeedQueue : [];
+    const sentLastDay = queue.filter((item) => item.status === 'sent' && Date.now() - new Date(item.publishedAt || 0).getTime() < DAY);
+    if (!forceId && sentLastDay.length >= Math.max(1, Number(config.instagramFeedMaxPerDay || 3))) return { limited: true };
+    const lastSentAt = sentLastDay.reduce((latest, item) => Math.max(latest, new Date(item.publishedAt || 0).getTime()), 0);
+    if (!forceId && lastSentAt && Date.now() - lastSentAt < Math.max(5, Number(config.instagramFeedIntervalMinutes || 120)) * 60_000) return { waiting: true };
+    selected = forceId
+      ? queue.find((item) => item.id === forceId && item.status !== 'sent')
+      : queue.find((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()));
+    if (!selected) return { empty: true };
+    if (!Array.isArray(selected.items) || !selected.items.length) throw new Error('A publicação do Feed não possui ofertas válidas.');
+    await updateStore((fresh) => {
+      const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
+      if (item) { item.status = 'publishing'; item.publishingAt = new Date().toISOString(); item.error = null; }
+    });
+    const assets = [];
+    for (const story of selected.items.slice(0, 10)) assets.push(await generateInstagramFeedAsset(story, config, selected.themeId, selected.format));
+    const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
+    if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar no Feed.');
+    const published = await publishFeedPost(config, secrets, assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));
+    await updateStore((fresh) => {
+      const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
+      if (!item) return;
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, assetFileNames: assets.map((asset) => asset.fileName), themeId: assets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false });
+    });
+    await addLog(`Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
+    return { ok: true, id: selected.id, ...published };
+  } catch (error) {
+    if (selected) {
+      const rateLimited = Boolean(error?.instagramRateLimited) || isInstagramRateLimitError(error);
+      await updateStore((fresh) => {
+        const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
+        if (!item) return;
+        item.attempts = Number(item.attempts || 0) + 1;
+        item.status = rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
+        item.instagramRateLimited = rateLimited;
+        item.error = rateLimited ? 'A Meta limitou temporariamente as publicações do Feed. A fila tentará novamente mais tarde.' : String(error.message || error).slice(0, 500);
+        item.publishingAt = null;
+        const retryDelay = rateLimited ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000 : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
+        item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
+      });
+      await addLog(`Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
+    }
+    throw error;
+  } finally {
+    feedProcessing = false;
   }
 }

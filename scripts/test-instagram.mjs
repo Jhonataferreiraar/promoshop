@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { enqueueInstagramFromWhatsapp, generateInstagramStory, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramStory, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 
 const config = {
@@ -45,6 +45,15 @@ assert.ok(queued);
 assert.equal(data.instagramQueue.length, 1);
 assert.equal(enqueueInstagramFromWhatsapp(data, { id: 'queue-2', offerId: 'offer-1', targetAudienceCodes: ['G01'] }), null, 'não deve duplicar a oferta');
 
+const feedData = {
+  config: { ...config, instagramFeedEnabled: true, instagramFeedAutoFromWhatsapp: true, instagramFeedPostType: 'carousel', instagramFeedCarouselSize: 2, instagramFeedMinimumDiscount: 0, instagramFeedCaption: 'Confira:\n{offers}\nAcesse a bio do perfil' },
+  offers: data.offers,
+  coupons: [],
+  instagramFeedQueue: []
+};
+assert.ok(enqueueInstagramFeedFromWhatsapp(feedData, { id: 'feed-1', offerId: 'offer-1', targetAudienceCodes: ['G01'] }));
+assert.equal(feedData.instagramFeedQueue[0].postType, 'carousel');
+
 const asset = await generateInstagramStory({ title: 'Smartphone com câmera de alta resolução', store: 'Magalu', price: 999.9, originalPrice: 1299.9, discount: 23, image: '', link: 'https://example.com/offer' }, config, 'christmas');
 try {
   const metadata = await sharp(asset.filePath).metadata();
@@ -54,6 +63,17 @@ try {
   assert.equal(asset.themeId, 'christmas');
 } finally {
   await fs.unlink(asset.filePath).catch(() => {});
+}
+
+const feedAsset = await generateInstagramFeedAsset({ title: 'Notebook PromoShop', store: 'Magalu', price: 1999.9, originalPrice: 2499.9, discount: 20, image: '', link: 'https://example.com/offer' }, config, 'independence', 'portrait');
+try {
+  const metadata = await sharp(feedAsset.filePath).metadata();
+  assert.equal(metadata.format, 'jpeg');
+  assert.equal(metadata.width, 1080);
+  assert.equal(metadata.height, 1350);
+  assert.equal(feedAsset.themeId, 'independence');
+} finally {
+  await fs.unlink(feedAsset.filePath).catch(() => {});
 }
 
 console.log('Instagram: temas, filtros, duplicidade e imagem 1080x1920 validados.');

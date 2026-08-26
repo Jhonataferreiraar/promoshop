@@ -680,6 +680,17 @@ a {
 .instagram-preview > small { color: #667085; font-size: 11px; line-height: 1.45; }
 .instagram-queue-list { display: grid; gap: 10px; margin-top: 18px; }
 .instagram-queue-row { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px; border: 1px solid #eaecf0; border-radius: 14px; }
+.instagram-feed-panel { display: grid; gap: 20px; }
+.instagram-feed-builder { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, .65fr); gap: 24px; align-items: start; }
+.instagram-feed-builder-form { display: grid; gap: 16px; }
+.instagram-feed-item-list { display: grid; gap: 7px; max-height: 390px; overflow: auto; padding: 10px; border: 1px solid #e4e7ec; border-radius: 14px; background: #f8fafc; }
+.instagram-feed-item { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px 12px; border: 1px solid #e4e7ec; border-radius: 10px; background: #fff; color: #344054; font-size: 13px; cursor: pointer; }
+.instagram-feed-item.selected { border-color: #1269f3; background: #eef4ff; color: #0b4cc1; }
+.instagram-feed-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.instagram-feed-preview { min-height: 360px; }
+.instagram-feed-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.instagram-feed-preview-grid img { display: block; width: 100%; max-height: 520px; object-fit: contain; border-radius: 14px; background: #eef2f6; }
+.instagram-feed-queue { margin-top: 4px; }
 .instagram-queue-row.sent { background: #f6fef9; }
 .instagram-queue-row.failed { border-color: #fecdca; background: #fffafa; }
 .instagram-queue-row.publishing { border-color: #b2ccff; background: #f5f8ff; }
@@ -752,6 +763,8 @@ a {
   .instagram-theme-card summary small { grid-column: 2; }
   .instagram-theme-fields { grid-template-columns: 1fr 1fr; }
   .instagram-queue-row { grid-template-columns: 52px minmax(0, 1fr); align-items: start; }
+  .instagram-feed-builder { grid-template-columns: 1fr; }
+  .instagram-feed-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .instagram-queue-thumb { width: 52px; height: 52px; }
   .instagram-queue-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .instagram-queue-actions button { width: 100%; }

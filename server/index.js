@@ -64,12 +64,15 @@ import { stripAffiliateDisclosure } from './messageSanitizer.js';
 import {
   beginInstagramAuthorization,
   cleanupInstagramAssets,
+  enqueueInstagramFeedFromWhatsapp,
   enqueueInstagramFromWhatsapp,
   finishInstagramAuthorization,
+  generateInstagramFeedAsset,
   generateInstagramShareTemplate,
   generateInstagramStory,
   instagramAssetPath,
   processInstagramQueue,
+  processInstagramFeedQueue,
   refreshInstagramToken,
   testInstagramConnection,
   verifyInstagramSignedRequest
@@ -3386,7 +3389,12 @@ app.put(
           instagramMaxPerDay: [15, 1, 1500],
           instagramMinimumDiscount: [20, 0, 99],
           instagramDuplicateDays: [7, 1, 365],
-          instagramAssetRetentionHours: [72, 24, 720]
+          instagramAssetRetentionHours: [72, 24, 720],
+          instagramFeedIntervalMinutes: [120, 5, 1440],
+          instagramFeedMaxPerDay: [3, 1, 30],
+          instagramFeedMinimumDiscount: [20, 0, 99],
+          instagramFeedDuplicateDays: [7, 1, 365],
+          instagramFeedCarouselSize: [4, 2, 10]
         };
         for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
           data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
@@ -3426,6 +3434,11 @@ app.put(
         data.config.extensionEnabled = data.config.extensionEnabled !== false;
         data.config.extensionAutoApprove = data.config.extensionAutoApprove === true;
         if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
+        if (!['single', 'carousel'].includes(String(data.config.instagramFeedPostType || ''))) data.config.instagramFeedPostType = previousConfig.instagramFeedPostType || 'single';
+        if (!['square', 'portrait'].includes(String(data.config.instagramFeedFormat || ''))) data.config.instagramFeedFormat = previousConfig.instagramFeedFormat || 'portrait';
+        data.config.instagramFeedEnabled = data.config.instagramFeedEnabled === true;
+        data.config.instagramFeedAutoFromWhatsapp = data.config.instagramFeedAutoFromWhatsapp === true;
+        data.config.instagramFeedCaption = String(data.config.instagramFeedCaption || '').trim().slice(0, 2200);
         if (!/^v\d+\.\d+$/.test(String(data.config.instagramApiVersion || ''))) data.config.instagramApiVersion = previousConfig.instagramApiVersion || 'v25.0';
         for (const key of ['instagramRedirectUri', 'instagramCtaText', 'instagramDisclosureText']) {
           data.config[key] = String(data.config[key] || '').trim().slice(0, 300);
@@ -4546,6 +4559,96 @@ app.post('/api/admin/instagram/share-template', requireAdmin, async (req, res) =
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+function feedSourceSnapshot(data, req, entry) {
+  const kind = entry?.kind === 'coupon' ? 'coupon' : 'offer';
+  const id = String(entry?.id || '').trim();
+  if (!id) return null;
+  if (kind === 'coupon') {
+    const coupon = (data.coupons || []).find((item) => String(item.id) === id && item.active !== false);
+    return coupon ? {
+      id: coupon.id, kind, title: coupon.title, store: coupon.store, image: coupon.image,
+      discountType: coupon.discountType, discountValue: coupon.discountValue, shortUrl: couponShortUrl(coupon, req), link: coupon.link
+    } : null;
+  }
+  const offer = (data.offers || []).find((item) => String(item.id) === id && item.status !== 'paused');
+  return offer ? {
+    id: offer.id, kind, title: offer.title, store: offer.store, price: offer.price, originalPrice: offer.originalPrice,
+    discount: offer.discount, image: offer.image, affiliateUrl: offer.affiliateUrl, link: offer.affiliateUrl
+  } : null;
+}
+
+app.post('/api/admin/instagram/feed/preview', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const requested = Array.isArray(req.body?.items) ? req.body.items : [{ kind: req.body?.kind, id: req.body?.id }];
+    const sources = requested.map((entry) => feedSourceSnapshot(data, req, entry)).filter(Boolean).slice(0, 10);
+    if (!sources.length) return res.status(404).json({ error: 'Selecione pelo menos uma oferta ou cupom ativo.' });
+    const config = { ...data.config, instagramFeedFormat: req.body?.format === 'square' ? 'square' : 'portrait' };
+    const assets = [];
+    for (const source of sources) assets.push(await generateInstagramFeedAsset(source, config, String(req.body?.themeId || ''), config.instagramFeedFormat));
+    const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
+    res.json({ ok: true, themeId: assets[0]?.themeId || '', imageUrls: assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), imageUrl: `${canonical}/media/instagram/${assets[0].fileName}`, fileNames: assets.map((asset) => asset.fileName) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/feed/queue', requireAdmin, async (req, res) => {
+  try {
+    const data = await readStore();
+    const requested = Array.isArray(req.body?.items) ? req.body.items : [];
+    const sources = requested.map((entry) => feedSourceSnapshot(data, req, entry)).filter(Boolean).slice(0, 10);
+    const postType = req.body?.postType === 'carousel' ? 'carousel' : 'single';
+    if (!sources.length) return res.status(400).json({ error: 'Selecione pelo menos uma oferta ou cupom ativo.' });
+    if (postType === 'carousel' && sources.length < 2) return res.status(400).json({ error: 'Um carrossel precisa de pelo menos 2 itens.' });
+    if (postType === 'single' && sources.length > 1) return res.status(400).json({ error: 'Selecione apenas um item para uma publicação única.' });
+    const format = req.body?.format === 'square' ? 'square' : 'portrait';
+    const item = {
+      id: createId('instagram-feed'), postType, format, items: sources, sourceIds: sources.map((source) => source.id),
+      title: postType === 'carousel' ? `Carrossel com ${sources.length} ofertas` : sources[0].title, store: postType === 'carousel' ? 'PromoShop' : sources[0].store,
+      caption: String(req.body?.caption || data.config.instagramFeedCaption || '').trim().slice(0, 2200),
+      status: 'pending', attempts: 0, force: false, createdAt: new Date().toISOString(), scheduledFor: req.body?.scheduledFor ? new Date(req.body.scheduledFor).toISOString() : null,
+      publishedAt: null, retryAt: null, error: null, mediaIds: [], assetFileNames: [], themeId: String(req.body?.themeId || '')
+    };
+    await updateStore((fresh) => { fresh.instagramFeedQueue ||= []; fresh.instagramFeedQueue.push(item); });
+    await addLog(`Instagram Feed: ${postType === 'carousel' ? 'carrossel' : 'post'} criado na fila — ${item.title}.`, 'success');
+    res.status(201).json({ ok: true, item });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/instagram/feed/queue/:id/publish', requireAdmin, async (req, res) => {
+  const data = await readStore();
+  const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
+  if (!item) return res.status(404).json({ error: 'Publicação do Feed não encontrada.' });
+  processInstagramFeedQueue({ forceId: item.id }).catch((error) => console.error('Instagram Feed:', error.message));
+  res.status(202).json({ ok: true, message: 'Publicação do Feed iniciada.' });
+});
+
+app.post('/api/admin/instagram/feed/queue/:id/retry', requireAdmin, async (req, res) => {
+  let found = false;
+  await updateStore((data) => {
+    const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
+    if (!item || item.status === 'sent') return;
+    found = true;
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false });
+  });
+  if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/instagram/feed/queue/:id', requireAdmin, async (req, res) => {
+  let removed = false;
+  await updateStore((data) => {
+    const before = (data.instagramFeedQueue || []).length;
+    data.instagramFeedQueue = (data.instagramFeedQueue || []).filter((entry) => entry.id !== req.params.id || entry.status === 'publishing');
+    removed = data.instagramFeedQueue.length < before;
+  });
+  if (!removed) return res.status(400).json({ error: 'Não é possível excluir uma publicação em andamento.' });
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/instagram/queue/:id/publish', requireAdmin, async (req, res) => {
@@ -7270,6 +7373,7 @@ app.post(
   ) => {
     let completedItem = null;
     let instagramQueuedItem = null;
+    let instagramFeedQueuedItem = null;
 
     await updateStore(
       (data) => {
@@ -7312,6 +7416,7 @@ app.post(
         };
 
         instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
+        instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
 
         /*
          * ==================================================
@@ -7416,6 +7521,9 @@ app.post(
 
     if (instagramQueuedItem) {
       await addLog(`Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`, 'success');
+    }
+    if (instagramFeedQueuedItem) {
+      await addLog(`Instagram: ${instagramFeedQueuedItem.title} entrou na fila do Feed após o envio no WhatsApp.`, 'success');
     }
 
     res.json({
@@ -8082,6 +8190,7 @@ const httpServer = app.listen(
 
     const instagramTimer = setInterval(() => {
       processInstagramQueue().catch((error) => console.error('Instagram:', error.message));
+      processInstagramFeedQueue().catch((error) => console.error('Instagram Feed:', error.message));
     }, 30_000);
     instagramTimer.unref?.();
   }
