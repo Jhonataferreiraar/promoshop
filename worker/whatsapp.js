@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
 import { readStore } from '../server/store.js';
+import { downloadWhatsappImage } from '../server/whatsappMedia.js';
 
 const { Client, LocalAuth, MessageMedia } = pkg;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -418,17 +419,18 @@ async function processQueue() {
             try {
               console.log(`Baixando imagem da oferta: ${item.image}`);
 
-              const media = await MessageMedia.fromUrl(item.image, {
-                unsafeMime: true
-              });
+              const prepared = await downloadWhatsappImage(item.image);
+              const media = new MessageMedia(prepared.mimetype, prepared.data.toString('base64'), prepared.filename, prepared.filesize);
 
               console.log(
                 `Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`
               );
 
-              await client.sendMessage(destination.id, media, {
-                caption: item.message
+              const sentMedia = await client.sendMessage(destination.id, media, {
+                caption: item.message,
+                waitUntilMsgSent: true
               });
+              if (!sentMedia || sentMedia.hasMedia === false) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
 
               console.log(
                 `Imagem e mensagem enviadas: ${item.offerTitle}`
@@ -438,9 +440,12 @@ async function processQueue() {
                 `Falha ao enviar imagem de "${item.offerTitle}": ${mediaError.message}`
               );
 
-              console.log('Enviando somente o texto como alternativa.');
+              if (isWhatsAppChannel(destination.id)) {
+                throw new Error(`Não foi possível publicar a imagem no canal: ${mediaError.message}`);
+              }
 
-              await client.sendMessage(destination.id, item.message);
+              console.log('Enviando somente o texto como alternativa no grupo.');
+              await client.sendMessage(destination.id, item.message, { waitUntilMsgSent: true });
             }
           } else {
             console.warn(
