@@ -409,9 +409,10 @@ function PublicSite() {
   const [assistantMessage, setAssistantMessage] = useState('');
   const [assistantMessages, setAssistantMessages] = useState(() => [{
     role: 'assistant',
-    content: 'Olá! Eu sou o Assistente PromoShop. Que produto você procura hoje? Conte também como pretende usar; eu posso perguntar o orçamento antes de indicar as melhores opções.'
+    content: 'Olá! Eu sou o Assistente PromoShop. Posso procurar produtos, cupons e grupos para você. O que você está procurando hoje?'
   }]);
   const [assistantSeenProductIds, setAssistantSeenProductIds] = useState([]);
+  const [assistantSeenCouponIds, setAssistantSeenCouponIds] = useState([]);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const assistantBodyRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -569,19 +570,25 @@ function PublicSite() {
         body: JSON.stringify({
           message,
           history,
-          seenProductIds: assistantSeenProductIds
+          seenProductIds: assistantSeenProductIds,
+          seenCouponIds: assistantSeenCouponIds
         })
       });
 
       const products = Array.isArray(result.products) ? result.products : [];
+      const coupons = Array.isArray(result.coupons) ? result.coupons : [];
       setAssistantMessages((current) => [...current, {
         role: 'assistant',
         content: result.message || 'Encontrei algumas opções para você.',
         products,
+        coupons,
         audiences: Array.isArray(result.audiences) ? result.audiences : []
       }]);
       if (products.length) {
         setAssistantSeenProductIds((current) => [...new Set([...current, ...products.map((product) => product.id)])].slice(-100));
+      }
+      if (coupons.length) {
+        setAssistantSeenCouponIds((current) => [...new Set([...current, ...coupons.map((coupon) => coupon.id)])].slice(-100));
       }
     } catch (error) {
       setAssistantMessages((current) => [...current, {
@@ -756,7 +763,7 @@ function PublicSite() {
                         </strong>
 
                         <small>
-                          Produtos e grupos certos para você
+                          Produtos, cupons e grupos certos para você
                         </small>
                       </div>
 
@@ -796,6 +803,23 @@ function PublicSite() {
                             </div>
                           )}
 
+                          {Array.isArray(chatMessage.coupons) && chatMessage.coupons.length > 0 && (
+                            <div className="assistant-coupons">
+                              <small className="assistant-section-label">Cupons encontrados</small>
+                              {chatMessage.coupons.map((coupon) => {
+                                const discount = coupon.discountValue > 0
+                                  ? coupon.discountType === 'fixed'
+                                    ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF`
+                                    : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`
+                                  : 'Cupom disponível';
+                                return <article className="assistant-coupon" key={coupon.id}>
+                                  <div><small>{coupon.store || 'Loja'}</small><h4>{coupon.title}</h4>{coupon.description && <p>{coupon.description}</p>}<strong>{discount}</strong>{coupon.code && <span className="assistant-coupon-code">Código: <b>{coupon.code}</b></span>}{coupon.expiresAt && <em>Válido até {new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}</em>}</div>
+                                  <a className="assistant-product-action" href={coupon.shortUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('coupon', { id: coupon.id, label: coupon.title, store: coupon.store })}>Ativar cupom ↗</a>
+                                </article>;
+                              })}
+                            </div>
+                          )}
+
                           {Array.isArray(chatMessage.audiences) && chatMessage.audiences.length > 0 && (
                             <div className="assistant-recommendations">
                               <small className="assistant-section-label">Grupo recomendado</small>
@@ -811,7 +835,7 @@ function PublicSite() {
                         </div>
                       ))}
 
-                      {assistantLoading && <div className="assistant-bubble assistant assistant-thinking"><i></i><i></i><i></i><span className="visually-hidden">Procurando ofertas</span></div>}
+                      {assistantLoading && <div className="assistant-bubble assistant assistant-thinking"><i></i><i></i><i></i><span className="visually-hidden">Procurando ofertas e cupons</span></div>}
                     </div>
 
                     <form
@@ -825,7 +849,7 @@ function PublicSite() {
                             event.target.value
                           )
                         }
-                        placeholder="Ex.: Quero um notebook para estudar até R$ 3.000"
+                        placeholder="Ex.: Quero um notebook até R$ 3.000 ou um cupom da Shopee"
                         rows={2}
                         maxLength={1000}
                         onKeyDown={(event) => {

@@ -844,7 +844,8 @@ const assistantIgnoredWords = new Set([
   'mostra', 'mostrar', 'na', 'nas', 'no', 'nos', 'o', 'oferta', 'ofertas',
   'opcao', 'opcoes', 'ou', 'para', 'pela', 'pelo', 'por', 'preciso', 'procuro',
   'produto', 'produtos', 'promocao', 'promocoes', 'quero', 'r', 'reais', 'sem',
-  'ser', 'trabalhar', 'trabalho', 'uma', 'um', 'usar', 'uso', 'valor', 'ver'
+  'ser', 'trabalhar', 'trabalho', 'uma', 'um', 'usar', 'uso', 'valor', 'ver',
+  'cupom', 'cupons', 'codigo', 'codigos', 'desconto', 'descontos', 'off'
 ]);
 const assistantKnownProductWords = new Set([
   'airfryer', 'aspirador', 'celular', 'earphone', 'fone', 'fritadeira', 'headphone',
@@ -930,6 +931,42 @@ function assistantCatalogQuery(value, offers) {
     if (result.length >= 8) break;
   }
   return result.join(' ');
+}
+
+function assistantCouponIntent(value) {
+  const normalized = normalizeSearchText(value);
+  return /\bcupom\b|\bcupons\b|\bcodigo(?:s)?\b|\bpromocode\b|\bdesconto\s+(?:para|na|no|da|do)\b/.test(normalized);
+}
+
+function publicCouponAllowed(coupon, nowMs = Date.now()) {
+  if (!coupon || coupon.active === false) return false;
+  if (coupon.source === 'extension' && coupon.approvalStatus !== 'approved') return false;
+  if (!coupon.expiresAt) return true;
+  const expiresAt = new Date(coupon.expiresAt).getTime();
+  return Number.isNaN(expiresAt) || expiresAt >= nowMs;
+}
+
+function assistantCoupons(query, coupons, { store = '', seenCouponIds = new Set() } = {}) {
+  const normalizedStore = normalizeSearchText(store);
+  const queryTokens = normalizeSearchText(query).split(/\s+/).filter((token) => token.length >= 2 && !assistantIgnoredWords.has(token));
+  const ranked = (Array.isArray(coupons) ? coupons : [])
+    .filter((coupon) => !seenCouponIds.has(String(coupon.id || '')))
+    .filter((coupon) => !normalizedStore || normalizeSearchText(coupon.store).includes(normalizedStore))
+    .map((coupon) => {
+      const searchable = normalizeSearchText(`${coupon.title || ''} ${coupon.description || ''} ${coupon.store || ''} ${coupon.code || ''}`);
+      const matches = queryTokens.filter((token) => searchable.includes(token));
+      if (queryTokens.length && !matches.length) return null;
+      const discount = Number(coupon.discountValue || 0);
+      const discountScore = coupon.discountType === 'fixed' ? Math.min(35, discount / 2) : Math.min(35, discount);
+      const expiry = coupon.expiresAt ? new Date(coupon.expiresAt).getTime() : 0;
+      const daysLeft = expiry ? Math.max(0, (expiry - Date.now()) / 86400000) : 30;
+      return { coupon, score: matches.length * 40 + discountScore + (coupon.featured ? 10 : 0) + Math.max(0, 10 - daysLeft / 3) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || new Date(b.coupon.createdAt || 0) - new Date(a.coupon.createdAt || 0))
+    .slice(0, 4)
+    .map(({ coupon }) => coupon);
+  return ranked;
 }
 
 function assistantStoreFromText(value) {
@@ -2080,12 +2117,7 @@ function publicHomeConfig(config) {
 function publicHomeCoupons(coupons, req) {
   const now = Date.now();
   return (Array.isArray(coupons) ? coupons : [])
-    .filter((coupon) => {
-      if (coupon.active === false) return false;
-      if (!coupon.expiresAt) return true;
-      const expiresAt = new Date(coupon.expiresAt).getTime();
-      return Number.isNaN(expiresAt) || expiresAt >= now;
-    })
+    .filter((coupon) => publicCouponAllowed(coupon, now))
     .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 6)
     .map(({ targetAudienceCodes, ...coupon }) => ({
@@ -2127,12 +2159,7 @@ function publicOfferPayload(offer, config, analytics) {
 
 app.get('/api/home', async (req, res) => {
   const data = await readStore();
-  const activeCoupons = (Array.isArray(data.coupons) ? data.coupons : []).filter((coupon) => {
-    if (coupon.active === false) return false;
-    if (!coupon.expiresAt) return true;
-    const expiresAt = new Date(coupon.expiresAt).getTime();
-    return Number.isNaN(expiresAt) || expiresAt >= Date.now();
-  });
+  const activeCoupons = (Array.isArray(data.coupons) ? data.coupons : []).filter((coupon) => publicCouponAllowed(coupon));
   res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
   res.json({
     config: publicHomeConfig(data.config),
@@ -2259,12 +2286,7 @@ app.get(
 
     res.json(
       (Array.isArray(coupons) ? coupons : [])
-        .filter((coupon) => {
-          if (coupon.active === false) return false;
-          if (!coupon.expiresAt) return true;
-          const expiresAt = new Date(coupon.expiresAt).getTime();
-          return Number.isNaN(expiresAt) || expiresAt >= now;
-        })
+        .filter((coupon) => publicCouponAllowed(coupon, now))
         .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
         .slice(0, 300)
         .map(({ targetAudienceCodes, ...coupon }) => ({
@@ -7746,6 +7768,7 @@ app.post(
           status: 'chat',
           message: conversationReply,
           products: [],
+          coupons: [],
           audiences: []
         });
       }
@@ -7755,10 +7778,13 @@ app.post(
       const userContext = [...history.filter((entry) => entry.role === 'user').map((entry) => entry.content), message].join(' ');
       const eligibleOffers = (Array.isArray(data.offers) ? data.offers : [])
         .filter((offer) => publicOfferAllowed(offer, data.config));
+      const eligibleCoupons = (Array.isArray(data.coupons) ? data.coupons : [])
+        .filter((coupon) => publicCouponAllowed(coupon));
       const audiences = Array.isArray(data.config.whatsappAudiences)
         ? data.config.whatsappAudiences
         : [];
-      const query = assistantCatalogQuery(userContext, eligibleOffers);
+      const wantsCoupon = assistantCouponIntent(userContext);
+      const query = assistantCatalogQuery(userContext, wantsCoupon ? [...eligibleOffers, ...eligibleCoupons] : eligibleOffers);
       const currentBudget = assistantBudgetFromText(message);
       const budget = currentBudget.specified ? currentBudget : assistantBudgetFromText(userContext);
       const requestedStore = assistantStoreFromText(userContext);
@@ -7766,12 +7792,45 @@ app.post(
         .map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100));
       const interestAudiences = assistantAudienceRecommendations(userContext, [], audiences);
 
+      if (wantsCoupon) {
+        const coupons = assistantCoupons(query, eligibleCoupons, { store: requestedStore, seenCouponIds: new Set((Array.isArray(req.body?.seenCouponIds) ? req.body.seenCouponIds : []).map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100)) });
+        if (!coupons.length) {
+          return res.json({
+            status: 'question',
+            message: `Não encontrei um cupom ativo${query ? ` para ${query}` : ''}${requestedStore ? ` na ${requestedStore}` : ''} agora. Quer tentar outra loja ou produto?`,
+            products: [],
+            coupons: [],
+            audiences: interestAudiences
+          });
+        }
+        const couponPayload = coupons.map((coupon) => ({
+          id: String(coupon.id || ''),
+          title: String(coupon.title || 'Cupom disponível'),
+          store: String(coupon.store || ''),
+          description: String(coupon.description || ''),
+          code: String(coupon.code || ''),
+          discountType: String(coupon.discountType || ''),
+          discountValue: Number(coupon.discountValue || 0),
+          minPurchase: Number(coupon.minPurchase || 0),
+          expiresAt: coupon.expiresAt || '',
+          shortUrl: couponShortUrl(coupon, req)
+        }));
+        return res.json({
+          status: 'result',
+          message: `Encontrei ${couponPayload.length} ${couponPayload.length === 1 ? 'cupom' : 'cupons'} que podem ajudar. Confira as regras antes de ativar.`,
+          products: [],
+          coupons: couponPayload,
+          audiences: interestAudiences
+        });
+      }
+
       if (!query) {
         if (interestAudiences.length) {
           return res.json({
             status: 'result',
             message: 'Encontrei os grupos que mais combinam com o que você gosta. Se quiser, também posso procurar um produto específico e perguntar sua faixa de preço.',
             products: [],
+            coupons: [],
             audiences: interestAudiences
           });
         }
@@ -7779,6 +7838,7 @@ app.post(
           status: 'question',
           message: 'Claro! Qual produto você está procurando? Se puder, conte também para que vai usar e quanto pretende gastar.',
           products: [],
+          coupons: [],
           audiences: []
         });
       }
@@ -7788,6 +7848,7 @@ app.post(
           status: 'question',
           message: `Entendi: você procura ${query}. Qual é o valor máximo que pretende gastar? Você também pode responder “sem limite”.`,
           products: [],
+          coupons: [],
           audiences: interestAudiences
         });
       }
@@ -7817,6 +7878,7 @@ app.post(
           status: 'question',
           message: `Não encontrei uma oferta pública de ${query}${priceText}${requestedStore ? ` na ${requestedStore}` : ''} agora. Quer tentar outro valor, loja, marca ou modelo?`,
           products: [],
+          coupons: [],
           audiences: assistantAudienceRecommendations(userContext, [], audiences)
         });
       }
@@ -7840,6 +7902,7 @@ app.post(
         status: 'result',
         message: `Separei ${productPayload.length} ${productPayload.length === 1 ? 'oferta que combina' : 'ofertas que combinam'} com o seu pedido. Quer que eu refine por marca, loja, preço ou outra característica?`,
         products: productPayload,
+        coupons: [],
         audiences: recommendedAudiences
       });
     } catch (error) {
