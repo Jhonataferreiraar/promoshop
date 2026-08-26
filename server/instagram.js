@@ -340,15 +340,42 @@ function feedStorySnapshot(source = {}, kind = 'offer') {
     };
 }
 
-function sanitizeFeedCaption(value, stories = []) {
-  const offers = stories.map((story) => `• ${String(story.title || 'Oferta').trim().slice(0, 150)}${story.discount ? ` — ${Math.round(Number(story.discount))}% OFF` : ''}`).join('\n');
-  let caption = String(value || '').trim();
-  if (!caption) caption = '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção';
-  const hadOffersToken = /\{offers\}/i.test(caption);
-  caption = caption.replace(/\{offers\}/gi, offers || '• Confira as ofertas selecionadas da PromoShop');
+const DEFAULT_FEED_CAPTION = '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção';
+
+function localFeedSummary(stories = []) {
+  const validStories = Array.isArray(stories) ? stories : [];
+  const stores = [...new Set(validStories.map((story) => String(story.store || '').trim()).filter(Boolean))].slice(0, 3);
+  const maxDiscount = Math.max(0, ...validStories.map((story) => Math.round(Number(story.discount || 0))));
+  const hasCoupon = validStories.some((story) => story.kind === 'coupon');
+  const storeLine = stores.length ? `🛍️ Seleção especial em ${stores.join(', ')}.` : '🛍️ Achados selecionados em lojas parceiras.';
+  const discountLine = maxDiscount > 0 ? `💸 Oportunidades com até ${maxDiscount}% OFF.` : '💸 Preços especiais escolhidos para você.';
+  return `${discountLine}\n${storeLine}${hasCoupon ? '\n🎟️ Confira também os cupons ativos.' : ''}`;
+}
+
+function localFeedCaption(stories = []) {
+  const validStories = Array.isArray(stories) ? stories : [];
+  const hasCoupon = validStories.some((story) => story.kind === 'coupon');
+  const summary = localFeedSummary(validStories);
+  const variants = [
+    `🔥 Curadoria PromoShop do dia\n\n${summary}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção`,
+    `✨ Achados que valem a pena conferir\n\n${summary}\n${hasCoupon ? '🎟️ Cupons e condições especiais disponíveis.' : '📌 Seleção atualizada com carinho.'}\n\n🔗 Veja os detalhes no link da bio\n\n#PromoShop #Achados #Descontos`,
+    `⚡ Oportunidades selecionadas pela PromoShop\n\n${summary}\n${hasCoupon ? '' : '💰 Economize sem perder tempo procurando.\n'}\n🔗 Acesse a bio do perfil\n\n#PromoShop #OfertasDoDia #Economize`
+  ];
+  let hash = 0;
+  for (const story of validStories) {
+    for (const character of String(story.sourceId || story.store || '')) hash = ((hash << 5) - hash + character.codePointAt(0)) | 0;
+  }
+  return variants[Math.abs(hash) % variants.length];
+}
+
+export function sanitizeFeedCaption(value, stories = []) {
+  const supplied = String(value || '').trim();
+  const useLocalModel = !supplied || supplied === DEFAULT_FEED_CAPTION;
+  let caption = useLocalModel ? localFeedCaption(stories) : supplied;
+  const summary = localFeedSummary(stories);
+  caption = caption.replace(/\{offers\}/gi, summary);
   caption = caption.replace(/\{count\}/gi, String(stories.length));
   caption = caption.replace(/https?:\/\/\S+/gi, 'acesse a bio do perfil');
-  if (!hadOffersToken && offers) caption = `${caption}\n\n${offers}`;
   return caption.slice(0, 2200);
 }
 

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramStory, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 
 const config = {
@@ -75,5 +75,10 @@ try {
 } finally {
   await fs.unlink(feedAsset.filePath).catch(() => {});
 }
+
+const localCaption = sanitizeFeedCaption('', [{ sourceId: 'offer-1', title: 'Notebook extremamente longo que não deve aparecer na descrição', store: 'Magalu', discount: 20 }]);
+assert.match(localCaption, /Acesse a bio do perfil/);
+assert.doesNotMatch(localCaption, /Notebook extremamente longo/);
+assert.doesNotMatch(sanitizeFeedCaption('{offers}', [{ sourceId: 'offer-2', title: 'Produto que deve ficar fora da legenda', store: 'Shopee', discount: 15 }]), /Produto que deve ficar fora da legenda/);
 
 console.log('Instagram: temas, filtros, duplicidade e imagem 1080x1920 validados.');
