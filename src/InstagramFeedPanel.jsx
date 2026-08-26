@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
-const templateText = { classic: 'Original', editorial: 'Editorial', spotlight: 'Destaque', split: 'Capa dividida' };
+const templateText = { classic: 'Original', editorial: 'Seleção PromoShop', spotlight: 'Destaque', split: 'Capa dividida', showcase: 'Vitrine', minimal: 'Essencial', flash: 'Oferta relâmpago' };
 const feedDays = [
   { value: 1, label: 'Segunda' },
   { value: 2, label: 'Terça' },
@@ -43,7 +43,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     ...(data.coupons || []).filter((coupon) => coupon.active !== false).map((coupon) => ({ ...coupon, kind: 'coupon' }))
   ], [data.offers, data.coupons]);
   const selectedSources = selected.map((key) => sources.find((item) => keyFor(item.kind, item.id) === key)).filter(Boolean);
-  const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating';
+  const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating';
 
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
   const toggle = (item) => {
@@ -60,7 +60,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       await authApi('/admin/config', { method: 'PUT', body: JSON.stringify({
         instagramFeedEnabled: Boolean(config.instagramFeedEnabled), instagramFeedAutoFromWhatsapp: Boolean(config.instagramFeedAutoFromWhatsapp),
         instagramFeedPostType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', instagramFeedFormat: format,
-        instagramFeedTemplateMode: ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating',
+        instagramFeedTemplateMode: ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating',
         instagramFeedCarouselFrequency: config.instagramFeedCarouselFrequency === 'weekly' ? 'weekly' : 'daily',
         instagramFeedCarouselsPerDay: config.instagramFeedCarouselsPerDay ?? 1, instagramFeedCarouselsPerWeek: config.instagramFeedCarouselsPerWeek ?? 3,
         instagramFeedPublishingDays: Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5],
@@ -133,7 +133,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     </div>
     <div className="settings-grid three-columns">
       <label>Formato padrão<select value={config.instagramFeedFormat || 'portrait'} onChange={(event) => { setFormat(event.target.value); setConfig({ instagramFeedFormat: event.target.value }); }}><option value="portrait">Vertical 4:5</option><option value="square">Quadrado 1:1</option></select></label>
-      <label>Modelo visual<select value={templateMode} onChange={(event) => { setConfig({ instagramFeedTemplateMode: event.target.value }); setPreviewUrls([]); setPreviewTemplates([]); }}><option value="rotating">Rotação PromoShop (recomendado)</option><option value="classic">Original (modelo anterior)</option><option value="editorial">Editorial (duas colunas)</option><option value="spotlight">Destaque (preço em foco)</option><option value="split">Capa dividida (marca + oferta)</option></select><small>A rotação alterna quatro composições bem diferentes para o Feed se completar visualmente.</small></label>
+      <label>Modelo visual<select value={templateMode} onChange={(event) => { setConfig({ instagramFeedTemplateMode: event.target.value }); setPreviewUrls([]); setPreviewTemplates([]); }}><option value="rotating">Rotação PromoShop (recomendado)</option><option value="classic">Original (modelo anterior)</option><option value="editorial">Seleção PromoShop (lado a lado)</option><option value="spotlight">Destaque (preço em foco)</option><option value="split">Capa dividida (marca + oferta)</option><option value="showcase">Vitrine (produto em evidência)</option><option value="minimal">Essencial (visual limpo)</option><option value="flash">Oferta relâmpago (alto impacto)</option></select><small>A rotação alterna sete composições diferentes, mantendo as cores e a identidade da PromoShop.</small></label>
       <label>Automação padrão<select value={config.instagramFeedPostType || 'single'} onChange={(event) => setConfig({ instagramFeedPostType: event.target.value })}><option value="single">Posts individuais</option><option value="carousel">Carrosséis</option></select></label>
       <label>Itens por carrossel<input type="number" min="2" max="10" value={config.instagramFeedCarouselSize ?? 4} onChange={(event) => setConfig({ instagramFeedCarouselSize: event.target.value })} /></label>
       <label>Frequência dos carrosséis<select value={config.instagramFeedCarouselFrequency || 'daily'} onChange={(event) => setConfig({ instagramFeedCarouselFrequency: event.target.value })}><option value="daily">Todos os dias</option><option value="weekly">Por semana</option></select><small>Define o limite para publicações de carrossel.</small></label>

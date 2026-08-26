@@ -381,7 +381,7 @@ export function sanitizeFeedCaption(value, stories = []) {
 }
 
 function selectFeedTemplate(story = {}, mode = 'rotating') {
-  const templates = ['classic', 'editorial', 'spotlight', 'split'];
+  const templates = ['classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'];
   const normalizedMode = mode === 'original' ? 'classic' : mode;
   if (templates.includes(normalizedMode)) return normalizedMode;
   let hash = 0;
@@ -436,18 +436,19 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     </svg>`;
   } else if (template === 'editorial') {
-    // Editorial: composição de revista, com produto e informações em colunas.
+    // Editorial: composição de revista compacta, com leitura contínua e sem
+    // grandes vazios entre a oferta e a chamada final.
     const cardY = square ? 55 : 150;
-    const cardHeight = square ? 930 : 1110;
-    const imageTop = square ? 185 : 270;
+    const cardHeight = square ? 930 : 930;
+    const imageTop = square ? 185 : 255;
     productTop = imageTop;
     productWidth = square ? 820 : 500;
-    productHeight = square ? 280 : 490;
+    productHeight = square ? 280 : 455;
     productLeft = square ? 130 : 92;
     const titleLines = splitLines(story.title, square ? 31 : 17, square ? 2 : 4);
     const titleLineHeight = square ? 36 : 42;
     const textX = square ? 92 : 650;
-    const titleY = square ? 535 : 470;
+    const titleY = square ? 535 : 455;
     const detailsWidth = square ? 896 : 350;
     const priceY = square ? 700 : 700;
     const titleTspans = titleLines.map((line, index) => `<tspan x="${textX}" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
@@ -458,7 +459,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">CURADORIA DE OFERTAS</text>
       <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="42" fill="#ffffff" filter="url(#shadow)"/>
       <rect x="54" y="${cardY}" width="18" height="${cardHeight}" rx="9" fill="${theme.accent}"/>
-      <text x="94" y="${cardY + 48}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="3" fill="${theme.background2}">SELEÇÃO EDITORIAL</text>
+      <text x="94" y="${cardY + 48}" font-family="Arial,sans-serif" font-size="20" font-weight="900" letter-spacing="2" fill="${theme.background2}">ESCOLHA DA PROMOSHOP</text>
       ${!square ? `<line x1="610" y1="${cardY + 105}" x2="610" y2="${cardY + 650}" stroke="#e4e7ec" stroke-width="3"/>` : ''}
       ${square ? `<rect x="92" y="${imageTop - 25}" width="896" height="${productHeight + 50}" rx="28" fill="#f2f4f7"/>` : ''}
       <rect x="${textX}" y="${square ? 475 : 290}" width="${square ? detailsWidth : 330}" height="44" rx="22" fill="${theme.accent}"/>
@@ -467,8 +468,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="${textX}" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 32 : 34}" font-weight="900" fill="#101828">${titleTspans}</text>
       ${story.originalPrice ? `<text x="${textX}" y="${priceY - 38}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
       <text x="${textX}" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 58 : 52}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
-      <rect x="92" y="${square ? 800 : 1080}" width="896" height="82" rx="26" fill="${theme.accent}"/>
-      <text x="540" y="${square ? 852 : 1132}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#111827">${cta} →</text>
+      <rect x="92" y="${square ? 800 : 870}" width="896" height="82" rx="26" fill="${theme.accent}"/>
+      <text x="540" y="${square ? 852 : 922}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#111827">${cta} →</text>
       <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     </svg>`;
   } else if (template === 'spotlight') {
@@ -505,7 +506,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <text x="540" y="${ctaY + 50}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="${theme.background2}">${cta} →</text>
       <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     </svg>`;
-  } else {
+  } else if (template === 'split') {
     // Split: capa com coluna de marca e área de produto, pensado para alternar
     // com o Editorial em um carrossel sem repetir a mesma silhueta.
     const cardY = square ? 55 : 150;
@@ -518,8 +519,8 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     const titleLines = splitLines(story.title, square ? 31 : 22, square ? 2 : 3);
     const titleLineHeight = square ? 38 : 46;
     const titleX = square ? 92 : 410;
-    const titleY = square ? 535 : 775;
-    const priceY = square ? 700 : 965;
+    const titleY = square ? 550 : 820;
+    const priceY = square ? 710 : 1005;
     const titleTspans = titleLines.map((line, index) => `<tspan x="${titleX}" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
     svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".2"/></filter></defs>
@@ -536,12 +537,108 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
       <rect x="92" y="${cardY + 370}" width="220" height="44" rx="22" fill="${theme.accent}"/>
       <text x="202" y="${cardY + 399}" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="900" fill="#111827">${escapeXml(store)}</text>
       <rect x="${productLeft - 18}" y="${imageTop - 18}" width="${productWidth + 36}" height="${productHeight + 36}" rx="30" fill="#f2f4f7"/>
-      <text x="${titleX}" y="${titleY - 58}" font-family="Arial,sans-serif" font-size="19" font-weight="900" letter-spacing="2" fill="${theme.background2}">OFERTA SELECIONADA</text>
+      <text x="${titleX}" y="${titleY - 60}" font-family="Arial,sans-serif" font-size="19" font-weight="900" letter-spacing="2" fill="${theme.background2}">OFERTA SELECIONADA</text>
       <text x="${titleX}" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 31 : 36}" font-weight="900" fill="#101828">${titleTspans}</text>
       ${story.originalPrice ? `<text x="${titleX}" y="${priceY - 48}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
       <text x="${titleX}" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 56 : 64}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
-      <rect x="${titleX}" y="${square ? 770 : 1060}" width="${square ? 580 : 550}" height="78" rx="25" fill="${theme.accent}"/>
-      <text x="${titleX + (square ? 290 : 275)}" y="${square ? 820 : 1110}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${cta} →</text>
+      <rect x="${titleX}" y="${square ? 785 : 1090}" width="${square ? 580 : 550}" height="78" rx="25" fill="${theme.accent}"/>
+      <text x="${titleX + (square ? 290 : 275)}" y="${square ? 835 : 1140}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${cta} →</text>
+      <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+    </svg>`;
+  } else if (template === 'showcase') {
+    // Vitrine: produto amplo, moldura suave e informações concentradas abaixo.
+    const cardY = square ? 55 : 150;
+    const cardHeight = square ? 930 : 1110;
+    productTop = square ? 195 : 245;
+    productWidth = 820;
+    productHeight = square ? 315 : 500;
+    productLeft = 130;
+    const titleLines = splitLines(story.title, square ? 31 : 38, 2);
+    const titleLineHeight = square ? 38 : 46;
+    const titleY = square ? 610 : 835;
+    const priceY = square ? 775 : 1015;
+    const ctaY = square ? 860 : 1120;
+    const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
+    svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".2"/></filter></defs>
+      <rect width="${width}" height="${height}" fill="url(#bg)"/>${decorationSvg(theme)}
+      <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
+      <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">VITRINE DE OFERTAS</text>
+      <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="46" fill="#ffffff" filter="url(#shadow)"/>
+      <rect x="92" y="${cardY + 32}" width="250" height="48" rx="24" fill="${theme.background2}"/>
+      <text x="217" y="${cardY + 64}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="#ffffff">${escapeXml(store)}</text>
+      ${discount > 0 ? `<rect x="780" y="${cardY + 28}" width="220" height="56" rx="28" fill="${theme.accent}"/><text x="890" y="${cardY + 65}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
+      <rect x="92" y="${productTop - 22}" width="896" height="${productHeight + 44}" rx="34" fill="#f2f4f7"/>
+      <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 31 : 39}" font-weight="900" fill="#101828">${titleTspans}</text>
+      ${story.originalPrice ? `<text x="92" y="${priceY - 55}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+      <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 56 : 66}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
+      <rect x="92" y="${ctaY}" width="896" height="82" rx="27" fill="${theme.accent}"/>
+      <text x="540" y="${ctaY + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#111827">${cta} →</text>
+      <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
+    </svg>`;
+  } else if (template === 'minimal') {
+    // Essencial: visual claro e arejado, sem o cartão tradicional.
+    productTop = square ? 205 : 260;
+    productWidth = 700;
+    productHeight = square ? 300 : 430;
+    productLeft = 190;
+    const titleLines = splitLines(story.title, square ? 32 : 36, 2);
+    const titleLineHeight = square ? 38 : 48;
+    const titleY = square ? 610 : 780;
+    const priceY = square ? 785 : 995;
+    const ctaY = square ? 875 : 1105;
+    const titleTspans = titleLines.map((line, index) => `<tspan x="540" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
+    svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <defs><linearGradient id="header" x1="0" y1="0" x2="1" y2="0"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="12" stdDeviation="16" flood-opacity=".14"/></filter></defs>
+      <rect width="${width}" height="${height}" fill="#f8fafc"/>
+      <rect width="${width}" height="150" fill="url(#header)"/>
+      <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
+      <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">ESCOLHA ESSENCIAL</text>
+      <rect x="70" y="180" width="940" height="${square ? 800 : 1080}" rx="48" fill="#ffffff" stroke="#dbe7ff" stroke-width="4" filter="url(#shadow)"/>
+      <rect x="390" y="205" width="300" height="48" rx="24" fill="${theme.background2}"/>
+      <text x="540" y="237" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="#ffffff">${escapeXml(store)}</text>
+      <rect x="130" y="${productTop - 22}" width="820" height="${productHeight + 44}" rx="42" fill="#eef4ff"/>
+      ${discount > 0 ? `<circle cx="120" cy="${productTop + 35}" r="52" fill="${theme.accent}"/><text x="120" y="${productTop + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="900" fill="#111827">${discount}%</text><text x="120" y="${productTop + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="900" fill="#111827">OFF</text>` : ''}
+      <text x="540" y="${titleY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 31 : 39}" font-weight="900" fill="#101828">${titleTspans}</text>
+      ${story.originalPrice ? `<text x="540" y="${priceY - 56}" text-anchor="middle" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+      <text x="540" y="${priceY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 58 : 68}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
+      <rect x="170" y="${ctaY}" width="740" height="82" rx="41" fill="none" stroke="${theme.background2}" stroke-width="5"/>
+      <text x="540" y="${ctaY + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="${theme.background2}">${cta} →</text>
+      <text x="540" y="${height - 32}" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="${theme.background2}">${escapeXml(domain)}</text>
+    </svg>`;
+  } else {
+    // Oferta relâmpago: bloco de desconto lateral e contraste alto.
+    const cardY = square ? 55 : 150;
+    const cardHeight = square ? 930 : 1110;
+    productTop = square ? 220 : 285;
+    productWidth = square ? 590 : 600;
+    productHeight = square ? 300 : 440;
+    productLeft = square ? 95 : 100;
+    const titleLines = splitLines(story.title, square ? 30 : 36, 2);
+    const titleLineHeight = square ? 38 : 48;
+    const titleY = square ? 625 : 820;
+    const priceY = square ? 790 : 1010;
+    const ctaY = square ? 880 : 1110;
+    const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
+    svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".25"/></filter></defs>
+      <rect width="${width}" height="${height}" fill="url(#bg)"/>${decorationSvg(theme)}
+      <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
+      <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">OFERTA RELÂMPAGO</text>
+      <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="48" fill="${theme.background2}" filter="url(#shadow)"/>
+      <rect x="92" y="${cardY + 35}" width="250" height="48" rx="24" fill="#ffffff"/>
+      <text x="217" y="${cardY + 67}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="900" fill="${theme.background2}">${escapeXml(store)}</text>
+      <rect x="75" y="${productTop - 25}" width="650" height="${productHeight + 50}" rx="36" fill="#ffffff"/>
+      <rect x="755" y="${productTop - 25}" width="240" height="${productHeight + 50}" rx="36" fill="${theme.accent}"/>
+      <text x="875" y="${productTop + 135}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 62 : 70}" font-weight="900" fill="#111827">${discount > 0 ? `${discount}%` : 'TOP'}</text>
+      <text x="875" y="${productTop + 190}" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="900" fill="#111827">${discount > 0 ? 'OFF' : 'OFERTA'}</text>
+      <path d="M820 ${productTop + 270}h110" stroke="#111827" stroke-width="5" stroke-linecap="round" opacity=".25"/>
+      <text x="875" y="${productTop + 330}" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="800" fill="#111827">APROVEITE</text>
+      <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${square ? 31 : 40}" font-weight="900" fill="#ffffff">${titleTspans}</text>
+      ${story.originalPrice ? `<text x="92" y="${priceY - 58}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="24" fill="#dbeafe">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+      <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 58 : 68}" font-weight="900" fill="${theme.accent}">${escapeXml(price || 'Confira a oferta')}</text>
+      <rect x="92" y="${ctaY}" width="896" height="82" rx="28" fill="#ffffff"/>
+      <text x="540" y="${ctaY + 52}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="${theme.background2}">${cta} →</text>
       <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
     </svg>`;
   }

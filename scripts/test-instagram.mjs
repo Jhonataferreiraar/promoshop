@@ -77,6 +77,18 @@ try {
   await fs.unlink(feedAsset.filePath).catch(() => {});
 }
 
+for (const templateMode of ['classic', 'spotlight', 'split', 'showcase', 'minimal', 'flash']) {
+  const variant = await generateInstagramFeedAsset({ title: 'Oferta PromoShop para validar o layout', store: 'Shopee', price: 129.9, originalPrice: 199.9, discount: 35, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: templateMode }, 'default', 'portrait');
+  try {
+    const metadata = await sharp(variant.filePath).metadata();
+    assert.equal(variant.template, templateMode);
+    assert.equal(metadata.width, 1080);
+    assert.equal(metadata.height, 1350);
+  } finally {
+    await fs.unlink(variant.filePath).catch(() => {});
+  }
+}
+
 const localCaption = sanitizeFeedCaption('', [{ sourceId: 'offer-1', title: 'Notebook extremamente longo que não deve aparecer na descrição', store: 'Magalu', discount: 20 }]);
 assert.match(localCaption, /Acesse a bio do perfil/);
 assert.doesNotMatch(localCaption, /Notebook extremamente longo/);

@@ -3460,7 +3460,7 @@ app.put(
         if (!['automatic', 'manual'].includes(data.config.instagramThemeMode)) data.config.instagramThemeMode = 'automatic';
         if (!['single', 'carousel'].includes(String(data.config.instagramFeedPostType || ''))) data.config.instagramFeedPostType = previousConfig.instagramFeedPostType || 'single';
         if (!['square', 'portrait'].includes(String(data.config.instagramFeedFormat || ''))) data.config.instagramFeedFormat = previousConfig.instagramFeedFormat || 'portrait';
-        if (!['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || ''))) data.config.instagramFeedTemplateMode = previousConfig.instagramFeedTemplateMode || 'rotating';
+        if (!['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(String(data.config.instagramFeedTemplateMode || ''))) data.config.instagramFeedTemplateMode = previousConfig.instagramFeedTemplateMode || 'rotating';
         if (!['daily', 'weekly'].includes(String(data.config.instagramFeedCarouselFrequency || ''))) data.config.instagramFeedCarouselFrequency = previousConfig.instagramFeedCarouselFrequency || 'daily';
         data.config.instagramFeedEnabled = data.config.instagramFeedEnabled === true;
         data.config.instagramFeedAutoFromWhatsapp = data.config.instagramFeedAutoFromWhatsapp === true;
@@ -4619,7 +4619,7 @@ app.post('/api/admin/instagram/feed/preview', requireAdmin, async (req, res) => 
     const sources = requested.map((entry) => feedSourceSnapshot(data, req, entry)).filter(Boolean).slice(0, 10);
     if (!sources.length) return res.status(404).json({ error: 'Selecione pelo menos uma oferta ou cupom ativo.' });
     const requestedTemplateMode = String(req.body?.templateMode || '');
-    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(requestedTemplateMode)
+    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(requestedTemplateMode)
       ? requestedTemplateMode
       : (data.config.instagramFeedTemplateMode || 'rotating');
     const config = { ...data.config, instagramFeedFormat: req.body?.format === 'square' ? 'square' : 'portrait', instagramFeedTemplateMode: templateMode };
@@ -4643,9 +4643,9 @@ app.post('/api/admin/instagram/feed/queue', requireAdmin, async (req, res) => {
     if (postType === 'single' && sources.length > 1) return res.status(400).json({ error: 'Selecione apenas um item para uma publicação única.' });
     const format = req.body?.format === 'square' ? 'square' : 'portrait';
     const requestedTemplateMode = String(req.body?.templateMode || '');
-    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(requestedTemplateMode)
+    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(requestedTemplateMode)
       ? requestedTemplateMode
-      : (['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating');
+      : (['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating');
     const item = {
       id: createId('instagram-feed'), postType, format, items: sources, sourceIds: sources.map((source) => source.id),
       title: postType === 'carousel' ? `Carrossel com ${sources.length} ofertas` : sources[0].title, store: postType === 'carousel' ? 'PromoShop' : sources[0].store,
