@@ -214,6 +214,7 @@ const initialData = {
     instagramFeedAutoFromWhatsapp: false,
     instagramFeedPostType: 'single',
     instagramFeedFormat: 'portrait',
+    instagramFeedTemplateMode: 'rotating',
     instagramFeedCarouselFrequency: 'daily',
     instagramFeedCarouselsPerDay: 1,
     instagramFeedCarouselsPerWeek: 3,

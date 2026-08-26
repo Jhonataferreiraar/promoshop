@@ -380,15 +380,26 @@ export function sanitizeFeedCaption(value, stories = []) {
   return caption.slice(0, 2200);
 }
 
+function selectFeedTemplate(story = {}, mode = 'rotating') {
+  const templates = ['classic', 'editorial', 'spotlight'];
+  if (templates.includes(mode)) return mode;
+  let hash = 0;
+  for (const character of String(story.sourceId || story.title || '')) hash = ((hash << 5) - hash + character.codePointAt(0)) | 0;
+  return templates[Math.abs(hash) % templates.length];
+}
+
 export async function generateInstagramFeedAsset(story, config, requestedThemeId = '', format = 'portrait') {
   await fs.mkdir(mediaDir, { recursive: true });
   const theme = selectInstagramTheme(config, new Date(), requestedThemeId || story.themeId);
   const square = format === 'square';
+  const template = selectFeedTemplate(story, String(config.instagramFeedTemplateMode || 'rotating'));
+  const editorial = template === 'editorial';
+  const spotlight = template === 'spotlight';
   const width = 1080;
   const height = square ? 1080 : 1350;
   const cardY = square ? 90 : 170;
   const cardHeight = square ? 850 : 1100;
-  const imageTop = cardY + (square ? 40 : 55);
+  const imageTop = cardY + (square ? 40 : editorial ? 62 : 55);
   // Deixe o produto respirar, mas reserve espaço para títulos longos. No
   // retrato cabem até três linhas sem cortar o nome da oferta.
   const imageHeight = square ? 300 : 510;
@@ -407,19 +418,29 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
   const titleTspans = titleLines.map((line, index) => `<tspan x="92" dy="${index ? titleLineHeight : 0}">${escapeXml(line)}</tspan>`).join('');
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const cta = 'Acesse a bio do perfil';
+  const cardFill = spotlight ? theme.background2 : '#ffffff';
+  const titleFill = spotlight ? theme.text : '#101828';
+  const priceFill = spotlight ? theme.accent : theme.background2;
+  const originalPriceFill = spotlight ? '#dbeafe' : '#667085';
+  const templateMark = editorial
+    ? `<rect x="54" y="${cardY}" width="16" height="${cardHeight}" rx="8" fill="${theme.accent}"/><text x="94" y="${cardY + 34}" font-family="Arial,sans-serif" font-size="18" font-weight="900" letter-spacing="2" fill="${theme.background2}">SELEÇÃO EDITORIAL</text>`
+    : spotlight
+      ? `<text x="92" y="${cardY + 36}" font-family="Arial,sans-serif" font-size="18" font-weight="900" letter-spacing="2" fill="${theme.text}" opacity=".78">DESTAQUE PROMOSHOP</text>`
+      : '';
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="15" stdDeviation="18" flood-opacity=".22"/></filter></defs>
     <rect width="${width}" height="${height}" fill="url(#bg)"/>
     ${decorationSvg(theme)}
     <text x="76" y="82" font-family="Arial,sans-serif" font-size="44" font-weight="900" fill="${theme.text}">PromoShop</text>
     <text x="76" y="119" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${theme.text}" opacity=".82">OFERTAS SELECIONADAS TODOS OS DIAS</text>
-    <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="42" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="54" y="${cardY}" width="972" height="${cardHeight}" rx="42" fill="${cardFill}" filter="url(#shadow)"/>
+    ${templateMark}
     <rect x="92" y="${imageTop + imageHeight + 28}" width="210" height="48" rx="24" fill="${theme.accent}"/>
     <text x="197" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="900" fill="#111827">${escapeXml(store)}</text>
     ${discount > 0 ? `<rect x="780" y="${imageTop + imageHeight + 28}" width="220" height="48" rx="24" fill="${theme.accent}"/><text x="890" y="${imageTop + imageHeight + 60}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="900" fill="#111827">${discount}% OFF</text>` : ''}
-    <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${titleFontSize}" font-weight="900" fill="#101828">${titleTspans}</text>
-    ${story.originalPrice ? `<text x="92" y="${priceY - 68}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="26" fill="#667085">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
-    <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 60 : 68}" font-weight="900" fill="${theme.background2}">${escapeXml(price || 'Confira a oferta')}</text>
+    <text x="92" y="${titleY}" font-family="Arial,sans-serif" font-size="${titleFontSize}" font-weight="900" fill="${titleFill}">${titleTspans}</text>
+    ${story.originalPrice ? `<text x="92" y="${priceY - 68}" text-decoration="line-through" font-family="Arial,sans-serif" font-size="26" fill="${originalPriceFill}">De ${escapeXml(money(story.originalPrice))}</text>` : ''}
+    <text x="92" y="${priceY}" font-family="Arial,sans-serif" font-size="${square ? 60 : 68}" font-weight="900" fill="${priceFill}">${escapeXml(price || 'Confira a oferta')}</text>
     <rect x="92" y="${ctaButtonY}" width="896" height="${ctaButtonHeight}" rx="28" fill="${theme.accent}"/>
     <text x="540" y="${ctaBaseline}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${square ? 24 : 30}" font-weight="900" fill="#111827">${cta} →</text>
     <text x="540" y="${height - 34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
@@ -438,7 +459,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
   const fileName = `feed-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
   const filePath = path.join(mediaDir, fileName);
   await sharp(svg).composite(composites).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
-  return { fileName, filePath, themeId: theme.id, width, height };
+  return { fileName, filePath, themeId: theme.id, template, width, height };
 }
 
 function storySnapshot(data, queueItem) {
@@ -506,6 +527,7 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
       batch.items.push(story);
       batch.sourceIds.push(story.sourceId);
       batch.latestSourceAt = story.sourcePublishedAt || new Date().toISOString();
+      batch.templateMode ||= String(config.instagramFeedTemplateMode || 'rotating');
       batch.title = `Carrossel com ${batch.items.length} ofertas`;
       batch.caption = sanitizeFeedCaption(config.instagramFeedCaption, batch.items);
       return batch;
@@ -516,6 +538,7 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
     items: [story], sourceIds: [story.sourceId], title: story.title, store: story.store,
     caption: sanitizeFeedCaption(config.instagramFeedCaption, [story]), status: 'pending', attempts: 0, force: false,
     origin: 'whatsapp', latestSourceAt: story.sourcePublishedAt || new Date().toISOString(),
+    templateMode: String(config.instagramFeedTemplateMode || 'rotating'),
     createdAt: new Date().toISOString(), scheduledFor: null, publishedAt: null, retryAt: null, error: null,
     mediaIds: [], assetFileNames: [], themeId: ''
   };
@@ -863,7 +886,8 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
       if (item) { item.status = 'publishing'; item.publishingAt = new Date().toISOString(); item.error = null; }
     });
     const assets = [];
-    for (const story of selected.items.slice(0, 10)) assets.push(await generateInstagramFeedAsset(story, config, selected.themeId, selected.format));
+    const assetConfig = { ...config, instagramFeedTemplateMode: selected.templateMode || config.instagramFeedTemplateMode || 'rotating' };
+    for (const story of selected.items.slice(0, 10)) assets.push(await generateInstagramFeedAsset(story, assetConfig, selected.themeId, selected.format));
     const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
     if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar no Feed.');
     const published = await publishFeedPost(config, secrets, assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));

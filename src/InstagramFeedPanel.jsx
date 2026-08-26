@@ -57,6 +57,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       await authApi('/admin/config', { method: 'PUT', body: JSON.stringify({
         instagramFeedEnabled: Boolean(config.instagramFeedEnabled), instagramFeedAutoFromWhatsapp: Boolean(config.instagramFeedAutoFromWhatsapp),
         instagramFeedPostType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', instagramFeedFormat: format,
+        instagramFeedTemplateMode: ['rotating', 'classic', 'editorial', 'spotlight'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating',
         instagramFeedCarouselFrequency: config.instagramFeedCarouselFrequency === 'weekly' ? 'weekly' : 'daily',
         instagramFeedCarouselsPerDay: config.instagramFeedCarouselsPerDay ?? 1, instagramFeedCarouselsPerWeek: config.instagramFeedCarouselsPerWeek ?? 3,
         instagramFeedPublishingDays: Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5],
@@ -127,6 +128,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     </div>
     <div className="settings-grid three-columns">
       <label>Formato padrão<select value={config.instagramFeedFormat || 'portrait'} onChange={(event) => { setFormat(event.target.value); setConfig({ instagramFeedFormat: event.target.value }); }}><option value="portrait">Vertical 4:5</option><option value="square">Quadrado 1:1</option></select></label>
+      <label>Modelo visual<select value={config.instagramFeedTemplateMode || 'rotating'} onChange={(event) => setConfig({ instagramFeedTemplateMode: event.target.value })}><option value="rotating">Rotação PromoShop (recomendado)</option><option value="classic">Clássico</option><option value="editorial">Editorial</option><option value="spotlight">Destaque</option></select><small>A rotação alterna as composições para o Feed se completar visualmente.</small></label>
       <label>Automação padrão<select value={config.instagramFeedPostType || 'single'} onChange={(event) => setConfig({ instagramFeedPostType: event.target.value })}><option value="single">Posts individuais</option><option value="carousel">Carrosséis</option></select></label>
       <label>Itens por carrossel<input type="number" min="2" max="10" value={config.instagramFeedCarouselSize ?? 4} onChange={(event) => setConfig({ instagramFeedCarouselSize: event.target.value })} /></label>
       <label>Frequência dos carrosséis<select value={config.instagramFeedCarouselFrequency || 'daily'} onChange={(event) => setConfig({ instagramFeedCarouselFrequency: event.target.value })}><option value="daily">Todos os dias</option><option value="weekly">Por semana</option></select><small>Define o limite para publicações de carrossel.</small></label>
