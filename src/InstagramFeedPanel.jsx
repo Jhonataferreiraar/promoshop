@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
+const templateText = { classic: 'Original', editorial: 'Editorial', spotlight: 'Destaque', split: 'Capa dividida' };
 const feedDays = [
   { value: 1, label: 'Segunda' },
   { value: 2, label: 'Terça' },
@@ -33,6 +34,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
   const [caption, setCaption] = useState(config.instagramFeedCaption || '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção');
   const [scheduledFor, setScheduledFor] = useState('');
   const [previewUrls, setPreviewUrls] = useState([]);
+  const [previewTemplates, setPreviewTemplates] = useState([]);
   const [busy, setBusy] = useState('');
   const themes = Array.isArray(config.instagramThemes) ? config.instagramThemes.filter((theme) => theme.enabled !== false) : [];
   const queue = useMemo(() => [...(data.instagramFeedQueue || [])].reverse(), [data.instagramFeedQueue]);
@@ -41,6 +43,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     ...(data.coupons || []).filter((coupon) => coupon.active !== false).map((coupon) => ({ ...coupon, kind: 'coupon' }))
   ], [data.offers, data.coupons]);
   const selectedSources = selected.map((key) => sources.find((item) => keyFor(item.kind, item.id) === key)).filter(Boolean);
+  const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating';
 
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
   const toggle = (item) => {
@@ -78,10 +81,12 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     setBusy('preview');
     try {
       const result = await authApi('/admin/instagram/feed/preview', { method: 'POST', body: JSON.stringify({
-        items: selectedSources.map((item) => ({ kind: item.kind, id: item.id })), themeId, format
+        items: selectedSources.map((item) => ({ kind: item.kind, id: item.id })), themeId, format, templateMode
       }) });
       setPreviewUrls(result.imageUrls || [result.imageUrl]);
-      setMessage('Prévia do Feed criada.');
+      setPreviewTemplates(result.templates || []);
+      const generated = [...new Set((result.templates || []).map((item) => templateText[item] || item))].filter(Boolean).join(', ');
+      setMessage(generated ? `Prévia criada com o modelo: ${generated}.` : 'Prévia do Feed criada.');
     } catch (error) { setMessage(error.message); }
     finally { setBusy(''); }
   }
@@ -92,10 +97,10 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     setBusy('queue');
     try {
       await authApi('/admin/instagram/feed/queue', { method: 'POST', body: JSON.stringify({
-        postType, format, themeId, caption, scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
+        postType, format, themeId, templateMode, caption, scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
         items: selectedSources.map((item) => ({ kind: item.kind, id: item.id }))
       }) });
-      setSelected([]); setPreviewUrls([]); setScheduledFor('');
+      setSelected([]); setPreviewUrls([]); setPreviewTemplates([]); setScheduledFor('');
       setMessage('Publicação adicionada à fila do Feed.');
       await load();
     } catch (error) { setMessage(error.message); }
@@ -128,7 +133,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     </div>
     <div className="settings-grid three-columns">
       <label>Formato padrão<select value={config.instagramFeedFormat || 'portrait'} onChange={(event) => { setFormat(event.target.value); setConfig({ instagramFeedFormat: event.target.value }); }}><option value="portrait">Vertical 4:5</option><option value="square">Quadrado 1:1</option></select></label>
-      <label>Modelo visual<select value={config.instagramFeedTemplateMode || 'rotating'} onChange={(event) => setConfig({ instagramFeedTemplateMode: event.target.value })}><option value="rotating">Rotação PromoShop (recomendado)</option><option value="classic">Original (modelo anterior)</option><option value="editorial">Editorial (duas colunas)</option><option value="spotlight">Destaque (preço em foco)</option><option value="split">Capa dividida (marca + oferta)</option></select><small>A rotação alterna quatro composições bem diferentes para o Feed se completar visualmente.</small></label>
+      <label>Modelo visual<select value={templateMode} onChange={(event) => { setConfig({ instagramFeedTemplateMode: event.target.value }); setPreviewUrls([]); setPreviewTemplates([]); }}><option value="rotating">Rotação PromoShop (recomendado)</option><option value="classic">Original (modelo anterior)</option><option value="editorial">Editorial (duas colunas)</option><option value="spotlight">Destaque (preço em foco)</option><option value="split">Capa dividida (marca + oferta)</option></select><small>A rotação alterna quatro composições bem diferentes para o Feed se completar visualmente.</small></label>
       <label>Automação padrão<select value={config.instagramFeedPostType || 'single'} onChange={(event) => setConfig({ instagramFeedPostType: event.target.value })}><option value="single">Posts individuais</option><option value="carousel">Carrosséis</option></select></label>
       <label>Itens por carrossel<input type="number" min="2" max="10" value={config.instagramFeedCarouselSize ?? 4} onChange={(event) => setConfig({ instagramFeedCarouselSize: event.target.value })} /></label>
       <label>Frequência dos carrosséis<select value={config.instagramFeedCarouselFrequency || 'daily'} onChange={(event) => setConfig({ instagramFeedCarouselFrequency: event.target.value })}><option value="daily">Todos os dias</option><option value="weekly">Por semana</option></select><small>Define o limite para publicações de carrossel.</small></label>
@@ -154,7 +159,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
         <div className="instagram-feed-item-list">{sources.slice(0, 150).map((item) => <label key={keyFor(item.kind, item.id)} className={`instagram-feed-item ${selected.includes(keyFor(item.kind, item.id)) ? 'selected' : ''}`}><input type="checkbox" checked={selected.includes(keyFor(item.kind, item.id))} onChange={() => toggle(item)} /><span>{labelFor(item, item.kind)}</span></label>)}{!sources.length && <div className="empty">Nenhuma oferta ou cupom ativo disponível.</div>}</div>
         <div className="personal-share-actions"><button className="button subtle" type="button" disabled={Boolean(busy)} onClick={preview}>{busy === 'preview' ? 'Gerando…' : 'Gerar prévia'}</button><button className="button primary" type="button" disabled={Boolean(busy)} onClick={addToQueue}>{busy === 'queue' ? 'Adicionando…' : 'Adicionar à fila'}</button><button className="button subtle" type="button" disabled={Boolean(busy)} onClick={saveSettings}>{busy === 'save' ? 'Salvando…' : 'Salvar configurações'}</button></div>
       </div>
-      <div className="instagram-preview instagram-feed-preview">{previewUrls.length ? <div className="instagram-feed-preview-grid">{previewUrls.map((url) => <img key={url} src={`${url}?v=${Date.now()}`} alt="Prévia do post do Feed" />)}</div> : <div><strong>Prévia do Feed</strong><p>Selecione os itens e gere uma prévia antes de colocar na fila.</p></div>}<small>O post usa “Acesse a bio do perfil” e não exibe links diretos na descrição.</small></div>
+      <div className="instagram-preview instagram-feed-preview">{previewUrls.length ? <><div className="instagram-feed-preview-grid">{previewUrls.map((url) => <img key={url} src={`${url}?v=${Date.now()}`} alt="Prévia do post do Feed" />)}</div>{previewTemplates.length > 0 && <strong>Modelo gerado: {[...new Set(previewTemplates.map((item) => templateText[item] || item))].join(', ')}</strong>}</> : <div><strong>Prévia do Feed</strong><p>Selecione os itens e gere uma prévia antes de colocar na fila.</p></div>}<small>O post usa “Acesse a bio do perfil” e não exibe links diretos na descrição.</small></div>
     </div>
     <div className="instagram-queue-panel instagram-feed-queue"><div className="panel-heading"><div><span className="section-step">FILA DO FEED</span><h2>Posts recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div></div><div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.assetFileNames?.[0] ? <img src={`/media/instagram/${item.assetFileNames[0]}`} alt="" /> : item.postType === 'carousel' ? '▦' : '◇'}</div><div><strong>{item.title}</strong><span>{item.postType === 'carousel' ? `Carrossel · ${item.items?.length || 0} itens` : 'Post único'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.scheduledFor || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status !== 'sent' && item.status !== 'publishing' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Feed está vazia</strong><p>As publicações automáticas e manuais aparecerão aqui.</p></div>}</div></div>
   </section>;

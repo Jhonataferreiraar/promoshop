@@ -4618,11 +4618,15 @@ app.post('/api/admin/instagram/feed/preview', requireAdmin, async (req, res) => 
     const requested = Array.isArray(req.body?.items) ? req.body.items : [{ kind: req.body?.kind, id: req.body?.id }];
     const sources = requested.map((entry) => feedSourceSnapshot(data, req, entry)).filter(Boolean).slice(0, 10);
     if (!sources.length) return res.status(404).json({ error: 'Selecione pelo menos uma oferta ou cupom ativo.' });
-    const config = { ...data.config, instagramFeedFormat: req.body?.format === 'square' ? 'square' : 'portrait' };
+    const requestedTemplateMode = String(req.body?.templateMode || '');
+    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(requestedTemplateMode)
+      ? requestedTemplateMode
+      : (data.config.instagramFeedTemplateMode || 'rotating');
+    const config = { ...data.config, instagramFeedFormat: req.body?.format === 'square' ? 'square' : 'portrait', instagramFeedTemplateMode: templateMode };
     const assets = [];
     for (const source of sources) assets.push(await generateInstagramFeedAsset(source, config, String(req.body?.themeId || ''), config.instagramFeedFormat));
     const canonical = String(data.config.canonicalUrl || '').replace(/\/$/, '');
-    res.json({ ok: true, themeId: assets[0]?.themeId || '', imageUrls: assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), imageUrl: `${canonical}/media/instagram/${assets[0].fileName}`, fileNames: assets.map((asset) => asset.fileName) });
+    res.json({ ok: true, themeId: assets[0]?.themeId || '', templates: assets.map((asset) => asset.template), imageUrls: assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), imageUrl: `${canonical}/media/instagram/${assets[0].fileName}`, fileNames: assets.map((asset) => asset.fileName) });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -4638,12 +4642,16 @@ app.post('/api/admin/instagram/feed/queue', requireAdmin, async (req, res) => {
     if (postType === 'carousel' && sources.length < 2) return res.status(400).json({ error: 'Um carrossel precisa de pelo menos 2 itens.' });
     if (postType === 'single' && sources.length > 1) return res.status(400).json({ error: 'Selecione apenas um item para uma publicação única.' });
     const format = req.body?.format === 'square' ? 'square' : 'portrait';
+    const requestedTemplateMode = String(req.body?.templateMode || '');
+    const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(requestedTemplateMode)
+      ? requestedTemplateMode
+      : (['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating');
     const item = {
       id: createId('instagram-feed'), postType, format, items: sources, sourceIds: sources.map((source) => source.id),
       title: postType === 'carousel' ? `Carrossel com ${sources.length} ofertas` : sources[0].title, store: postType === 'carousel' ? 'PromoShop' : sources[0].store,
       caption: String(req.body?.caption || data.config.instagramFeedCaption || '').trim().slice(0, 2200),
       origin: 'manual',
-      templateMode: ['rotating', 'classic', 'editorial', 'spotlight', 'split'].includes(String(data.config.instagramFeedTemplateMode || '')) ? data.config.instagramFeedTemplateMode : 'rotating',
+      templateMode,
       status: 'pending', attempts: 0, force: false, createdAt: new Date().toISOString(), scheduledFor: req.body?.scheduledFor ? new Date(req.body.scheduledFor).toISOString() : null,
       publishedAt: null, retryAt: null, error: null, mediaIds: [], assetFileNames: [], themeId: String(req.body?.themeId || '')
     };

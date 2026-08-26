@@ -65,13 +65,14 @@ try {
   await fs.unlink(asset.filePath).catch(() => {});
 }
 
-const feedAsset = await generateInstagramFeedAsset({ title: 'Notebook PromoShop', store: 'Magalu', price: 1999.9, originalPrice: 2499.9, discount: 20, image: '', link: 'https://example.com/offer' }, config, 'independence', 'portrait');
+const feedAsset = await generateInstagramFeedAsset({ title: 'Notebook PromoShop', store: 'Magalu', price: 1999.9, originalPrice: 2499.9, discount: 20, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: 'editorial' }, 'independence', 'portrait');
 try {
   const metadata = await sharp(feedAsset.filePath).metadata();
   assert.equal(metadata.format, 'jpeg');
   assert.equal(metadata.width, 1080);
   assert.equal(metadata.height, 1350);
   assert.equal(feedAsset.themeId, 'independence');
+  assert.equal(feedAsset.template, 'editorial');
 } finally {
   await fs.unlink(feedAsset.filePath).catch(() => {});
 }
