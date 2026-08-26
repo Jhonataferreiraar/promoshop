@@ -7,7 +7,7 @@ import { readSecrets } from './secrets.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function loadSessionSecret() {
-  if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
+  if (String(process.env.AUTH_SECRET || '').length >= 32) return process.env.AUTH_SECRET;
   const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
   const secretFile = path.join(dataDir, '.auth-secret');
   try {
@@ -21,9 +21,67 @@ function loadSessionSecret() {
 }
 
 const sessionSecret = loadSessionSecret();
+const sessionCookieName = 'promoshop_session';
+const csrfCookieName = 'promoshop_csrf';
+const sessionMaxAgeSeconds = 12 * 60 * 60;
 
 function base64url(value) { return Buffer.from(value).toString('base64url'); }
 function signature(payload) { return crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); }
+
+function parseCookies(header = '') {
+  return String(header || '').split(';').reduce((cookies, part) => {
+    const separator = part.indexOf('=');
+    if (separator < 1) return cookies;
+    const name = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    if (!name) return cookies;
+    try { cookies[name] = decodeURIComponent(value); } catch { cookies[name] = value; }
+    return cookies;
+  }, {});
+}
+
+function secureCookies() {
+  return process.env.NODE_ENV === 'production';
+}
+
+function cookieHeader(name, value, options = {}) {
+  const attributes = [
+    `${name}=${encodeURIComponent(value)}`,
+    `Path=${options.path || '/'}`,
+    `Max-Age=${Number.isFinite(options.maxAge) ? options.maxAge : sessionMaxAgeSeconds}`,
+    `SameSite=${options.sameSite || 'Lax'}`
+  ];
+  if (options.httpOnly) attributes.push('HttpOnly');
+  if (options.secure) attributes.push('Secure');
+  return attributes.join('; ');
+}
+
+export function setSessionCookies(res, token) {
+  const csrfToken = crypto.randomBytes(32).toString('base64url');
+  const secure = secureCookies();
+  res.append('Set-Cookie', cookieHeader(sessionCookieName, token, { httpOnly: true, secure }));
+  res.append('Set-Cookie', cookieHeader(csrfCookieName, csrfToken, { secure }));
+  return csrfToken;
+}
+
+export function clearSessionCookies(res) {
+  const secure = secureCookies();
+  res.append('Set-Cookie', cookieHeader(sessionCookieName, '', { httpOnly: true, secure, maxAge: 0 }));
+  res.append('Set-Cookie', cookieHeader(csrfCookieName, '', { secure, maxAge: 0 }));
+}
+
+function sessionTokenFromRequest(req) {
+  const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
+  if (bearer) return { token: bearer, fromCookie: false };
+  const cookies = parseCookies(req.headers.cookie);
+  return { token: cookies[sessionCookieName] || '', fromCookie: Boolean(cookies[sessionCookieName]), cookies };
+}
+
+function csrfValid(req, cookies = parseCookies(req.headers.cookie)) {
+  const cookieToken = String(cookies[csrfCookieName] || '');
+  const headerToken = String(req.headers['x-csrf-token'] || '');
+  return Boolean(cookieToken) && cookieToken.length === headerToken.length && crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
+}
 
 export function createToken(username, sessionVersion = 0) {
   const payload = base64url(JSON.stringify({ username, sessionVersion: Number(sessionVersion || 0), expiresAt: Date.now() + 12 * 60 * 60 * 1000 }));
@@ -43,9 +101,13 @@ export function validateToken(token, expectedSessionVersion = 0) {
 }
 
 export async function requireAdmin(req, res, next) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const session = sessionTokenFromRequest(req);
   const secrets = await readSecrets();
-  if (!validateToken(token, secrets.adminSessionVersion)) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  if (!validateToken(session.token, secrets.adminSessionVersion)) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  if (session.fromCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !csrfValid(req, session.cookies)) {
+    return res.status(403).json({ error: 'Proteção CSRF inválida. Atualize a página e tente novamente.' });
+  }
+  req.adminUser = session.token;
   next();
 }
 
@@ -53,6 +115,6 @@ export async function requireWorker(req, res, next) {
   const stored = await readSecrets();
   const expected = process.env.WORKER_TOKEN || stored.workerToken || '';
   const provided = req.headers['x-worker-token'] || '';
-  if (!expected || expected.length !== provided.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))) return res.status(401).json({ error: 'Publicador não autorizado.' });
+  if (expected.length < 32 || expected.length !== String(provided).length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(provided)))) return res.status(401).json({ error: 'Publicador não autorizado.' });
   next();
 }

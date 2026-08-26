@@ -131,8 +131,15 @@ const fallbackOffers = [
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const method = String(options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('promoshop_csrf='))?.slice('promoshop_csrf='.length) || '';
+    if (csrf && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = decodeURIComponent(csrf);
+  }
   const response = await fetch(`/api${path}`, {
     ...options,
+    method,
+    credentials: 'same-origin',
     headers
   });
   if (!response.ok) {
@@ -1170,7 +1177,7 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   async function submit(event) {
     event.preventDefault(); setError('');
-    try { const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(form) }); localStorage.setItem('promoshop_token', result.token); onLogin(result.token); }
+    try { const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(form) }); onLogin(result.token || 'cookie'); }
     catch (err) { setError(err.message); }
   }
   return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{error && <p className="error">{error}</p>}<button className="button primary full">Entrar</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
@@ -1269,7 +1276,8 @@ function couponFormFromCoupon(coupon) {
 }
 
 function AdminApp() {
-  const [token, setToken] = useState(localStorage.getItem('promoshop_token'));
+  const [token, setToken] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
@@ -1332,6 +1340,12 @@ function AdminApp() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const backupInputRef = useRef(null);
+  useEffect(() => {
+    api('/auth/session', { cache: 'no-store' })
+      .then(() => setToken('cookie'))
+      .catch(() => setToken(null))
+      .finally(() => setAuthChecking(false));
+  }, []);
   function updateAudience(index, changes) {
     setData((current) => {
       const audiences = Array.isArray(current.config.whatsappAudiences)
@@ -1422,7 +1436,7 @@ function AdminApp() {
       }
     });
   }
-  const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
+  const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), ...(token && token !== 'cookie' ? { Authorization: `Bearer ${token}` } : {}) } });
 
   async function load({ preserveConfig = false } = {}) {
     try {
@@ -1469,7 +1483,6 @@ function AdminApp() {
     }
     catch (error) {
       if (error.status === 401) {
-        localStorage.removeItem('promoshop_token');
         setToken(null);
       }
     }
@@ -1522,6 +1535,7 @@ function AdminApp() {
   useEffect(() => {
     if (token && tab === 'analytics' && data.secrets?.googleSearchConsoleConnected && !searchConsoleData) loadSearchConsole();
   }, [token, tab, data.secrets?.googleSearchConsoleConnected]);
+  if (authChecking) return <div className="login-page"><div className="login-card"><Logo name="PromoShop" /><p>Verificando sua sessão segura…</p></div></div>;
   if (!token) return <Login onLogin={setToken} />;
 
   async function saveConfig(event) {
@@ -2129,7 +2143,7 @@ function AdminApp() {
       `"${offer.title}" foi carregado no formulário. Confira os dados antes de adicionar.`
     );
   }
-  function logout() { localStorage.removeItem('promoshop_token'); setToken(null); }
+  async function logout() { await api('/auth/logout', { method: 'POST' }).catch(() => {}); setToken(null); }
 
   async function bulkReview(action) {
     if (!reviewSelected.length) return setMessage('Selecione pelo menos uma oferta.');

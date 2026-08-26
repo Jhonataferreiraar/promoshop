@@ -10,10 +10,10 @@ try {
   const { readSecrets, secretStatus, updateSecrets } = await import('../server/secrets.js');
   const { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization } = await import('../server/mercadolivre.js');
   await Promise.all([
-    updateSecrets({ aiApiKey: 'REDACTED_GROQ_KEY' }),
+    updateSecrets({ aiApiKey: 'test-ai-key-that-must-be-preserved' }),
     updateSecrets({ mercadoLivreUserId: 'concurrent-update' })
   ]);
-  assert.equal((await readSecrets()).aiApiKey, 'REDACTED_GROQ_KEY');
+  assert.equal((await readSecrets()).aiApiKey, 'test-ai-key-that-must-be-preserved');
   await updateSecrets({ mercadoLivreClientId: '123456', mercadoLivreClientSecret: 'secret-for-test' });
   const redirectUri = 'https://example.com/api/mercadolivre/callback';
   const authorizationUrl = new URL(await beginMercadoLivreAuthorization(redirectUri));

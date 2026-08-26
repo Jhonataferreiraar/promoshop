@@ -3,8 +3,8 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-process.env.AI_API_KEY = 'REDACTED_GROQ_KEY';
-process.env.GEMINI_API_KEY = 'AIza_test_key_not_real_123456789';
+process.env.AI_API_KEY = 'test-ai-key-placeholder';
+process.env.GEMINI_API_KEY = 'test-gemini-key-placeholder';
 // O teste nunca deve ler as credenciais criptografadas do ambiente do
 // desenvolvedor ou de uma instalação real do painel.
 process.env.DATA_DIR = await mkdtemp(path.join(tmpdir(), 'promoshop-ai-test-'));
@@ -30,7 +30,7 @@ assert.equal(queuedForAi.offerSnapshot.price, 49.9);
 
 globalThis.fetch = async (url, options) => {
   assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
-  assert.equal(options.headers.Authorization, 'Bearer REDACTED_GROQ_KEY');
+  assert.equal(options.headers.Authorization, 'Bearer test-ai-key-placeholder');
   const body = JSON.parse(options.body);
   assert.equal(body.model, 'openai/gpt-oss-20b');
   const sentText = body.messages.map((message) => message.content).join('\n');
@@ -67,7 +67,7 @@ try {
 
   globalThis.fetch = async (url, options) => {
     assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
-    assert.equal(options.headers['x-goog-api-key'], 'AIza_test_key_not_real_123456789');
+    assert.equal(options.headers['x-goog-api-key'], 'test-gemini-key-placeholder');
     const body = JSON.parse(options.body);
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
     assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);

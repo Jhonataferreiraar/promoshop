@@ -25,6 +25,7 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
 export function verifyPassword(password, stored) {
   if (!stored?.includes(':')) return false;
   const [salt, expected] = stored.split(':');
+  if (!/^[a-f0-9]{16,64}$/i.test(salt) || !/^[a-f0-9]{128}$/i.test(expected)) return false;
   const calculated = crypto.scryptSync(password, salt, 64).toString('hex');
   return expected.length === calculated.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(calculated));
 }
@@ -136,7 +137,7 @@ async function updateSecretsUnlocked(changes) {
   const next = { ...current };
   if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
   if (changes.adminPassword) {
-    next.adminPasswordHash = hashPassword(String(changes.adminPassword));
+    next.adminPasswordHash = hashPassword(String(changes.adminPassword).slice(0, 256));
     next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
   }
   if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
@@ -319,7 +320,11 @@ export function secretStatus(secrets) {
       process.env.MERCADO_LIVRE_AFFILIATE_TAG ||
       'promoshop',
     shopeeFeedUrlConfigured: Boolean(secrets.shopeeFeedUrl),
-    shopeeFeedUrl: secrets.shopeeFeedUrl || '',
+    // O feed pode conter parâmetros de autenticação; nunca devolva o URL
+    // completo ao navegador administrativo.
+    shopeeFeedUrl: secrets.shopeeFeedUrl
+      ? (() => { try { return new URL(secrets.shopeeFeedUrl).origin; } catch { return ''; } })()
+      : '',
     shopeeAppIdConfigured: Boolean(secrets.shopeeAppId),
     shopeeAppSecretConfigured: Boolean(secrets.shopeeAppSecret),
     shopeeAppId: secrets.shopeeAppId || '',

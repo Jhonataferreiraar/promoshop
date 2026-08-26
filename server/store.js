@@ -10,6 +10,75 @@ import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramTh
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const dataFile = path.join(dataDir, 'db.json');
+const dataKeyFile = path.join(dataDir, '.data-key');
+let dataMigrationPromise = null;
+
+async function getDataKey() {
+  const configured = String(process.env.DATA_ENCRYPTION_KEY || '').trim();
+  if (/^[a-f0-9]{64}$/i.test(configured)) return Buffer.from(configured, 'hex');
+  await fs.mkdir(dataDir, { recursive: true });
+  try {
+    const saved = (await fs.readFile(dataKeyFile, 'utf8')).trim();
+    if (/^[a-f0-9]{64}$/i.test(saved)) return Buffer.from(saved, 'hex');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  const key = crypto.randomBytes(32);
+  await fs.writeFile(dataKeyFile, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
+  return key;
+}
+
+async function encryptSensitive(value) {
+  const key = await getDataKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
+  return {
+    __encrypted: 'aes-256-gcm-v1',
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: encrypted.toString('base64')
+  };
+}
+
+async function decryptSensitive(value) {
+  if (!value || value.__encrypted !== 'aes-256-gcm-v1') return { value, encrypted: false };
+  const key = await getDataKey();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
+  const plain = Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]);
+  return { value: JSON.parse(plain.toString('utf8')), encrypted: true };
+}
+
+async function restoreSensitiveData(data) {
+  let encrypted = true;
+  for (const key of ['inbox', 'privacyConsents']) {
+    const restored = await decryptSensitive(data[key]);
+    data[key] = restored.value;
+    encrypted &&= restored.encrypted;
+  }
+  if (data.analytics && typeof data.analytics === 'object') {
+    const restored = await decryptSensitive(data.analytics.visitors);
+    data.analytics.visitors = restored.value;
+    encrypted &&= restored.encrypted;
+  }
+  return { data, encrypted };
+}
+
+async function protectSensitiveData(data) {
+  const persisted = structuredClone(data);
+  persisted.inbox = await encryptSensitive(persisted.inbox || []);
+  persisted.privacyConsents = await encryptSensitive(persisted.privacyConsents || {});
+  persisted.analytics ||= {};
+  persisted.analytics.visitors = await encryptSensitive(persisted.analytics.visitors || {});
+  return persisted;
+}
+
+async function writeProtectedSnapshot(data) {
+  const temporaryFile = path.join(dataDir, `db-migrate-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
+  await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
+  await fs.rename(temporaryFile, dataFile);
+}
 
 const initialData = {
   config: {
@@ -251,7 +320,7 @@ async function ensureStore() {
     ensurePromise = (async () => {
       await fs.mkdir(dataDir, { recursive: true });
       try { await fs.access(dataFile); }
-      catch { await fs.writeFile(dataFile, JSON.stringify(initialData, null, 2), 'utf8'); }
+      catch { await fs.writeFile(dataFile, JSON.stringify(await protectSensitiveData(initialData), null, 2), { encoding: 'utf8', mode: 0o600 }); }
     })().catch((error) => {
       ensurePromise = null;
       throw error;
@@ -271,10 +340,14 @@ export async function readStore() {
   if (cachedData && cachedSignature === signature) return cachedData;
 
   let data;
+  let wasEncrypted = false;
   let lastError;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      data = JSON.parse(await fs.readFile(dataFile, 'utf8'));
+      const persisted = JSON.parse(await fs.readFile(dataFile, 'utf8'));
+      const restored = await restoreSensitiveData(persisted);
+      data = restored.data;
+      wasEncrypted = restored.encrypted;
       break;
     } catch (error) {
       lastError = error;
@@ -283,6 +356,12 @@ export async function readStore() {
     }
   }
   if (!data) throw lastError;
+  if (!wasEncrypted) {
+    if (!dataMigrationPromise) {
+      dataMigrationPromise = writeProtectedSnapshot(data).finally(() => { dataMigrationPromise = null; });
+    }
+    await dataMigrationPromise;
+  }
   data.config = {
     ...initialData.config,
     ...(data.config || {})
@@ -389,7 +468,7 @@ export async function updateStore(mutator) {
     const data = structuredClone(await readStore());
     const result = await mutator(data);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
-    await fs.writeFile(temporaryFile, JSON.stringify(data, null, 2), 'utf8');
+    await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
     try {
       for (let attempt = 0; ; attempt += 1) {
         try {

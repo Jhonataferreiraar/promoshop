@@ -63,8 +63,17 @@ try {
   const validLogin = await login('SenhaInicialSegura123!');
   assert.equal(validLogin.status, 200);
   const { token } = await validLogin.json();
+  const setCookies = validLogin.headers.getSetCookie?.() || [];
+  assert.ok(setCookies.some((cookie) => /promoshop_session=.*HttpOnly/i.test(cookie)));
+  assert.ok(setCookies.some((cookie) => /promoshop_csrf=.*SameSite=Lax/i.test(cookie)));
+  const cookieHeader = setCookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
+  const csrfToken = decodeURIComponent(cookieHeader.match(/(?:^|; )promoshop_csrf=([^;]+)/)?.[1] || '');
+  assert.ok(csrfToken);
   const authorization = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 200);
+  assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { cookie: cookieHeader } })).status, 200);
+  assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop' }) })).status, 403);
+  assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop', __internal: 'blocked' }) })).status, 200);
 
   const initialDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   const technologyAudience = initialDashboard.config.whatsappAudiences.find((audience) => audience.code === 'G02');
@@ -83,10 +92,11 @@ try {
   assert.deepEqual(savedTechnologyAudience.blockedKeywords, ['usado']);
 
   const receiptId = 'privacyreceipt1234567890';
+  const currentPolicyVersion = (await fetch(`${origin}/api/config/public`).then((response) => response.json())).legalPolicyVersion;
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: '2026-08-23-v4' })
+    body: JSON.stringify({ receiptId, choice: 'accepted', policyVersion: currentPolicyVersion })
   });
   assert.equal(privacyReceipt.status, 200);
   const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
@@ -118,6 +128,10 @@ try {
   const analyticsDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   assert.equal(analyticsDashboard.analytics.totalClicks, 1);
   assert.equal(analyticsDashboard.analytics.topTargets[0].label, 'Oferta de teste');
+  const persistedStore = JSON.parse(await fs.readFile(path.join(testDataDir, 'db.json'), 'utf8'));
+  assert.equal(persistedStore.privacyConsents.__encrypted, 'aes-256-gcm-v1');
+  assert.equal(persistedStore.inbox.__encrypted, 'aes-256-gcm-v1');
+  assert.equal(persistedStore.analytics.visitors.__encrypted, 'aes-256-gcm-v1');
 
   const safeBackup = await fetch(`${origin}/api/admin/backup`, { headers: authorization }).then((response) => response.json());
   assert.equal(safeBackup.kind, 'promoshop-safe-backup');
@@ -142,6 +156,8 @@ try {
   assert.equal(publicOffers.total, 1);
   assert.equal(publicOffers.categories[0], 'Tecnologia');
   assert.match(publicOffers.offers[0].publicSlug, /fone-bluetooth/);
+  assert.equal(Object.hasOwn(publicOffers.offers[0], 'targetAudienceCodes'), false);
+  assert.equal(Object.hasOwn(publicOffers.offers[0], 'source'), false);
   const productPage = await fetch(`${origin}/api/offer/${publicOffers.offers[0].publicSlug}`).then((response) => response.json());
   assert.equal(productPage.offer.title, 'Fone Bluetooth Teste Premium');
 

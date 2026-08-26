@@ -19,9 +19,11 @@ import {
 } from './store.js';
 
 import {
+  clearSessionCookies,
   createToken,
   requireAdmin,
-  requireWorker
+  requireWorker,
+  setSessionCookies
 } from './auth.js';
 
 import {
@@ -281,7 +283,9 @@ const analyticsAttempts = new Map();
 const analyticsWindowMs = 10 * 60 * 1000;
 const analyticsMaxAttempts = 180;
 
-app.set('trust proxy', 1);
+// O Render termina o TLS antes do Node; em desenvolvimento não confiamos em
+// X-Forwarded-* enviado diretamente pelo cliente.
+app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 
 /*
  * ==========================================================
@@ -289,17 +293,16 @@ app.set('trust proxy', 1);
  * ==========================================================
  */
 
+function pruneRateMap(map, now = Date.now(), maximum = 5000) {
+  for (const [key, value] of map) {
+    if (value?.resetAt && value.resetAt <= now) map.delete(key);
+  }
+  while (map.size > maximum) map.delete(map.keys().next().value);
+}
+
 function loginAttemptState(ip) {
   const now = Date.now();
-
-  for (const [key, value] of loginAttempts) {
-    if (
-      value.resetAt <= now &&
-      value.blockedUntil <= now
-    ) {
-      loginAttempts.delete(key);
-    }
-  }
+  pruneRateMap(loginAttempts, now);
 
   return (
     loginAttempts.get(ip) || {
@@ -336,6 +339,7 @@ function registerFailedLogin(ip) {
 
 function checkAssistantLimit(ip) {
   const now = Date.now();
+  pruneRateMap(assistantAttempts, now);
 
   const current =
     assistantAttempts.get(ip) || {
@@ -396,6 +400,7 @@ function checkAssistantLimit(ip) {
 
 function checkContactLimit(ip) {
   const now = Date.now();
+  pruneRateMap(contactAttempts, now);
   const current = contactAttempts.get(ip) || {
     count: 0,
     resetAt: now + contactWindowMs
@@ -424,6 +429,7 @@ function checkContactLimit(ip) {
 
 function checkAnalyticsLimit(ip) {
   const now = Date.now();
+  pruneRateMap(analyticsAttempts, now);
   const current = analyticsAttempts.get(ip) || { count: 0, resetAt: now + analyticsWindowMs };
   if (current.resetAt <= now) {
     current.count = 0;
@@ -445,6 +451,14 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;'
   }[character]));
+}
+
+function safeErrorMessage(error, fallback = 'Erro interno.') {
+  const raw = String(error?.message || '').replace(/[\r\n\t]+/g, ' ').trim();
+  if (!raw) return fallback;
+  return raw
+    .replace(/(api[-_ ]?key|client[-_ ]?secret|access[-_ ]?token|refresh[-_ ]?token|password|cookie|csrf)[^,; ]*/gi, '$1=[redacted]')
+    .slice(0, 300);
 }
 
 function contactMessageHtml(message) {
@@ -1561,9 +1575,13 @@ async function skipRoundAudience(
  */
 
 const allowedOrigins =
-  String(
-    process.env.SITE_URL || ''
-  )
+  [
+    process.env.SITE_URL,
+    process.env.PUBLIC_URL,
+    process.env.RENDER_EXTERNAL_URL,
+    'https://promoshop.jhonatafaraujo.com.br',
+    'https://promoshop.onrender.com'
+  ].join(',')
     .split(',')
     .map(
       (value) =>
@@ -1608,6 +1626,15 @@ app.use(
     res,
     next
   ) => {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+    const isHttps = req.secure || forwardedProto === 'https';
+    if (process.env.NODE_ENV === 'production' && !isHttps && req.method !== 'OPTIONS') {
+      const host = String(req.get('host') || '').split(',')[0].trim();
+      if (host && !/^localhost(?::\d+)?$/i.test(host) && !/^127\.0\.0\.1(?::\d+)?$/.test(host)) {
+        return res.redirect(308, `https://${host}${req.originalUrl}`);
+      }
+    }
+
     res.setHeader(
       'X-Content-Type-Options',
       'nosniff'
@@ -1628,17 +1655,18 @@ app.use(
       'camera=(), microphone=(), geolocation=(), payment=()'
     );
 
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Origin-Agent-Cluster', '?1');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'"
     );
 
-    if (
-      req.secure ||
-      req.headers[
-        'x-forwarded-proto'
-      ] === 'https'
-    ) {
+    if (isHttps) {
       res.setHeader(
         'Strict-Transport-Security',
         'max-age=31536000; includeSubDomains'
@@ -1665,6 +1693,12 @@ app.use(
     next();
   }
 );
+
+app.use((req, res, next) => {
+  const contentLength = Number(req.headers['content-length'] || 0);
+  if (contentLength > 1_048_576) return res.status(413).json({ error: 'A solicitação excede o limite permitido.' });
+  next();
+});
 
 app.use(
   express.json({
@@ -2067,6 +2101,27 @@ function publicHomeAudiences(config) {
     }));
 }
 
+function publicOfferPayload(offer, config, analytics) {
+  return {
+    id: String(offer.id || ''),
+    title: String(offer.title || '').trim(),
+    store: String(offer.store || '').trim(),
+    category: String(offer.category || '').trim(),
+    price: Number(offer.price || 0),
+    originalPrice: Number(offer.originalPrice || 0),
+    image: String(offer.image || '').trim(),
+    affiliateUrl: String(offer.affiliateUrl || '').trim(),
+    productUrl: String(offer.productUrl || '').trim(),
+    freeShipping: Boolean(offer.freeShipping),
+    featured: Boolean(offer.featured),
+    createdAt: offer.createdAt || null,
+    updatedAt: offer.updatedAt || null,
+    publicSlug: offerPublicSlug(offer),
+    qualityScore: offerQuality(offer, config).score,
+    rankingScore: analytics ? smartOfferScore(offer, config, analytics, Date.now()) : undefined
+  };
+}
+
 app.get('/api/home', async (req, res) => {
   const data = await readStore();
   const activeCoupons = (Array.isArray(data.coupons) ? data.coupons : []).filter((coupon) => {
@@ -2096,7 +2151,7 @@ app.get(
       .filter((offer) => publicOfferAllowed(offer, config, nowMs));
 
     if (String(req.query?.paged || '') !== '1') {
-      return res.json(eligible.sort((a, b) => Number(b.featured) - Number(a.featured)));
+      return res.json(eligible.sort((a, b) => Number(b.featured) - Number(a.featured)).map((offer) => publicOfferPayload(offer, config, analytics)));
     }
 
     const query = String(req.query?.query || '').trim().toLocaleLowerCase('pt-BR').slice(0, 120);
@@ -2142,12 +2197,7 @@ app.get(
 
     res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     return res.json({
-      offers: filtered.slice(offset, offset + limit).map((offer) => ({
-        ...offer,
-        publicSlug: offerPublicSlug(offer),
-        qualityScore: offerQuality(offer, config).score,
-        rankingScore: smartOfferScore(offer, config, analytics, nowMs)
-      })),
+      offers: filtered.slice(offset, offset + limit).map((offer) => publicOfferPayload(offer, config, analytics)),
       total: filtered.length,
       offset,
       limit,
@@ -2193,7 +2243,7 @@ app.get('/api/offer/:slug', async (req, res) => {
   const related = eligible.filter((entry) => entry.id !== offer.id && entry.category === offer.category && !comparisons.some((item) => item.id === entry.id))
     .sort((a, b) => smartOfferScore(b, config, analytics) - smartOfferScore(a, config, analytics)).slice(0, 6);
   res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
-  res.json({ offer: { ...offer, publicSlug: offerPublicSlug(offer), qualityScore: offerQuality(offer, config).score }, comparisons: comparisons.map((entry) => ({ ...entry, publicSlug: offerPublicSlug(entry) })), related: related.map((entry) => ({ ...entry, publicSlug: offerPublicSlug(entry) })) });
+  res.json({ offer: publicOfferPayload(offer, config, analytics), comparisons: comparisons.map((entry) => publicOfferPayload(entry, config, analytics)), related: related.map((entry) => publicOfferPayload(entry, config, analytics)) });
 });
 
 app.get(
@@ -3052,6 +3102,12 @@ app.post(
         });
     }
 
+    const username = String(req.body?.username || '').trim().slice(0, 100);
+    const password = String(req.body?.password || '').slice(0, 256);
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Informe usuário e senha.' });
+    }
+
     const expectedUser =
       process.env
         .ADMIN_USER ||
@@ -3059,15 +3115,9 @@ app.post(
 
     const userOk =
       String(
-        req.body.username ||
+        username ||
         ''
       ) === expectedUser;
-
-    const password =
-      String(
-        req.body.password ||
-        ''
-      );
 
     const environmentPassword =
       String(
@@ -3132,16 +3182,22 @@ app.post(
       clientIp
     );
 
-    res.json({
-      token:
-        createToken(
-          expectedUser,
-          secrets
-            .adminSessionVersion
-        )
-    });
+    const token = createToken(expectedUser, secrets.adminSessionVersion);
+    setSessionCookies(res, token);
+    // Mantido no corpo por compatibilidade com a extensão/testes antigos. O
+    // painel web usa o cookie HttpOnly e não persiste este valor.
+    res.json({ token, authenticated: true });
   }
 );
+
+app.get('/api/auth/session', requireAdmin, (_req, res) => {
+  res.json({ authenticated: true });
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  clearSessionCookies(res);
+  res.json({ ok: true });
+});
 
 /*
  * ==========================================================
@@ -3288,9 +3344,14 @@ app.put(
           JSON.stringify(previousAudiences) !==
           JSON.stringify(body.whatsappAudiences);
 
+        // Aceita somente chaves que já fazem parte da configuração. Isso
+        // impede mass assignment de campos internos (fila, metadados etc.).
+        const configPatch = Object.fromEntries(
+          Object.entries(body).filter(([key]) => Object.prototype.hasOwnProperty.call(data.config, key) && !['__proto__', 'constructor', 'prototype'].includes(key))
+        );
         data.config = {
           ...data.config,
-          ...body
+          ...configPatch
         };
 
         if (Object.prototype.hasOwnProperty.call(body, 'whatsappAudiences')) {
@@ -3444,20 +3505,16 @@ app.put(
     req,
     res
   ) => {
-    if (
-      req.body
-        ?.adminPassword &&
-      String(
-        req.body
-          .adminPassword
-      ).length < 12
-    ) {
+    if (req.body?.adminPassword && String(req.body.adminPassword).length < 12) {
       return res
         .status(400)
         .json({
           error:
             'A nova senha deve ter pelo menos 12 caracteres.'
         });
+    }
+    if (req.body?.adminPassword && String(req.body.adminPassword).length > 256) {
+      return res.status(400).json({ error: 'A nova senha deve ter no máximo 256 caracteres.' });
     }
 
     const updated =
@@ -3694,22 +3751,30 @@ app.post(
     req,
     res
   ) => {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const offer = {
-      ...req.body,
-
       id:
         createId(
           'offer'
         ),
 
+      title: String(body.title || '').trim().slice(0, 300),
+      store: String(body.store || 'Outra').trim().slice(0, 80),
+      category: String(body.category || '').trim().slice(0, 100),
+      image: String(body.image || '').trim().slice(0, 2000),
+      affiliateUrl: String(body.affiliateUrl || '').trim().slice(0, 3000),
+      freeShipping: body.freeShipping === true,
+      featured: body.featured !== false,
+      status: body.status === 'paused' ? 'paused' : 'active',
+
       price:
         Number(
-          req.body.price
+          body.price
         ),
 
       originalPrice:
         Number(
-          req.body
+          body
             .originalPrice ||
           0
         ),
@@ -3726,19 +3791,14 @@ app.post(
         'manual'
     };
 
-    if (
-      !offer.title ||
-      !offer.price ||
-      !offer.affiliateUrl
-    ) {
+    if (!offer.title || !(offer.price > 0) || !/^https:\/\//i.test(offer.affiliateUrl)) {
       return res
         .status(400)
         .json({
           error:
-            'Produto, preço e link são obrigatórios.'
+            'Produto, preço válido e link HTTPS são obrigatórios.'
         });
     }
-
     await updateStore(
       (data) => {
         offer.targetAudienceCodes =
@@ -3918,6 +3978,7 @@ app.put(
     req,
     res
   ) => {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     let updated;
     let found = false;
     let validationError = '';
@@ -3956,11 +4017,8 @@ app.put(
           const key
           of allowed
         ) {
-          if (
-            key in req.body
-          ) {
-            candidate[key] =
-              req.body[key];
+          if (key in body) {
+            candidate[key] = body[key];
           }
         }
 
@@ -3973,6 +4031,7 @@ app.put(
         candidate.affiliateUrl = String(candidate.affiliateUrl || '').trim().slice(0, 3000);
         candidate.freeShipping = Boolean(candidate.freeShipping);
         candidate.featured = Boolean(candidate.featured);
+        candidate.status = candidate.status === 'paused' ? 'paused' : 'active';
 
         if (!candidate.title || !(candidate.price > 0) || !/^https:\/\//i.test(candidate.affiliateUrl)) {
           validationError = 'Produto, preço válido e link HTTPS são obrigatórios.';
@@ -4256,14 +4315,37 @@ app.post(
       return res.status(400).json({ error: 'Arquivo de backup inválido ou incompatível.' });
     }
 
+    const restoredCoupons = Array.isArray(backup.coupons)
+      ? backup.coupons.slice(0, 300).map((coupon) => {
+        if (!coupon || typeof coupon !== 'object' || Array.isArray(coupon)) return null;
+        const parsed = parseCouponInput(coupon);
+        if (parsed.error) return null;
+        return {
+          id: String(coupon.id || createId('coupon')).slice(0, 120),
+          ...parsed.fields,
+          shortCode: /^[a-z0-9_-]{4,80}$/i.test(String(coupon.shortCode || '')) ? String(coupon.shortCode).toLowerCase() : createCouponShortCode([]),
+          source: ['manual', 'extension'].includes(coupon.source) ? coupon.source : 'manual',
+          approvalStatus: coupon.approvalStatus === 'approved' ? 'approved' : 'pending',
+          createdAt: String(coupon.createdAt || new Date().toISOString()).slice(0, 40),
+          updatedAt: new Date().toISOString()
+        };
+      }).filter(Boolean)
+      : null;
+
     await updateStore((data) => {
       if (backup.config && typeof backup.config === 'object' && !Array.isArray(backup.config)) {
         const allowedKeys = new Set(Object.keys(data.config || {}));
         const restoredConfig = Object.fromEntries(Object.entries(backup.config).filter(([key]) => allowedKeys.has(key)));
         data.config = { ...data.config, ...restoredConfig };
       }
-      if (Array.isArray(backup.coupons)) {
-        data.coupons = backup.coupons.filter((coupon) => coupon && typeof coupon === 'object' && coupon.id && coupon.title && coupon.link).slice(0, 300);
+      if (restoredCoupons) {
+        const seenCodes = new Set();
+        data.coupons = restoredCoupons.map((coupon) => {
+          let shortCode = coupon.shortCode;
+          while (seenCodes.has(shortCode)) shortCode = createCouponShortCode([...seenCodes].map((code) => ({ shortCode: code })));
+          seenCodes.add(shortCode);
+          return { ...coupon, shortCode, shortUrl: '' };
+        });
       }
     });
 
@@ -4584,7 +4666,7 @@ function extensionRequestBody(req) {
 function extensionTokenMatches(provided, expected) {
   const left = Buffer.from(String(provided || ''));
   const right = Buffer.from(String(expected || ''));
-  return Boolean(right.length) && left.length === right.length && crypto.timingSafeEqual(left, right);
+  return right.length >= 32 && left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 function extensionCouponFingerprint(coupon) {
@@ -4625,6 +4707,7 @@ app.post('/api/extension/coupons', async (req, res) => {
   if (!extensionTokenMatches(token, secrets.extensionIngestToken)) return res.status(401).json({ error: 'Token da extensão inválido.' });
 
   const now = Date.now();
+  pruneRateMap(extensionRateLimit, now, 5000);
   const rateKey = `${req.ip || 'unknown'}:${token.slice(-8)}`;
   const recent = extensionRateLimit.get(rateKey) || [];
   const activeRequests = recent.filter((timestamp) => now - timestamp < 60_000);
@@ -7948,13 +8031,21 @@ cron.schedule(
   }
 );
 
+// Não devolva stack traces, caminhos locais ou mensagens de serviços externos
+// ao navegador. O detalhe fica apenas no log do servidor, já redigido.
+app.use((error, _req, res, _next) => {
+  console.error('Erro interno:', safeErrorMessage(error));
+  if (res.headersSent) return;
+  res.status(error?.status === 413 ? 413 : 500).json({ error: error?.status === 413 ? 'A solicitação excede o limite permitido.' : 'Não foi possível concluir a solicitação.' });
+});
+
 /*
  * ==========================================================
  * INICIALIZAÇÃO
  * ==========================================================
  */
 
-app.listen(
+const httpServer = app.listen(
   port,
   () => {
     console.log(
@@ -7995,3 +8086,7 @@ app.listen(
     instagramTimer.unref?.();
   }
 );
+
+httpServer.requestTimeout = 120_000;
+httpServer.headersTimeout = 125_000;
+httpServer.keepAliveTimeout = 5_000;
