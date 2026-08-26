@@ -370,7 +370,8 @@ function localFeedCaption(stories = []) {
 
 export function sanitizeFeedCaption(value, stories = []) {
   const supplied = String(value || '').trim();
-  const useLocalModel = !supplied || supplied === DEFAULT_FEED_CAPTION;
+  const looksLikePreviousAutomaticCaption = /^🔥\s*Ofertas selecionadas do dia/i.test(supplied) && (/\n•\s/.test(supplied) || /\{offers\}/i.test(supplied));
+  const useLocalModel = !supplied || supplied === DEFAULT_FEED_CAPTION || looksLikePreviousAutomaticCaption;
   let caption = useLocalModel ? localFeedCaption(stories) : supplied;
   const summary = localFeedSummary(stories);
   caption = caption.replace(/\{offers\}/gi, summary);

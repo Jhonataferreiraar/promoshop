@@ -80,5 +80,6 @@ const localCaption = sanitizeFeedCaption('', [{ sourceId: 'offer-1', title: 'Not
 assert.match(localCaption, /Acesse a bio do perfil/);
 assert.doesNotMatch(localCaption, /Notebook extremamente longo/);
 assert.doesNotMatch(sanitizeFeedCaption('{offers}', [{ sourceId: 'offer-2', title: 'Produto que deve ficar fora da legenda', store: 'Shopee', discount: 15 }]), /Produto que deve ficar fora da legenda/);
+assert.doesNotMatch(sanitizeFeedCaption('🔥 Ofertas selecionadas do dia\n\n• Produto antigo que não deve continuar na legenda', [{ sourceId: 'offer-3', title: 'Produto novo', store: 'AliExpress', discount: 10 }]), /Produto antigo/);
 
 console.log('Instagram: temas, filtros, duplicidade e imagem 1080x1920 validados.');
