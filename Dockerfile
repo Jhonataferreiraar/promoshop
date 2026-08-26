@@ -16,6 +16,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY scripts/patch-whatsapp-web.mjs ./scripts/
 RUN npm ci --include=dev
 
 COPY . .
