@@ -81,6 +81,7 @@ import {
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
+import { hasPendingSource, queueItemSourceMatches, wasRecentlySentToAudience } from './whatsappDedup.js';
 
 const app = express();
 
@@ -3410,6 +3411,7 @@ app.put(
           monitoringCollectionHours: [6, 1, 168],
           monitoringFailedQueueLimit: [10, 1, 500],
           extensionMaxCouponsPerRequest: [10, 1, 50],
+          whatsappAudienceCooldownHours: [24, 0, 720],
           instagramIntervalMinutes: [20, 1, 1440],
           instagramMaxPerDay: [15, 1, 1500],
           instagramMinimumDiscount: [20, 0, 99],
@@ -4180,17 +4182,17 @@ app.post(
           continue;
         }
 
-        const history = data.queue.filter((item) => item.offerId === offer.id);
+        const history = data.queue.filter((item) => queueItemSourceMatches(item, offer));
         if (mode === 'missing' && history.length) {
           skippedHistory += 1;
           continue;
         }
-        if (mode === 'all' && history.some((item) => ['pending', 'publishing'].includes(item.status))) {
+        const queueItem = makeQueueItem(offer, data.config);
+        if (mode === 'all' && hasPendingSource(data.queue, queueItem)) {
           skippedPending += 1;
           continue;
         }
 
-        const queueItem = makeQueueItem(offer, data.config);
         if (!Array.isArray(queueItem.targetAudienceCodes) || !queueItem.targetAudienceCodes.length) {
           skippedNoAudience += 1;
           continue;
@@ -4218,6 +4220,7 @@ app.post(
     res
   ) => {
     let queueItem;
+    let alreadyQueued = false;
 
     await updateStore(
       (data) => {
@@ -4239,7 +4242,7 @@ app.post(
           return;
         }
 
-        queueItem = {
+        const nextItem = {
           ...makeQueueItem(
             offer,
             data.config
@@ -4251,9 +4254,18 @@ app.post(
             )
         };
 
-        data.queue.push(
-          queueItem
+        const existing = data.queue.find(
+          (item) => ['pending', 'publishing'].includes(item.status) && queueItemSourceMatches(item, nextItem)
         );
+        if (existing) {
+          if (nextItem.force) existing.force = true;
+          queueItem = existing;
+          alreadyQueued = true;
+          return;
+        }
+
+        queueItem = nextItem;
+        data.queue.push(queueItem);
       }
     );
 
@@ -4267,16 +4279,14 @@ app.post(
     }
 
     await addLog(
-      `${queueItem.force ? 'Publicação forçada' : 'Oferta enviada para a fila'}: ${queueItem.offerTitle}`,
-      queueItem.force
-        ? 'success'
-        : 'info'
+      `${alreadyQueued ? 'Oferta já estava na fila' : queueItem.force ? 'Publicação forçada' : 'Oferta enviada para a fila'}: ${queueItem.offerTitle}`,
+      alreadyQueued || queueItem.force ? 'success' : 'info'
     );
 
     res
-      .status(201)
+      .status(alreadyQueued ? 200 : 201)
       .json(
-        queueItem
+        { ...queueItem, alreadyQueued }
       );
   }
 );
@@ -5146,6 +5156,7 @@ app.post(
   requireAdmin,
   async (req, res) => {
     let queueItem;
+    let alreadyQueued = false;
     await updateStore((data) => {
       const coupon = (data.coupons || []).find((entry) => entry.id === req.params.id);
       if (!coupon || coupon.active === false) return;
@@ -5154,7 +5165,7 @@ app.post(
       if (!coupon.shortCode) coupon.shortCode = createCouponShortCode(data.coupons);
       const couponForDelivery = { ...coupon, shortUrl: couponShortUrl(coupon, req) };
       const message = formatCouponMessage(couponForDelivery);
-      queueItem = {
+      const nextItem = {
         id: createId('queue'),
         kind: 'coupon',
         couponId: coupon.id,
@@ -5174,11 +5185,21 @@ app.post(
         error: null,
         force: Boolean(req.body?.force)
       };
+      const existing = data.queue.find(
+        (item) => ['pending', 'publishing'].includes(item.status) && queueItemSourceMatches(item, nextItem)
+      );
+      if (existing) {
+        if (nextItem.force) existing.force = true;
+        queueItem = existing;
+        alreadyQueued = true;
+        return;
+      }
+      queueItem = nextItem;
       data.queue.push(queueItem);
     });
     if (!queueItem) return res.status(400).json({ error: 'Cupom não encontrado, inativo ou sem grupos selecionados.' });
-    await addLog(`${queueItem.force ? 'Cupom priorizado' : 'Cupom enviado para a fila'}: ${queueItem.offerTitle} → ${queueItem.targetAudienceCodes.join(', ')}`, queueItem.force ? 'success' : 'info');
-    return res.status(201).json(queueItem);
+    await addLog(`${alreadyQueued ? 'Cupom já estava na fila' : queueItem.force ? 'Cupom priorizado' : 'Cupom enviado para a fila'}: ${queueItem.offerTitle} → ${queueItem.targetAudienceCodes.join(', ')}`, alreadyQueued || queueItem.force ? 'success' : 'info');
+    return res.status(alreadyQueued ? 200 : 201).json({ ...queueItem, alreadyQueued });
   }
 );
 
@@ -5849,12 +5870,34 @@ app.get(
         .end();
     }
 
+    let store = await readStore();
+    const stalePublishingCutoff = Date.now() - 15 * 60 * 1000;
+    let recoveredPublishing = 0;
+    const hasStalePublishing = store.queue.some((item) => (
+      item.status === 'publishing' &&
+      Number.isFinite(new Date(item.publishingAt || item.createdAt || 0).getTime()) &&
+      new Date(item.publishingAt || item.createdAt || 0).getTime() < stalePublishingCutoff
+    ));
+    if (hasStalePublishing) {
+      await updateStore((data) => {
+        for (const item of data.queue) {
+          const publishedAt = new Date(item.publishingAt || item.createdAt || 0).getTime();
+          if (item.status !== 'publishing' || !Number.isFinite(publishedAt) || publishedAt >= stalePublishingCutoff) continue;
+          item.status = 'pending';
+          item.publishingAt = null;
+          item.error = 'Publicação retomada após uma interrupção do publicador.';
+          recoveredPublishing += 1;
+        }
+      });
+      store = await readStore();
+      await addLog(`${recoveredPublishing} publicação(ões) retomada(s) após uma interrupção do publicador.`, 'info');
+    }
+
     const {
       config,
       queue,
       offers
-    } =
-      await readStore();
+    } = store;
 
     const now =
       new Date();
@@ -5887,6 +5930,20 @@ app.get(
      * G03 recebe somente G03;
      * etc.
      */
+    async function claimQueueItem(item, fields = {}) {
+      let claimed = false;
+      await updateStore((data) => {
+        const saved = data.queue.find((entry) => entry.id === item?.id && entry.status === 'pending');
+        if (!saved) return;
+        Object.assign(saved, fields);
+        saved.status = 'publishing';
+        saved.publishingAt = new Date().toISOString();
+        saved.error = null;
+        claimed = true;
+      });
+      return claimed;
+    }
+
     async function prepareWithAi(
       item,
       roundAudienceCode = ''
@@ -6597,9 +6654,15 @@ app.get(
         !prepared
           .skippedForAudience
       ) {
-        return res.json(
-          prepared
-        );
+        const claimed = await claimQueueItem(forced, {
+          targetAudienceCodes: prepared.targetAudienceCodes,
+          roundAudienceCode: prepared.roundAudienceCode || null,
+          message: prepared.message,
+          messageSource: prepared.messageSource,
+          aiStatus: prepared.aiStatus,
+          aiGenerationVersion: prepared.aiGenerationVersion
+        });
+        if (claimed) return res.json({ ...prepared, status: 'publishing' });
       }
 
       return res
@@ -6623,9 +6686,15 @@ app.get(
         !prepared
           .skippedForAudience
       ) {
-        return res.json(
-          prepared
-        );
+        const claimed = await claimQueueItem(forced, {
+          targetAudienceCodes: prepared.targetAudienceCodes,
+          roundAudienceCode: prepared.roundAudienceCode || null,
+          message: prepared.message,
+          messageSource: prepared.messageSource,
+          aiStatus: prepared.aiStatus,
+          aiGenerationVersion: prepared.aiGenerationVersion
+        });
+        if (claimed) return res.json({ ...prepared, status: 'publishing' });
       }
 
       if (!prepared) {
@@ -6876,6 +6945,10 @@ app.get(
             'pending' &&
           !item.force
       );
+    const configuredCooldownHours = Number(config.whatsappAudienceCooldownHours ?? 24);
+    const audienceCooldownHours = Number.isFinite(configuredCooldownHours)
+      ? Math.max(0, Math.min(720, configuredCooldownHours))
+      : 24;
 
     /*
      * Enquanto existirem públicos
@@ -6901,6 +6974,7 @@ app.get(
        * ====================================================
        */
 
+      let cooldownSkipped = 0;
       const candidates =
         pendingItems.filter(
           (item) => {
@@ -6910,6 +6984,11 @@ app.get(
              */
             const itemRoundId = item.kind === 'coupon' ? item.id : item.offerId;
             if (itemRoundId && round.usedOfferIds.includes(itemRoundId)) {
+              return false;
+            }
+
+            if (wasRecentlySentToAudience(queue, item, audienceCode, audienceCooldownHours, now.getTime())) {
+              cooldownSkipped += 1;
               return false;
             }
 
@@ -6936,7 +7015,7 @@ app.get(
         !candidates.length
       ) {
         await addLog(
-          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}. Grupo ignorado nesta rodada.`,
+          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}${cooldownSkipped ? `; ${cooldownSkipped} oferta(s) já publicada(s) neste grupo nas últimas ${audienceCooldownHours} hora(s).` : ''} Grupo ignorado nesta rodada.`,
           'info'
         );
 
@@ -7000,6 +7079,7 @@ app.get(
            * Registra oficialmente que
            * este item pertence à rodada.
            */
+          let productClaimed = false;
           await updateStore(
             (data) => {
               const saved =
@@ -7014,6 +7094,11 @@ app.get(
               if (!saved) {
                 return;
               }
+
+              saved.status = 'publishing';
+              saved.publishingAt = new Date().toISOString();
+              saved.error = null;
+              productClaimed = true;
 
               saved.roundId =
                 round.id;
@@ -7043,28 +7128,31 @@ app.get(
             }
           );
 
-          await addLog(
-            `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}.`,
-            'success'
-          );
+          if (productClaimed) {
+            await addLog(
+              `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}.`,
+              'success'
+            );
 
-          productPrepared =
-            true;
+            productPrepared = true;
 
-          return res.json({
-            ...prepared,
+            return res.json({
+              ...prepared,
 
-            targetAudienceCodes:
-              [
+              status: 'publishing',
+
+              targetAudienceCodes:
+                [
+                  audienceCode
+                ],
+
+              roundId:
+                round.id,
+
+              roundAudienceCode:
                 audienceCode
-              ],
-
-            roundId:
-              round.id,
-
-            roundAudienceCode:
-              audienceCode
-          });
+            });
+          }
         }
       }
 
@@ -7554,6 +7642,8 @@ app.post(
           new Date()
             .toISOString();
 
+        item.publishingAt = null;
+
         item.error =
           null;
 
@@ -7729,6 +7819,8 @@ app.post(
           item.attempts >= 3
             ? 'failed'
             : 'pending';
+
+        item.publishingAt = null;
 
         item.error =
           String(

@@ -8,6 +8,7 @@ import {
   normalizeMercadoLivreAffiliateUrl
 } from './mercadolivreAffiliate.js';
 import { buildSearchQueryVariants } from './searchRelevance.js';
+import { hasPendingSource } from './whatsappDedup.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -1104,7 +1105,8 @@ export async function runCollection() {
 
       imported += 1;
       if (data.config.autoQueue && offer.status === 'active') {
-        data.queue.push(makeQueueItem(offer, data.config));
+        const queueItem = makeQueueItem(offer, data.config);
+        if (!hasPendingSource(data.queue, queueItem)) data.queue.push(queueItem);
       }
     }
     data.offers = data.offers.slice(0, 500);

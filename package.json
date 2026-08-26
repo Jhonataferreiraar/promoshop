@@ -18,6 +18,7 @@
     "test:group-directory": "node scripts/test-group-directory.mjs",
     "test:whatsapp-media": "node scripts/test-whatsapp-media.mjs",
     "test:whatsapp-patch": "node scripts/test-whatsapp-patch.mjs",
+    "test:whatsapp-dedup": "node scripts/test-whatsapp-dedup.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",
     "test:extension": "node scripts/test-extension.mjs",
     "preview": "vite preview",
