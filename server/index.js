@@ -3463,6 +3463,13 @@ app.put(
         if (!['daily', 'weekly'].includes(String(data.config.instagramFeedCarouselFrequency || ''))) data.config.instagramFeedCarouselFrequency = previousConfig.instagramFeedCarouselFrequency || 'daily';
         data.config.instagramFeedEnabled = data.config.instagramFeedEnabled === true;
         data.config.instagramFeedAutoFromWhatsapp = data.config.instagramFeedAutoFromWhatsapp === true;
+        const previousFeedDays = Array.isArray(previousConfig.instagramFeedPublishingDays)
+          ? previousConfig.instagramFeedPublishingDays
+          : [1, 3, 5];
+        const requestedFeedDays = Array.isArray(data.config.instagramFeedPublishingDays)
+          ? [...new Set(data.config.instagramFeedPublishingDays.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b)
+          : [];
+        data.config.instagramFeedPublishingDays = requestedFeedDays.length ? requestedFeedDays : (previousFeedDays.length ? previousFeedDays : [1, 3, 5]);
         data.config.instagramFeedCaption = String(data.config.instagramFeedCaption || '').trim().slice(0, 2200);
         if (!/^v\d+\.\d+$/.test(String(data.config.instagramApiVersion || ''))) data.config.instagramApiVersion = previousConfig.instagramApiVersion || 'v25.0';
         for (const key of ['instagramRedirectUri', 'instagramCtaText', 'instagramDisclosureText']) {

@@ -1,6 +1,15 @@
 import React, { useMemo, useState } from 'react';
 
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
+const feedDays = [
+  { value: 1, label: 'Segunda' },
+  { value: 2, label: 'Terça' },
+  { value: 3, label: 'Quarta' },
+  { value: 4, label: 'Quinta' },
+  { value: 5, label: 'Sexta' },
+  { value: 6, label: 'Sábado' },
+  { value: 0, label: 'Domingo' }
+];
 
 function keyFor(kind, id) { return `${kind}:${id}`; }
 function formatDate(value) {
@@ -50,6 +59,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
         instagramFeedPostType: config.instagramFeedPostType === 'carousel' ? 'carousel' : 'single', instagramFeedFormat: format,
         instagramFeedCarouselFrequency: config.instagramFeedCarouselFrequency === 'weekly' ? 'weekly' : 'daily',
         instagramFeedCarouselsPerDay: config.instagramFeedCarouselsPerDay ?? 1, instagramFeedCarouselsPerWeek: config.instagramFeedCarouselsPerWeek ?? 3,
+        instagramFeedPublishingDays: Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5],
         instagramFeedPublishingStart: config.instagramFeedPublishingStart || '09:00', instagramFeedPublishingEnd: config.instagramFeedPublishingEnd || '21:00',
         instagramFeedIntervalMinutes: config.instagramFeedIntervalMinutes ?? 120, instagramFeedMaxPerDay: config.instagramFeedMaxPerDay ?? 3,
         instagramFeedMinimumDiscount: config.instagramFeedMinimumDiscount ?? 20, instagramFeedDuplicateDays: config.instagramFeedDuplicateDays ?? 7,
@@ -102,6 +112,13 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
     finally { setBusy(''); }
   }
 
+  function togglePublishingDay(day, checked) {
+    const current = Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5];
+    const next = checked ? [...new Set([...current, day])] : current.filter((entry) => Number(entry) !== day);
+    if (!next.length) return setMessage('Selecione pelo menos um dia para publicar no Feed.');
+    setConfig({ instagramFeedPublishingDays: next.sort((a, b) => a - b) });
+  }
+
   return <section className="panel instagram-feed-panel">
     <div className="panel-heading"><div><span className="section-step">FEED DO INSTAGRAM</span><h2>Posts e carrosséis automáticos</h2><p>O Feed fica separado dos Stories e, na automação, usa as promoções mais recentes que foram publicadas nos grupos.</p></div></div>
     <div className="instagram-toggle-grid">
@@ -117,6 +134,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       <label>Carrosséis por semana<input type="number" min="1" max="21" value={config.instagramFeedCarouselsPerWeek ?? 3} onChange={(event) => setConfig({ instagramFeedCarouselsPerWeek: event.target.value })} /><small>Usado no modo semanal.</small></label>
       <label>Começar às<input type="time" value={config.instagramFeedPublishingStart || '09:00'} onChange={(event) => setConfig({ instagramFeedPublishingStart: event.target.value })} /></label>
       <label>Terminar às<input type="time" value={config.instagramFeedPublishingEnd || '21:00'} onChange={(event) => setConfig({ instagramFeedPublishingEnd: event.target.value })} /></label>
+      <div className="instagram-feed-days wide-field"><strong>Dias para publicar</strong><small>Escolha em quais dias a automação poderá publicar. Padrão: segunda, quarta e sexta.</small><div className="instagram-feed-day-list">{feedDays.map((day) => <label key={day.value} className="instagram-feed-day"><input type="checkbox" checked={(Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5]).map(Number).includes(day.value)} onChange={(event) => togglePublishingDay(day.value, event.target.checked)} /><span>{day.label}</span></label>)}</div></div>
       <label>Intervalo entre posts<input type="number" min="5" max="1440" value={config.instagramFeedIntervalMinutes ?? 120} onChange={(event) => setConfig({ instagramFeedIntervalMinutes: event.target.value })} /><small>Minutos.</small></label>
       <label>Máximo por dia<input type="number" min="1" max="30" value={config.instagramFeedMaxPerDay ?? 3} onChange={(event) => setConfig({ instagramFeedMaxPerDay: event.target.value })} /></label>
       <label>Desconto mínimo<input type="number" min="0" max="99" value={config.instagramFeedMinimumDiscount ?? 20} onChange={(event) => setConfig({ instagramFeedMinimumDiscount: event.target.value })} /></label>

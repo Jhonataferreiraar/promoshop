@@ -219,6 +219,7 @@ const initialData = {
     instagramFeedCarouselsPerWeek: 3,
     instagramFeedPublishingStart: '09:00',
     instagramFeedPublishingEnd: '21:00',
+    instagramFeedPublishingDays: [1, 3, 5],
     instagramFeedIntervalMinutes: 120,
     instagramFeedMaxPerDay: 3,
     instagramFeedMinimumDiscount: 20,

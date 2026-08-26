@@ -636,7 +636,14 @@ function withinSchedule(config, date = new Date()) {
 }
 
 function withinFeedSchedule(config, date = new Date()) {
-  const parts = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
+  const timeZone = 'America/Sao_Paulo';
+  const allowedDays = Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length
+    ? config.instagramFeedPublishingDays.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [1, 3, 5];
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(date);
+  const weekdayNumbers = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  if (!allowedDays.includes(weekdayNumbers[weekday])) return false;
+  const parts = new Intl.DateTimeFormat('pt-BR', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
   const now = `${parts.find((part) => part.type === 'hour')?.value || '00'}:${parts.find((part) => part.type === 'minute')?.value || '00'}`;
   const start = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingStart) ? config.instagramFeedPublishingStart : '09:00';
   const end = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingEnd) ? config.instagramFeedPublishingEnd : '21:00';
