@@ -11,6 +11,10 @@ import {
   buildMentionAllPayload,
   uniqueParticipantIds
 } from './whatsappMentions.js';
+import {
+  shouldMentionEveryone,
+  uniqueWhatsAppDestinations
+} from './whatsappDestinations.js';
 
 const { Client, LocalAuth, MessageMedia } = pkg;
 
@@ -236,23 +240,6 @@ function isWhatsAppDestination(id) {
   return isWhatsAppGroup(id) || isWhatsAppChannel(id);
 }
 
-function uniqueDestinations(destinations) {
-  const seen = new Set();
-  const unique = [];
-
-  for (const destination of destinations) {
-    const normalizedName = normalizeGroupName(destination?.name);
-    const key = normalizedName
-      ? `name:${normalizedName}`
-      : `id:${String(destination?.id || '')}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(destination);
-  }
-
-  return unique;
-}
-
 async function loadGroupParticipantIds(groupId) {
   const cached = groupParticipantCache.get(groupId);
   if (cached && Date.now() - cached.loadedAt < GROUP_PARTICIPANT_CACHE_MS) {
@@ -269,8 +256,12 @@ async function loadGroupParticipantIds(groupId) {
   return ids;
 }
 
-async function buildDelivery(destination, message) {
-  const mentionEveryone = mentionAllEnabled && isWhatsAppGroup(destination.id);
+async function buildDelivery(destination, message, item) {
+  const mentionEveryone = shouldMentionEveryone({
+    enabled: mentionAllEnabled,
+    item,
+    destination
+  });
   const baseOptions = {
     // Canais não possuem conversa a ser marcada como lida antes do envio.
     sendSeen: !isWhatsAppChannel(destination.id)
@@ -562,7 +553,10 @@ async function resolveDestinations(item) {
     return [];
   }
 
-  const unique = uniqueDestinations(destinations);
+  // Comunidade, grupo geral e canal podem usar exatamente o mesmo nome, mas
+  // têm IDs diferentes. Deduplicar pelo nome descartava esses destinos antes
+  // do envio; o ID é a identidade correta no WhatsApp.
+  const unique = uniqueWhatsAppDestinations(destinations);
   if (unique.length !== destinations.length) {
     console.warn(
       `Destinos duplicados ignorados: ${destinations.length - unique.length}.`
@@ -610,7 +604,7 @@ async function processQueue() {
         console.warn(`Destino já protegido contra repetição: ${destination.name || destination.id}`);
         continue;
       }
-      const delivery = await buildDelivery(destination, item.message);
+      const delivery = await buildDelivery(destination, item.message, item);
       let sent = false;
       let lastSendError;
       // O destino já foi reservado no servidor. Não repetimos a chamada em
