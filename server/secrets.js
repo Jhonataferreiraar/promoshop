@@ -8,6 +8,10 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const keyFile = path.join(dataDir, '.secret-key');
 const secretsFile = path.join(dataDir, 'secrets.enc');
 let secretsUpdateQueue = Promise.resolve();
+let cachedSecrets = null;
+let cachedSecretsAt = 0;
+let secretsReadPromise = null;
+const SECRETS_CACHE_TTL_MS = 5_000;
 
 export function normalizeApiKey(value) {
   return String(value || '')
@@ -60,7 +64,14 @@ async function decrypt(payload) {
 async function writeSecrets(value) {
   const temporaryFile = `${secretsFile}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   await fs.writeFile(temporaryFile, await encrypt(value), { encoding: 'utf8', mode: 0o600 });
-  await fs.rename(temporaryFile, secretsFile);
+  try {
+    await fs.rename(temporaryFile, secretsFile);
+  } catch (error) {
+    await fs.unlink(temporaryFile).catch(() => { });
+    throw error;
+  }
+  cachedSecrets = value;
+  cachedSecretsAt = Date.now();
 }
 
 async function defaults() {
@@ -115,20 +126,34 @@ async function defaults() {
 }
 
 export async function readSecrets() {
-  await fs.mkdir(dataDir, { recursive: true });
-  try {
-    const value = await decrypt(await fs.readFile(secretsFile, 'utf8'));
-    if (!value.brevoInboundToken) {
-      value.brevoInboundToken = crypto.randomBytes(32).toString('hex');
-      await writeSecrets(value);
-    }
-    return value;
+  if (cachedSecrets && Date.now() - cachedSecretsAt < SECRETS_CACHE_TTL_MS) {
+    return structuredClone(cachedSecrets);
   }
-  catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
-    const value = await defaults();
-    await writeSecrets(value);
-    return value;
+  if (secretsReadPromise) return secretsReadPromise;
+  secretsReadPromise = (async () => {
+    await fs.mkdir(dataDir, { recursive: true });
+    try {
+      const value = await decrypt(await fs.readFile(secretsFile, 'utf8'));
+      if (!value.brevoInboundToken) {
+        value.brevoInboundToken = crypto.randomBytes(32).toString('hex');
+        await writeSecrets(value);
+      } else {
+        cachedSecrets = value;
+        cachedSecretsAt = Date.now();
+      }
+      return structuredClone(value);
+    }
+    catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      const value = await defaults();
+      await writeSecrets(value);
+      return structuredClone(value);
+    }
+  })();
+  try {
+    return await secretsReadPromise;
+  } finally {
+    secretsReadPromise = null;
   }
 }
 
