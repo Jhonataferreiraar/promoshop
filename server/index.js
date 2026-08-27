@@ -82,6 +82,7 @@ import {
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
+import { terminateChildProcess } from './whatsappProcess.js';
 
 const app = express();
 
@@ -126,6 +127,8 @@ let whatsappProcess = null;
 let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
+let whatsappReconnectPromise = null;
+const intentionallyStoppedWhatsappChildren = new WeakSet();
 let collectionInProgress = false;
 let lastDeferredCollectionRoundId = '';
 const extensionRateLimit = new Map();
@@ -1850,6 +1853,7 @@ async function startWhatsappWorker({
         },
 
         windowsHide: true,
+        detached: process.platform !== 'win32',
         stdio: 'inherit'
       }
     );
@@ -1921,9 +1925,8 @@ async function startWhatsappWorker({
 
       if (
         whatsappStopRequested ||
-        !whatsappAutoStartEnabled(
-          config
-        )
+        intentionallyStoppedWhatsappChildren.has(child) ||
+        !whatsappAutoStartEnabled(config)
       ) {
         return;
       }
@@ -2002,6 +2005,41 @@ async function startWhatsappWorker({
           ? 'Aguarde o código de pareamento.'
           : 'Aguarde o QR Code.'
   };
+}
+
+async function stopWhatsappWorkerProcess() {
+  if (whatsappRestartTimer) clearTimeout(whatsappRestartTimer);
+  whatsappRestartTimer = null;
+
+  const child = whatsappProcess;
+  if (!child || child.exitCode !== null) {
+    if (whatsappProcess === child) whatsappProcess = null;
+    return { exited: true, forced: false };
+  }
+
+  whatsappStopRequested = true;
+  intentionallyStoppedWhatsappChildren.add(child);
+  const result = await terminateChildProcess(child, {
+    processGroup: process.platform !== 'win32'
+  });
+  if (whatsappProcess === child) whatsappProcess = null;
+  return result;
+}
+
+async function reconnectWhatsappWorker() {
+  if (whatsappReconnectPromise) return whatsappReconnectPromise;
+  whatsappReconnectPromise = (async () => {
+    const stopped = await stopWhatsappWorkerProcess();
+    if (!stopped.exited) throw new Error('O publicador anterior não encerrou corretamente. Tente novamente em alguns segundos.');
+    whatsappStopRequested = false;
+    whatsappRestartAttempts = 0;
+    return startWhatsappWorker({ mode: 'qr', automatic: true });
+  })();
+  try {
+    return await whatsappReconnectPromise;
+  } finally {
+    whatsappReconnectPromise = null;
+  }
 }
 
 
@@ -5752,28 +5790,7 @@ app.post(
   ) => {
     whatsappStopRequested =
       true;
-
-    if (
-      whatsappRestartTimer
-    ) {
-      clearTimeout(
-        whatsappRestartTimer
-      );
-    }
-
-    whatsappRestartTimer =
-      null;
-
-    if (
-      whatsappProcess &&
-      whatsappProcess
-        .exitCode === null
-    ) {
-      whatsappProcess.kill();
-    }
-
-    whatsappProcess =
-      null;
+    const stopped = await stopWhatsappWorkerProcess();
 
     updateWhatsappRuntime({
       status: 'offline',
@@ -5804,7 +5821,8 @@ app.post(
     );
 
     res.json({
-      ok: true
+      ok: stopped.exited,
+      forced: stopped.forced
     });
   }
 );
@@ -5842,28 +5860,7 @@ app.post(
       });
     }
 
-    if (processRunning) {
-      const processToRestart = whatsappProcess;
-      whatsappStopRequested = true;
-      processToRestart.kill();
-
-      await new Promise((resolve) => {
-        let settled = false;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        };
-        processToRestart.once('exit', finish);
-        setTimeout(finish, 3_000);
-      });
-
-      if (whatsappProcess === processToRestart) whatsappProcess = null;
-      whatsappStopRequested = false;
-    }
-
-    whatsappRestartAttempts = 0;
-    const result = await startWhatsappWorker({ mode: 'qr', automatic: true });
+    const result = await reconnectWhatsappWorker();
 
     return res.json({
       ok: true,
@@ -8714,3 +8711,23 @@ const httpServer = app.listen(
 httpServer.requestTimeout = 120_000;
 httpServer.headersTimeout = 125_000;
 httpServer.keepAliveTimeout = 5_000;
+
+let serverShutdownPromise = null;
+function shutdownServer(signal) {
+  if (serverShutdownPromise) return serverShutdownPromise;
+  serverShutdownPromise = (async () => {
+    console.log(`Encerrando PromoShop com segurança (${signal}).`);
+    whatsappStopRequested = true;
+    const closeHttp = new Promise((resolve) => httpServer.close(resolve));
+    const timeout = new Promise((resolve) => setTimeout(resolve, 10_000));
+    await Promise.race([
+      Promise.allSettled([stopWhatsappWorkerProcess(), closeHttp]),
+      timeout
+    ]);
+    process.exit(0);
+  })();
+  return serverShutdownPromise;
+}
+
+process.once('SIGTERM', () => { void shutdownServer('SIGTERM'); });
+process.once('SIGINT', () => { void shutdownServer('SIGINT'); });

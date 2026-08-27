@@ -94,8 +94,30 @@ let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
 let shuttingDown = false;
+let shutdownPromise = null;
 const groupParticipantCache = new Map();
 const GROUP_PARTICIPANT_CACHE_MS = 5 * 60 * 1000;
+
+function shutdownWhatsappWorker(reason = 'encerramento solicitado', exitCode = 0) {
+  if (shutdownPromise) return shutdownPromise;
+  shuttingDown = true;
+  whatsappReady = false;
+  shutdownPromise = (async () => {
+    console.log(`Encerrando publicador do WhatsApp: ${reason}.`);
+    const timeout = new Promise((resolve) => setTimeout(resolve, 5_000));
+    await Promise.race([
+      Promise.resolve().then(() => client.destroy()).catch((error) => {
+        console.warn(`Não foi possível fechar o Chromium normalmente: ${error.message}`);
+      }),
+      timeout
+    ]);
+    process.exit(exitCode);
+  })();
+  return shutdownPromise;
+}
+
+process.once('SIGTERM', () => { void shutdownWhatsappWorker('sinal de reinicialização'); });
+process.once('SIGINT', () => { void shutdownWhatsappWorker('interrupção manual'); });
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) } });
@@ -693,15 +715,10 @@ client.on('disconnected', async (reason) => {
     String(reason).toUpperCase() === 'LOGOUT' &&
     !shuttingDown
   ) {
-    shuttingDown = true;
-
     console.log(
       'Logout detectado. Encerrando o worker para reinicialização limpa.'
     );
-
-    setTimeout(() => {
-      process.exit(0);
-    }, 1000);
+    void shutdownWhatsappWorker('logout detectado');
   }
 });
 await refreshConfig();
@@ -713,6 +730,5 @@ client.initialize().catch(async (error) => {
     : `Não foi possível abrir o WhatsApp Web: ${error.message}`;
   console.error(message);
   await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'error', message }) }).catch(() => { });
-  process.exitCode = 1;
-  setTimeout(() => process.exit(1), 500);
+  void shutdownWhatsappWorker('falha ao iniciar o WhatsApp Web', 1);
 });
