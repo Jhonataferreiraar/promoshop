@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
 import { readStore } from '../server/store.js';
 import { downloadWhatsappImage } from '../server/whatsappMedia.js';
+import {
+  buildMentionAllPayload,
+  uniqueParticipantIds
+} from './whatsappMentions.js';
 
 const { Client, LocalAuth, MessageMedia } = pkg;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,6 +94,8 @@ let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
 let shuttingDown = false;
+const groupParticipantCache = new Map();
+const GROUP_PARTICIPANT_CACHE_MS = 5 * 60 * 1000;
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) } });
@@ -132,21 +138,60 @@ function isWhatsAppDestination(id) {
   return isWhatsAppGroup(id) || isWhatsAppChannel(id);
 }
 
-function buildDelivery(destination, message) {
-  const mentionEveryone = mentionAllEnabled && isWhatsAppGroup(destination.id);
+async function loadGroupParticipantIds(groupId) {
+  const cached = groupParticipantCache.get(groupId);
+  if (cached && Date.now() - cached.loadedAt < GROUP_PARTICIPANT_CACHE_MS) {
+    return cached.ids;
+  }
 
-  return {
-    message: mentionEveryone ? `@todos\n\n${message}` : message,
-    options: {
-      // A marcação do próprio grupo é o formato usado pelo WhatsApp para
-      // representar o novo @todos sem expor os telefones dos participantes.
-      ...(mentionEveryone
-        ? { groupMentions: [{ subject: 'todos', id: destination.id }] }
-        : {}),
-      // Canais não possuem conversa a ser marcada como lida antes do envio.
-      sendSeen: !isWhatsAppChannel(destination.id)
-    }
+  await refreshActivePage();
+  const chat = await client.getChatById(groupId);
+  if (!chat?.participants) {
+    throw new Error('O WhatsApp não retornou os participantes do grupo.');
+  }
+  const ids = uniqueParticipantIds(chat?.participants || []);
+  groupParticipantCache.set(groupId, { ids, loadedAt: Date.now() });
+  return ids;
+}
+
+async function buildDelivery(destination, message) {
+  const mentionEveryone = mentionAllEnabled && isWhatsAppGroup(destination.id);
+  const baseOptions = {
+    // Canais não possuem conversa a ser marcada como lida antes do envio.
+    sendSeen: !isWhatsAppChannel(destination.id)
   };
+
+  if (!mentionEveryone) {
+    return { message, options: baseOptions };
+  }
+
+  try {
+    const participantIds = await loadGroupParticipantIds(destination.id);
+    const payload = buildMentionAllPayload(message, participantIds);
+
+    console.log(
+      `Marcação @todos preparada para "${destination.name || destination.id}" ` +
+      `(${payload.participantCount} participante(s)).`
+    );
+
+    return {
+      message: payload.message,
+      options: { ...baseOptions, ...payload.options }
+    };
+  } catch (error) {
+    // O marcador nativo ainda é enviado mesmo se a lista de participantes
+    // não puder ser carregada. Assim, versões atuais do WhatsApp Web continuam
+    // conseguindo marcar o grupo sem bloquear a fila de publicação.
+    console.warn(
+      `Não foi possível carregar os participantes de "${destination.name || destination.id}": ${error.message}`
+    );
+
+    const payload = buildMentionAllPayload(message);
+    return {
+      message: payload.message,
+      options: { ...baseOptions, ...payload.options }
+    };
+  }
 }
 
 async function refreshActivePage() {
@@ -428,7 +473,7 @@ async function processQueue() {
     );
     if (!destinations.length) throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
     for (const destination of destinations) {
-      const delivery = buildDelivery(destination, item.message);
+      const delivery = await buildDelivery(destination, item.message);
       let sent = false;
       let lastSendError;
       for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
