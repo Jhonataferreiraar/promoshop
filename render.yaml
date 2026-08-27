@@ -35,7 +35,7 @@ services:
       - key: WEB_CONCURRENCY
         value: "1"
       - key: NODE_OPTIONS
-        value: --max-old-space-size=192
+        value: --max-old-space-size=768
       - key: AUTH_SECRET
         generateValue: true
     disk:

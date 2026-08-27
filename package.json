@@ -25,7 +25,7 @@
     "test:store": "node scripts/test-store-compaction.mjs",
     "test:extension": "node scripts/test-extension.mjs",
     "preview": "vite preview",
-    "start": "node server/index.js",
+    "start": "node --max-old-space-size=768 server/index.js",
     "whatsapp": "node worker/whatsapp.js"
   },
   "dependencies": {

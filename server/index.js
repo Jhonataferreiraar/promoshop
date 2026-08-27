@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { setPriority } from 'node:os';
+import v8 from 'node:v8';
 
 import express from 'express';
 import cors from 'cors';
@@ -1863,6 +1865,15 @@ async function startWhatsappWorkerUnlocked({
 
   whatsappProcess =
     child;
+
+  // O Chromium é o processo mais pesado do serviço. Mantê-lo com prioridade
+  // menor garante que as rotas HTTP e o painel continuem respondendo mesmo
+  // durante autenticação, sincronização de grupos ou carregamento de mídias.
+  try {
+    setPriority(child.pid, 10);
+  } catch {
+    // Alguns ambientes não permitem alterar a prioridade; o worker continua.
+  }
 
   updateWhatsappRuntime({
     status: 'starting',
@@ -8677,6 +8688,9 @@ const httpServer = app.listen(
   () => {
     console.log(
       `PromoShop API disponível em http://localhost:${port}`
+    );
+    console.log(
+      `Limite de memória do servidor: ${Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024)} MB.`
     );
 
     setTimeout(
