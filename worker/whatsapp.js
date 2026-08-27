@@ -28,6 +28,25 @@ function clearStaleBrowserLocks() {
     catch (error) { console.warn(`Não foi possível remover ${lockName}: ${error.message}`); }
   }
 }
+
+function clearRegenerableBrowserCaches() {
+  const sessionPath = path.join(authDataPath, 'session-promoshop');
+  const cachePaths = [
+    'Default/Cache',
+    'Default/Code Cache',
+    'Default/GPUCache',
+    'Default/Service Worker/CacheStorage',
+    'GrShaderCache',
+    'ShaderCache'
+  ];
+  for (const relativePath of cachePaths) {
+    try {
+      rmSync(path.join(sessionPath, relativePath), { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Não foi possível limpar o cache regenerável ${relativePath}: ${error.message}`);
+    }
+  }
+}
 const pairingPhoneNumber = String(process.env.PAIRING_PHONE_NUMBER || '').replace(/\D/g, '');
 const storedSecrets = await readSecrets();
 const workerToken = process.env.WORKER_TOKEN || storedSecrets.workerToken;
@@ -48,6 +67,9 @@ const chromiumArgs = [
   '--disable-sync',
   '--hide-scrollbars',
   '--mute-audio',
+  '--disable-breakpad',
+  '--disk-cache-size=33554432',
+  '--media-cache-size=16777216',
   '--renderer-process-limit=1',
   '--js-flags=--max-old-space-size=128'
 ];
@@ -724,6 +746,7 @@ client.on('disconnected', async (reason) => {
 await refreshConfig();
 await request('/api/worker/heartbeat', { method: 'POST', body: JSON.stringify({ status: 'starting', message: 'Abrindo o WhatsApp Web…' }) }).catch(() => { });
 clearStaleBrowserLocks();
+clearRegenerableBrowserCaches();
 client.initialize().catch(async (error) => {
   const message = error.message?.includes('ERR_NETWORK_ACCESS_DENIED')
     ? 'O Windows bloqueou o acesso ao WhatsApp Web. Reinicie o site fora do modo restrito.'
