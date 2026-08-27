@@ -37,3 +37,16 @@ export function getWhatsappPublicationIntervalState(queue, configuredMinutes, no
     elapsed: remainingMs === 0
   };
 }
+
+export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRound, now = Date.now()) {
+  const interval = getWhatsappPublicationIntervalState(queue, configuredMinutes, now);
+  const roundInProgress = Boolean(
+    activeRound?.id &&
+    Array.isArray(activeRound.pendingAudienceCodes) &&
+    activeRound.pendingAudienceCodes.length
+  );
+
+  return roundInProgress
+    ? { ...interval, elapsed: true, remainingMs: 0, continuingRound: true }
+    : { ...interval, continuingRound: false };
+}

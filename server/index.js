@@ -86,7 +86,7 @@ import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
-import { getWhatsappPublicationIntervalState } from './whatsappSchedule.js';
+import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
 
 const app = express();
 
@@ -7009,37 +7009,6 @@ app.get(
 
     /*
      * ======================================================
-     * INTERVALO CONFIGURADO NO PAINEL
-     * ======================================================
-     *
-     * Este intervalo vale ENTRE OFERTAS AUTOMÁTICAS.
-     *
-     * Exemplo:
-     *
-     * Painel = 15 minutos
-     *
-     * 10:00: oferta para G01
-     * 10:15: oferta para G02
-     * 10:30: oferta para G03
-     *
-     * Publicações marcadas como "Publicar agora" são tratadas antes deste
-     * bloco e continuam imediatas.
-     */
-    const publicationInterval =
-      getWhatsappPublicationIntervalState(
-        queue,
-        config.whatsappIntervalMinutes,
-        now.getTime()
-      );
-
-    if (!publicationInterval.elapsed) {
-      return res
-        .status(204)
-        .end();
-    }
-
-    /*
-     * ======================================================
      * RODADA POR PÚBLICO
      * ======================================================
      *
@@ -7065,12 +7034,39 @@ app.get(
       );
 
     /*
+     * ======================================================
+     * INTERVALO CONFIGURADO NO PAINEL
+     * ======================================================
+     *
+     * O intervalo separa RODADAS, não os grupos da mesma rodada.
+     * Assim, uma rodada entrega uma oferta diferente para cada grupo
+     * disponível; depois que ela terminar, o sistema aguarda o tempo
+     * configurado antes de iniciar a próxima.
+     *
+     * Publicações marcadas como "Publicar agora" são tratadas antes deste
+     * bloco e continuam imediatas.
+     */
+    const publicationInterval =
+      getWhatsappRoundIntervalState(
+        queue,
+        config.whatsappIntervalMinutes,
+        round,
+        now.getTime()
+      );
+
+    if (!publicationInterval.elapsed) {
+      return res
+        .status(204)
+        .end();
+    }
+
+    /*
      * Se NÃO existe rodada,
      * significa que estamos prestes
      * a começar uma nova.
      *
-     * O intervalo já foi validado acima para qualquer oferta automática,
-     * inclusive quando esta rodada já estava em andamento.
+     * O intervalo já foi validado acima para a abertura desta nova rodada.
+     * Rodadas em andamento continuam até atender ou ignorar todos os grupos.
      */
     if (!round) {
       round =
