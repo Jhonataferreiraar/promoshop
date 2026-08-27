@@ -1385,6 +1385,7 @@ function AdminApp() {
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const backupInputRef = useRef(null);
   const dashboardLoadCountRef = useRef(0);
+  const whatsappStateLoadCountRef = useRef(0);
   useEffect(() => {
     api('/auth/session', { cache: 'no-store' })
       .then(() => setToken('cookie'))
@@ -1536,6 +1537,24 @@ function AdminApp() {
       dashboardLoadCountRef.current = Math.max(0, dashboardLoadCountRef.current - 1);
     }
   }
+  async function loadWhatsappState() {
+    if (document.hidden || whatsappStateLoadCountRef.current > 0) return;
+    whatsappStateLoadCountRef.current += 1;
+    try {
+      const result = await authApi('/admin/whatsapp/state');
+      setData((current) => ({
+        ...current,
+        meta: {
+          ...(current.meta || {}),
+          whatsapp: result.whatsapp || current.meta?.whatsapp || {}
+        }
+      }));
+    } catch (error) {
+      if (error.status === 401) setToken(null);
+    } finally {
+      whatsappStateLoadCountRef.current = Math.max(0, whatsappStateLoadCountRef.current - 1);
+    }
+  }
   useEffect(() => { if (token) load(); }, [token]);
   useEffect(() => {
     if (!message) return undefined;
@@ -1572,8 +1591,14 @@ function AdminApp() {
     window.history.replaceState({}, '', '/admin');
   }, []);
   useEffect(() => {
-    if (!token || !['whatsapp', 'instagram'].includes(tab)) return undefined;
-    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 4000);
+    if (!token || tab !== 'whatsapp') return undefined;
+    loadWhatsappState();
+    const interval = window.setInterval(loadWhatsappState, 4000);
+    return () => window.clearInterval(interval);
+  }, [token, tab]);
+  useEffect(() => {
+    if (!token || tab !== 'instagram') return undefined;
+    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 15000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {

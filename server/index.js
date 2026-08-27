@@ -158,7 +158,7 @@ function readIndexHtml() {
  * - Roteamento local caso IA falhe.
  * - Rodada por público.
  * - 1 produto diferente para cada público.
- * - Intervalo configurado no painel entre rodadas.
+ * - Intervalo configurado no painel entre publicações automáticas.
  */
 const aiGenerationVersion = 7;
 
@@ -6002,6 +6002,20 @@ app.post(
   }
 );
 
+// Atualização pequena para a tela do WhatsApp. O painel consultava o
+// dashboard inteiro a cada poucos segundos apenas para acompanhar conexão,
+// QR Code e grupos, transferindo também ofertas, filas, cupons e logs.
+app.get('/api/admin/whatsapp/state', requireAdmin, async (_req, res) => {
+  const data = await readStore();
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    whatsapp: effectiveWhatsappState(data),
+    pendingQueueCount: (Array.isArray(data.queue) ? data.queue : [])
+      .filter((item) => item?.status === 'pending')
+      .length
+  });
+});
+
 /*
  * ==========================================================
  * WORKER - PRÓXIMA OFERTA
@@ -8548,6 +8562,7 @@ app.use(
       // carregamento; os dados do painel são buscados depois pela API.
       if (req.path.startsWith('/admin')) {
         const html = await readIndexHtml();
+        res.set('Cache-Control', 'no-store');
         return res.type('html').send(injectSeo(html, { config: {} }, req));
       }
 
@@ -8555,6 +8570,7 @@ app.use(
         readIndexHtml(),
         readStore()
       ]);
+      res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
       res.type('html').send(injectSeo(html, data, req));
     } catch (error) {
       next(error);

@@ -71,6 +71,12 @@ try {
   assert.ok(csrfToken);
   const authorization = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 200);
+  const whatsappStateResponse = await fetch(`${origin}/api/admin/whatsapp/state`, { headers: authorization });
+  assert.equal(whatsappStateResponse.status, 200);
+  const whatsappState = await whatsappStateResponse.json();
+  assert.ok(whatsappState.whatsapp);
+  assert.equal(Object.hasOwn(whatsappState, 'offers'), false);
+  assert.equal(Object.hasOwn(whatsappState, 'queue'), false);
   assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { cookie: cookieHeader } })).status, 200);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop' }) })).status, 403);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop', __internal: 'blocked' }) })).status, 200);
