@@ -1368,6 +1368,7 @@ function AdminApp() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const backupInputRef = useRef(null);
+  const dashboardLoadCountRef = useRef(0);
   useEffect(() => {
     api('/auth/session', { cache: 'no-store' })
       .then(() => setToken('cookie'))
@@ -1466,7 +1467,9 @@ function AdminApp() {
   }
   const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), ...(token && token !== 'cookie' ? { Authorization: `Bearer ${token}` } : {}) } });
 
-  async function load({ preserveConfig = false } = {}) {
+  async function load({ preserveConfig = false, background = false } = {}) {
+    if (background && (document.hidden || dashboardLoadCountRef.current > 0)) return;
+    dashboardLoadCountRef.current += 1;
     try {
       const result = await authApi('/admin/dashboard');
       setData((current) => preserveConfig ? { ...result, config: current.config } : result);
@@ -1513,6 +1516,8 @@ function AdminApp() {
       if (error.status === 401) {
         setToken(null);
       }
+    } finally {
+      dashboardLoadCountRef.current = Math.max(0, dashboardLoadCountRef.current - 1);
     }
   }
   useEffect(() => { if (token) load(); }, [token]);
@@ -1552,12 +1557,12 @@ function AdminApp() {
   }, []);
   useEffect(() => {
     if (!token || !['whatsapp', 'instagram'].includes(tab)) return undefined;
-    const interval = window.setInterval(() => load({ preserveConfig: true }), 4000);
+    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 4000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {
     if (!token || tab !== 'inbox') return undefined;
-    const interval = window.setInterval(() => load({ preserveConfig: true }), 15000);
+    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 15000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {

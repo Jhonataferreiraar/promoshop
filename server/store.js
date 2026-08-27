@@ -67,17 +67,19 @@ async function restoreSensitiveData(data) {
 }
 
 async function protectSensitiveData(data) {
-  const persisted = structuredClone(data);
+  const persisted = {
+    ...data,
+    analytics: { ...(data.analytics || {}) }
+  };
   persisted.inbox = await encryptSensitive(persisted.inbox || []);
   persisted.privacyConsents = await encryptSensitive(persisted.privacyConsents || {});
-  persisted.analytics ||= {};
   persisted.analytics.visitors = await encryptSensitive(persisted.analytics.visitors || {});
   return persisted;
 }
 
 async function writeProtectedSnapshot(data) {
   const temporaryFile = path.join(dataDir, `db-migrate-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
-  await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
+  await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data)), { encoding: 'utf8', mode: 0o600 });
   await fs.rename(temporaryFile, dataFile);
 }
 
@@ -372,7 +374,7 @@ async function ensureStore() {
     ensurePromise = (async () => {
       await fs.mkdir(dataDir, { recursive: true });
       try { await fs.access(dataFile); }
-      catch { await fs.writeFile(dataFile, JSON.stringify(await protectSensitiveData(initialData), null, 2), { encoding: 'utf8', mode: 0o600 }); }
+      catch { await fs.writeFile(dataFile, JSON.stringify(await protectSensitiveData(initialData)), { encoding: 'utf8', mode: 0o600 }); }
     })().catch((error) => {
       ensurePromise = null;
       throw error;
@@ -517,12 +519,104 @@ export async function readStore() {
   return data;
 }
 
+const FULL_WHATSAPP_HISTORY = 500;
+const FULL_INSTAGRAM_HISTORY = 100;
+
+function compactWhatsappHistoryItem(item) {
+  if (item.historyCompacted === true) return item;
+  const snapshot = item.couponSnapshot || item.offerSnapshot || {};
+  const sourceId = item.couponId || item.offerId || snapshot.id;
+  if (!sourceId) return item;
+  const compact = {
+    id: item.id,
+    kind: item.kind,
+    couponId: item.couponId,
+    offerId: item.offerId,
+    offerTitle: item.offerTitle || item.title || snapshot.title,
+    store: item.store || snapshot.store,
+    status: 'sent',
+    sentAt: item.sentAt,
+    createdAt: item.createdAt,
+    roundAudienceCode: item.roundAudienceCode,
+    targetAudienceCodes: item.targetAudienceCodes,
+    historyCompacted: true
+  };
+  const compactSnapshot = {
+    id: sourceId,
+    title: snapshot.title || compact.offerTitle,
+    store: snapshot.store || compact.store,
+    externalId: snapshot.externalId,
+    productId: snapshot.productId,
+    source: snapshot.source
+  };
+  if (item.kind === 'coupon') compact.couponSnapshot = compactSnapshot;
+  else compact.offerSnapshot = compactSnapshot;
+  return Object.fromEntries(Object.entries(compact).filter(([, value]) => value !== undefined));
+}
+
+function compactInstagramHistoryItem(item, feed = false) {
+  if (item.historyCompacted === true) return item;
+  const compact = {
+    id: item.id,
+    kind: item.kind,
+    postType: item.postType,
+    sourceId: item.sourceId,
+    sourceIds: item.sourceIds,
+    title: item.title,
+    store: item.store,
+    status: item.status,
+    origin: item.origin,
+    createdAt: item.createdAt,
+    publishedAt: item.publishedAt,
+    scheduledFor: item.scheduledFor,
+    themeId: item.themeId,
+    mediaId: item.mediaId,
+    error: item.status === 'failed' ? item.error : null,
+    historyCompacted: true
+  };
+  if (feed && Array.isArray(item.items)) {
+    compact.items = item.items.map((story) => ({
+      sourceId: story.sourceId,
+      kind: story.kind,
+      sourcePublishedAt: story.sourcePublishedAt
+    }));
+  }
+  return Object.fromEntries(Object.entries(compact).filter(([, value]) => value !== undefined && value !== null));
+}
+
+export function compactStoreHistory(data) {
+  const sentIndexes = (data.queue || [])
+    .map((item, index) => item?.status === 'sent' ? index : -1)
+    .filter((index) => index >= 0);
+  const fullWhatsappIndexes = new Set([...sentIndexes]
+    .sort((left, right) => new Date(data.queue[right]?.sentAt || data.queue[right]?.createdAt || 0).getTime() - new Date(data.queue[left]?.sentAt || data.queue[left]?.createdAt || 0).getTime())
+    .slice(0, FULL_WHATSAPP_HISTORY));
+  for (const index of sentIndexes) {
+    if (!fullWhatsappIndexes.has(index)) data.queue[index] = compactWhatsappHistoryItem(data.queue[index]);
+  }
+
+  for (const [key, feed] of [['instagramQueue', false], ['instagramFeedQueue', true]]) {
+    const queue = Array.isArray(data[key]) ? data[key] : [];
+    const terminalIndexes = queue
+      .map((item, index) => ['sent', 'cancelled', 'failed'].includes(item?.status) ? index : -1)
+      .filter((index) => index >= 0);
+    const fullInstagramIndexes = new Set([...terminalIndexes]
+      .sort((left, right) => new Date(queue[right]?.publishedAt || queue[right]?.createdAt || 0).getTime() - new Date(queue[left]?.publishedAt || queue[left]?.createdAt || 0).getTime())
+      .slice(0, FULL_INSTAGRAM_HISTORY));
+    for (const index of terminalIndexes) {
+      if (!fullInstagramIndexes.has(index)) queue[index] = compactInstagramHistoryItem(queue[index], feed);
+    }
+  }
+  return data;
+}
+
 export async function updateStore(mutator) {
   writeChain = writeChain.catch(() => { }).then(async () => {
     const data = structuredClone(await readStore());
     const result = await mutator(data);
+    compactStoreHistory(data);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
-    await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
+    await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data)), { encoding: 'utf8', mode: 0o600 });
     try {
       for (let attempt = 0; ; attempt += 1) {
         try {
@@ -552,6 +646,23 @@ export function createId(prefix = 'item') {
 export async function addLog(message, level = 'info') {
   return updateStore((data) => {
     data.logs.unshift({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
+    data.logs = data.logs.slice(0, 200);
+  });
+}
+
+export async function addLogs(entries = []) {
+  const logs = entries
+    .filter((entry) => entry?.message)
+    .map((entry) => ({
+      id: createId('log'),
+      message: String(entry.message),
+      level: entry.level || 'info',
+      createdAt: entry.createdAt || new Date().toISOString()
+    }));
+  if (!logs.length) return;
+  return updateStore((data) => {
+    data.logs ||= [];
+    data.logs.unshift(...[...logs].reverse());
     data.logs = data.logs.slice(0, 200);
   });
 }

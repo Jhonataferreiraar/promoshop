@@ -1,4 +1,4 @@
-import { addLog, createId, updateStore } from './store.js';
+import { addLogs, createId, updateStore } from './store.js';
 import { readSecrets } from './secrets.js';
 import crypto from 'node:crypto';
 import { getMercadoLivreAccessToken } from './mercadolivre.js';
@@ -82,6 +82,11 @@ async function fetchJson(url, options = {}) {
 
 export async function collectMercadoLivre(config, secrets) {
   if (!config.enableMercadoLivre) return [];
+
+  const activityLogs = [];
+  const recordActivity = (message, level = 'info') => {
+    activityLogs.push({ message, level });
+  };
 
   const token = await getMercadoLivreAccessToken();
 
@@ -354,7 +359,7 @@ export async function collectMercadoLivre(config, secrets) {
       const products = search.results || [];
 
       if (!products.length) {
-        await addLog(
+        recordActivity(
           `Mercado Livre: ${origin} "${query}" não retornou ofertas.`,
           'info'
         );
@@ -364,14 +369,14 @@ export async function collectMercadoLivre(config, secrets) {
 
       const normalized = await processProducts(products);
 
-      await addLog(
+      recordActivity(
         `Mercado Livre: ${origin} "${query}" retornou ${normalized.length} ofertas.`,
         'info'
       );
 
       return normalized;
     } catch (error) {
-      await addLog(
+      recordActivity(
         `Mercado Livre: erro em ${origin} "${query}": ${error.message}`,
         'error'
       );
@@ -390,7 +395,7 @@ export async function collectMercadoLivre(config, secrets) {
     const queriesForCategory = categoryQueries[categoryId] || [];
 
     if (!queriesForCategory.length) {
-      await addLog(
+      recordActivity(
         `Mercado Livre: categoria ${categoryId} não possui palavras-chave configuradas.`,
         'info'
       );
@@ -438,7 +443,7 @@ export async function collectMercadoLivre(config, secrets) {
     ).values()
   ];
 
-  await addLog(
+  recordActivity(
     `Mercado Livre: ${uniqueOffers.length} ofertas únicas encontradas antes do filtro de desconto.`,
     'info'
   );
@@ -452,7 +457,8 @@ export async function collectMercadoLivre(config, secrets) {
   const linksByProduct = await generateMercadoLivreAffiliateLinks(
     uniqueOffers.map((offer) => offer.productUrl),
     {
-      tag: config.mercadoLivreAffiliateTag || 'promoshop'
+      tag: config.mercadoLivreAffiliateTag || 'promoshop',
+      log: recordActivity
     }
   );
 
@@ -473,11 +479,12 @@ export async function collectMercadoLivre(config, secrets) {
     (offer) => offer.status === 'active'
   ).length;
 
-  await addLog(
+  recordActivity(
     `Mercado Livre: ${automaticLinks} de ${uniqueOffers.length} ofertas receberam link de afiliado automaticamente.`,
     automaticLinks ? 'success' : 'info'
   );
 
+  await addLogs(activityLogs);
   return uniqueOffers;
 }
 
@@ -1122,8 +1129,13 @@ export async function runCollection() {
     data.offers = data.offers.slice(0, 500);
     data.meta.lastCollectionAt = new Date().toISOString();
   });
-  await addLog(`Coleta finalizada: ${imported} ofertas novas${refreshedLinks ? ` e ${refreshedLinks} links compactados` : ''}.`, imported || refreshedLinks ? 'success' : 'info');
-  for (const error of errors) await addLog(error, 'error');
+  await addLogs([
+    {
+      message: `Coleta finalizada: ${imported} ofertas novas${refreshedLinks ? ` e ${refreshedLinks} links compactados` : ''}.`,
+      level: imported || refreshedLinks ? 'success' : 'info'
+    },
+    ...errors.map((message) => ({ message, level: 'error' }))
+  ]);
   return { imported, refreshedLinks, errors };
 }
 

@@ -36,6 +36,7 @@ export async function generateMercadoLivreAffiliateLinks(
     productUrls,
     options = {}
 ) {
+    const log = typeof options.log === 'function' ? options.log : addLog;
     const urls = [...new Set(
         productUrls
             .map(normalizeProductUrl)
@@ -63,7 +64,7 @@ export async function generateMercadoLivreAffiliateLinks(
         'promoshop';
 
     if (!cookie || !csrfToken) {
-        await addLog(
+        await log(
             'Mercado Livre Afiliados: sessão automática não configurada. Mantendo vinculação manual.',
             'info'
         );
@@ -124,14 +125,14 @@ export async function generateMercadoLivreAffiliateLinks(
             links.set(originUrl, item.short_url);
         }
 
-        await addLog(
+        await log(
             `Mercado Livre Afiliados: ${links.size} link(s) automático(s) gerado(s).`,
             links.size ? 'success' : 'info'
         );
 
         return links;
     } catch (error) {
-        await addLog(
+        await log(
             `Mercado Livre Afiliados: geração automática indisponível (${error.message}). As ofertas permanecerão disponíveis para vinculação manual.`,
             'error'
         );
