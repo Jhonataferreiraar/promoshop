@@ -60,7 +60,9 @@ function sourceData(item) {
   ].map(normalizeLink).filter(Boolean);
   const title = normalizeTitle(item?.offerTitle || item?.title || snapshot.title);
   const store = normalizeTitle(item?.store || snapshot.store);
-  return { kind, id, links: [...new Set(links)], title, store };
+  const externalId = clean(item?.externalId || item?.productId || snapshot.externalId || snapshot.productId);
+  const source = normalizeTitle(item?.source || snapshot.source);
+  return { kind, id, externalId, source, links: [...new Set(links)], title, store };
 }
 
 export function queueItemSourceMatches(left, right) {
@@ -68,6 +70,10 @@ export function queueItemSourceMatches(left, right) {
   const b = sourceData(right);
   if (a.kind === DIRECTORY_KIND || b.kind === DIRECTORY_KIND || a.kind !== b.kind) return false;
   if (a.id && b.id && a.id === b.id) return true;
+  if (
+    a.externalId && b.externalId && a.externalId === b.externalId &&
+    ((!a.store || !b.store || a.store === b.store) || (a.source && b.source && a.source === b.source))
+  ) return true;
   if (a.links.some((link) => b.links.includes(link))) return true;
   return Boolean(a.title && b.title && a.title === b.title && (!a.store || !b.store || a.store === b.store));
 }
@@ -94,4 +100,53 @@ export function wasRecentlySentToAudience(queue, candidate, audienceCode, cooldo
 export function hasPendingSource(queue, candidate) {
   if (!Array.isArray(queue) || !candidate) return false;
   return queue.some((item) => ['pending', 'publishing'].includes(item?.status) && queueItemSourceMatches(item, candidate));
+}
+
+/**
+ * Uma fonte que já foi confirmada como enviada não deve voltar para a fila.
+ * A comparação é intencionalmente independente do grupo: uma oferta é uma
+ * única publicação e não deve reaparecer por causa de uma nova URL de
+ * afiliado, de uma tentativa manual ou de uma nova rodada.
+ */
+export function hasSentSource(queue, candidate) {
+  if (!Array.isArray(queue) || !candidate) return false;
+  return queue.some((item) => item?.status === 'sent' && queueItemSourceMatches(item, candidate));
+}
+
+/**
+ * Evita que duas cópias da mesma fonte sejam reivindicadas enquanto a
+ * primeira ainda está sendo preparada ou enviada.
+ */
+export function hasOtherPendingSource(queue, candidate) {
+  if (!Array.isArray(queue) || !candidate) return false;
+  return queue.some((item) => (
+    item?.id !== candidate?.id &&
+    ['pending', 'publishing'].includes(item?.status) &&
+    queueItemSourceMatches(item, candidate)
+  ));
+}
+
+/**
+ * Escolhe uma única cópia quando a mesma fonte entrou na fila mais de uma
+ * vez. Um item que já está sendo publicado sempre bloqueia os demais; entre
+ * itens pendentes, fica válida somente a cópia mais antiga.
+ */
+export function hasBlockingPendingSource(queue, candidate) {
+  if (!Array.isArray(queue) || !candidate) return false;
+  const candidateCreatedAt = new Date(candidate.createdAt || 0).getTime();
+  const candidateOrder = Number.isFinite(candidateCreatedAt) ? candidateCreatedAt : Number.MAX_SAFE_INTEGER;
+
+  return queue.some((item) => {
+    if (
+      item?.id === candidate?.id ||
+      !['pending', 'publishing'].includes(item?.status) ||
+      !queueItemSourceMatches(item, candidate)
+    ) return false;
+    if (item.status === 'publishing') return true;
+
+    const itemCreatedAt = new Date(item.createdAt || 0).getTime();
+    const itemOrder = Number.isFinite(itemCreatedAt) ? itemCreatedAt : Number.MAX_SAFE_INTEGER;
+    if (itemOrder !== candidateOrder) return itemOrder < candidateOrder;
+    return String(item.id || '') < String(candidate.id || '');
+  });
 }

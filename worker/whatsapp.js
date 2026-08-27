@@ -104,6 +104,35 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+async function claimDestination(item, destination) {
+  const result = await request(`/api/worker/queue/${item.id}/destination/claim`, {
+    method: 'POST',
+    body: JSON.stringify({ destinationId: destination.id, destinationName: destination.name })
+  });
+  return result?.claimed === true;
+}
+
+async function completeDestination(item, destination) {
+  await request(`/api/worker/queue/${item.id}/destination/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ destinationId: destination.id, destinationName: destination.name })
+  });
+}
+
+async function completeQueueItem(item) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await request(`/api/worker/queue/${item.id}/complete`, { method: 'POST', body: '{}' });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error('Não foi possível confirmar a publicação.');
+}
+
 async function refreshConfig() {
   const config = await request('/api/worker/config');
   groupId = config.groupId || '';
@@ -136,6 +165,23 @@ function isWhatsAppChannel(id) {
 
 function isWhatsAppDestination(id) {
   return isWhatsAppGroup(id) || isWhatsAppChannel(id);
+}
+
+function uniqueDestinations(destinations) {
+  const seen = new Set();
+  const unique = [];
+
+  for (const destination of destinations) {
+    const normalizedName = normalizeGroupName(destination?.name);
+    const key = normalizedName
+      ? `name:${normalizedName}`
+      : `id:${String(destination?.id || '')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(destination);
+  }
+
+  return unique;
 }
 
 async function loadGroupParticipantIds(groupId) {
@@ -447,7 +493,18 @@ async function resolveDestinations(item) {
     return [];
   }
 
-  return destinations;
+  const unique = uniqueDestinations(destinations);
+  if (unique.length !== destinations.length) {
+    console.warn(
+      `Destinos duplicados ignorados: ${destinations.length - unique.length}.`
+    );
+  }
+
+  const attempted = new Set(
+    (Array.isArray(item?.deliveryAttemptedDestinationIds) ? item.deliveryAttemptedDestinationIds : [])
+      .map((id) => String(id))
+  );
+  return unique.filter((destination) => !attempted.has(String(destination.id)));
 }
 
 async function processQueue() {
@@ -471,41 +528,37 @@ async function processQueue() {
       } → ${destinations.map((group) => group.name).join(' | ')
       }`
     );
-    if (!destinations.length) throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
+    if (!destinations.length) {
+      if (Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length) {
+        throw new Error('O envio desta oferta já foi iniciado e os destinos já tentados foram protegidos contra repetição.');
+      }
+      throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
+    }
+    let deliveredDestinations = 0;
     for (const destination of destinations) {
+      const claimed = await claimDestination(item, destination);
+      if (!claimed) {
+        console.warn(`Destino já protegido contra repetição: ${destination.name || destination.id}`);
+        continue;
+      }
       const delivery = await buildDelivery(destination, item.message);
       let sent = false;
       let lastSendError;
-      for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
+      // O destino já foi reservado no servidor. Não repetimos a chamada em
+      // caso de erro ambíguo (por exemplo, uma mensagem aceita pelo WhatsApp
+      // mas com resposta de rede perdida).
+      for (let attempt = 0; attempt < 1 && !sent; attempt += 1) {
         try {
           await refreshActivePage();
 
           if (item.image) {
+            let prepared;
             try {
               console.log(`Baixando imagem da oferta: ${item.image}`);
-
-              const prepared = await downloadWhatsappImage(item.image);
-              const media = new MessageMedia(prepared.mimetype, prepared.data.toString('base64'), prepared.filename, prepared.filesize);
-
-              console.log(
-                `Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`
-              );
-
-              const sentMedia = await client.sendMessage(destination.id, media, {
-                ...delivery.options,
-                caption: delivery.message,
-                waitUntilMsgSent: true
-              });
-              // Uma mensagem recém-criada pode chegar com hasMedia=false antes
-              // da sincronização, embora o WhatsApp já tenha aceitado a mídia.
-              if (!sentMedia) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
-
-              console.log(
-                `Imagem e mensagem enviadas: ${item.offerTitle}`
-              );
+              prepared = await downloadWhatsappImage(item.image);
             } catch (mediaError) {
               console.error(
-                `Falha ao enviar imagem de "${item.offerTitle}": ${mediaError.message}`
+                `Falha ao baixar a imagem de "${item.offerTitle}": ${mediaError.message}`
               );
 
               if (isWhatsAppChannel(destination.id)) {
@@ -517,6 +570,21 @@ async function processQueue() {
                 ...delivery.options,
                 waitUntilMsgSent: true
               });
+              sent = true;
+            }
+
+            if (!sent) {
+              const media = new MessageMedia(prepared.mimetype, prepared.data.toString('base64'), prepared.filename, prepared.filesize);
+              console.log(`Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`);
+              const sentMedia = await client.sendMessage(destination.id, media, {
+                ...delivery.options,
+                caption: delivery.message,
+                waitUntilMsgSent: true
+              });
+              // Uma mensagem recém-criada pode chegar com hasMedia=false antes
+              // da sincronização, embora o WhatsApp já tenha aceitado a mídia.
+              if (!sentMedia) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
+              console.log(`Imagem e mensagem enviadas: ${item.offerTitle}`);
             }
           } else {
             console.warn(
@@ -529,11 +597,12 @@ async function processQueue() {
           sent = true;
         } catch (error) {
           lastSendError = error;
-          if (!String(error.message).includes('detached Frame') || attempt === 1) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          throw error;
         }
       }
       if (!sent) throw lastSendError || new Error(`O WhatsApp não confirmou o envio para ${destination.name || 'um dos grupos'}.`);
+      await completeDestination(item, destination);
+      deliveredDestinations += 1;
       const store =
         await readStore();
 
@@ -555,8 +624,11 @@ async function processQueue() {
           )
       );
     }
+    if (!deliveredDestinations) {
+      throw new Error('Nenhum destino novo pôde ser reservado; a oferta foi protegida contra repetição.');
+    }
     sentTimes.push(Date.now());
-    await request(`/api/worker/queue/${item.id}/complete`, { method: 'POST', body: '{}' });
+    await completeQueueItem(item);
     console.log(`Enviado para ${destinations.length} grupo(s): ${item.offerTitle}`);
   } catch (error) {
     console.error(error.message);

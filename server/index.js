@@ -81,7 +81,7 @@ import {
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
-import { hasPendingSource, queueItemSourceMatches, wasRecentlySentToAudience } from './whatsappDedup.js';
+import { hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
 
 const app = express();
 
@@ -4183,6 +4183,10 @@ app.post(
         }
 
         const history = data.queue.filter((item) => queueItemSourceMatches(item, offer));
+        if (hasSentSource(data.queue, offer)) {
+          skippedHistory += 1;
+          continue;
+        }
         if (mode === 'missing' && history.length) {
           skippedHistory += 1;
           continue;
@@ -4221,6 +4225,7 @@ app.post(
   ) => {
     let queueItem;
     let alreadyQueued = false;
+    let alreadySent = false;
 
     await updateStore(
       (data) => {
@@ -4254,6 +4259,11 @@ app.post(
             )
         };
 
+        if (hasSentSource(data.queue, nextItem)) {
+          alreadySent = true;
+          return;
+        }
+
         const existing = data.queue.find(
           (item) => ['pending', 'publishing'].includes(item.status) && queueItemSourceMatches(item, nextItem)
         );
@@ -4268,6 +4278,10 @@ app.post(
         data.queue.push(queueItem);
       }
     );
+
+    if (alreadySent) {
+      return res.status(409).json({ error: 'Esta oferta já foi publicada e não será repetida.' });
+    }
 
     if (!queueItem) {
       return res
@@ -5157,6 +5171,7 @@ app.post(
   async (req, res) => {
     let queueItem;
     let alreadyQueued = false;
+    let alreadySent = false;
     await updateStore((data) => {
       const coupon = (data.coupons || []).find((entry) => entry.id === req.params.id);
       if (!coupon || coupon.active === false) return;
@@ -5185,6 +5200,10 @@ app.post(
         error: null,
         force: Boolean(req.body?.force)
       };
+      if (hasSentSource(data.queue, nextItem)) {
+        alreadySent = true;
+        return;
+      }
       const existing = data.queue.find(
         (item) => ['pending', 'publishing'].includes(item.status) && queueItemSourceMatches(item, nextItem)
       );
@@ -5197,6 +5216,7 @@ app.post(
       queueItem = nextItem;
       data.queue.push(queueItem);
     });
+    if (alreadySent) return res.status(409).json({ error: 'Este cupom já foi publicado e não será repetido.' });
     if (!queueItem) return res.status(400).json({ error: 'Cupom não encontrado, inativo ou sem grupos selecionados.' });
     await addLog(`${alreadyQueued ? 'Cupom já estava na fila' : queueItem.force ? 'Cupom priorizado' : 'Cupom enviado para a fila'}: ${queueItem.offerTitle} → ${queueItem.targetAudienceCodes.join(', ')}`, alreadyQueued || queueItem.force ? 'success' : 'info');
     return res.status(alreadyQueued ? 200 : 201).json({ ...queueItem, alreadyQueued });
@@ -5492,6 +5512,7 @@ app.post(
     res
   ) => {
     let item;
+    let duplicateBlocked = false;
 
     await updateStore(
       (data) => {
@@ -5505,6 +5526,15 @@ app.post(
           );
 
         if (item) {
+          if (hasSentSource(data.queue, item) || hasBlockingPendingSource(data.queue, item)) {
+            item.status = 'skipped';
+            item.force = false;
+            item.publishingAt = null;
+            item.error = 'Oferta repetida bloqueada: esta fonte já foi publicada ou já está representada na fila.';
+            item.skippedAt = new Date().toISOString();
+            duplicateBlocked = true;
+            return;
+          }
           item.force =
             true;
         }
@@ -5518,6 +5548,10 @@ app.post(
           error:
             'Item pendente não encontrado.'
         });
+    }
+
+    if (duplicateBlocked) {
+      return res.status(409).json({ error: 'Esta oferta já está protegida contra repetição.' });
     }
 
     await addLog(
@@ -5539,6 +5573,7 @@ app.post(
     res
   ) => {
     let item;
+    let duplicateBlocked = false;
 
     await updateStore(
       (data) => {
@@ -5552,6 +5587,21 @@ app.post(
           );
 
         if (item) {
+          if (
+            hasSentSource(data.queue, item) ||
+            (Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length > 0)
+          ) {
+            item.status = 'skipped';
+            item.force = false;
+            item.publishingAt = null;
+            item.error = hasSentSource(data.queue, item)
+              ? 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.'
+              : 'Esta publicação já iniciou o envio e não será repetida automaticamente.';
+            item.skippedAt = new Date().toISOString();
+            duplicateBlocked = true;
+            return;
+          }
+
           item.status =
             'pending';
 
@@ -5578,6 +5628,10 @@ app.post(
           error:
             'Publicação com falha não encontrada.'
         });
+    }
+
+    if (duplicateBlocked) {
+      return res.status(409).json({ error: 'Esta oferta já está protegida contra repetição.' });
     }
 
     await addLog(
@@ -5871,8 +5925,30 @@ app.get(
     }
 
     let store = await readStore();
+    const repeatedPendingIds = store.queue
+      .filter((item) => (
+        item?.status === 'pending' &&
+        item?.kind !== 'group-directory' &&
+        hasSentSource(store.queue, item)
+      ))
+      .map((item) => item.id);
+    if (repeatedPendingIds.length) {
+      await updateStore((data) => {
+        for (const item of data.queue) {
+          if (!repeatedPendingIds.includes(item.id) || item.status !== 'pending') continue;
+          item.status = 'skipped';
+          item.force = false;
+          item.publishingAt = null;
+          item.error = 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.';
+          item.skippedAt = new Date().toISOString();
+        }
+      });
+      store = await readStore();
+      await addLog(`${repeatedPendingIds.length} duplicata(s) pendente(s) bloqueada(s) para não repetir ofertas.`, 'info');
+    }
     const stalePublishingCutoff = Date.now() - 15 * 60 * 1000;
     let recoveredPublishing = 0;
+    let uncertainPublishing = 0;
     const hasStalePublishing = store.queue.some((item) => (
       item.status === 'publishing' &&
       Number.isFinite(new Date(item.publishingAt || item.createdAt || 0).getTime()) &&
@@ -5883,14 +5959,24 @@ app.get(
         for (const item of data.queue) {
           const publishedAt = new Date(item.publishingAt || item.createdAt || 0).getTime();
           if (item.status !== 'publishing' || !Number.isFinite(publishedAt) || publishedAt >= stalePublishingCutoff) continue;
-          item.status = 'pending';
+          const deliveryStarted = Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length > 0;
+          item.status = deliveryStarted ? 'failed' : 'pending';
           item.publishingAt = null;
-          item.error = 'Publicação retomada após uma interrupção do publicador.';
+          item.error = deliveryStarted
+            ? 'O envio foi interrompido depois de começar. Para não repetir a oferta, ela não será reenviada automaticamente.'
+            : 'Publicação retomada após uma interrupção do publicador.';
+          if (deliveryStarted) {
+            item.failedAt = new Date().toISOString();
+            uncertainPublishing += 1;
+          }
           recoveredPublishing += 1;
         }
       });
       store = await readStore();
-      await addLog(`${recoveredPublishing} publicação(ões) retomada(s) após uma interrupção do publicador.`, 'info');
+      const recoveredMessage = uncertainPublishing
+        ? `${uncertainPublishing} publicação(ões) interrompida(s) foram marcadas para revisão e não serão repetidas automaticamente${recoveredPublishing > uncertainPublishing ? `; ${recoveredPublishing - uncertainPublishing} outra(s) foi(ram) retomada(s).` : '.'}`
+        : `${recoveredPublishing} publicação(ões) retomada(s) após uma interrupção do publicador.`;
+      await addLog(recoveredMessage, 'info');
     }
 
     const {
@@ -5906,8 +5992,10 @@ app.get(
       queue.find(
         (item) =>
           item.status ===
-          'pending' &&
-          item.force
+            'pending' &&
+          item.force &&
+          !hasSentSource(queue, item) &&
+          !hasBlockingPendingSource(queue, item)
       );
 
     /*
@@ -6945,11 +7033,6 @@ app.get(
             'pending' &&
           !item.force
       );
-    const configuredCooldownHours = Number(config.whatsappAudienceCooldownHours ?? 24);
-    const audienceCooldownHours = Number.isFinite(configuredCooldownHours)
-      ? Math.max(0, Math.min(720, configuredCooldownHours))
-      : 24;
-
     /*
      * Enquanto existirem públicos
      * pendentes na rodada...
@@ -6974,7 +7057,8 @@ app.get(
        * ====================================================
        */
 
-      let cooldownSkipped = 0;
+      let historySkipped = 0;
+      let duplicatePendingSkipped = 0;
       const candidates =
         pendingItems.filter(
           (item) => {
@@ -6987,8 +7071,13 @@ app.get(
               return false;
             }
 
-            if (wasRecentlySentToAudience(queue, item, audienceCode, audienceCooldownHours, now.getTime())) {
-              cooldownSkipped += 1;
+            if (hasSentSource(queue, item)) {
+              historySkipped += 1;
+              return false;
+            }
+
+            if (hasBlockingPendingSource(queue, item)) {
+              duplicatePendingSkipped += 1;
               return false;
             }
 
@@ -7015,7 +7104,7 @@ app.get(
         !candidates.length
       ) {
         await addLog(
-          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}${cooldownSkipped ? `; ${cooldownSkipped} oferta(s) já publicada(s) neste grupo nas últimas ${audienceCooldownHours} hora(s).` : ''} Grupo ignorado nesta rodada.`,
+          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}${historySkipped ? `; ${historySkipped} oferta(s) já publicada(s) foram bloqueadas para não repetir.` : ''}${duplicatePendingSkipped ? `; ${duplicatePendingSkipped} duplicata(s) pendente(s) foram ignoradas.` : ''} Grupo ignorado nesta rodada.`,
           'info'
         );
 
@@ -7612,6 +7701,77 @@ app.post(
  */
 
 app.post(
+  '/api/worker/queue/:id/destination/claim',
+  requireWorker,
+  async (req, res) => {
+    const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
+    const destinationName = String(req.body?.destinationName || '').trim().slice(0, 200);
+    if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
+
+    let claimed = false;
+    let alreadyClaimed = false;
+    let itemStatus = '';
+    await updateStore((data) => {
+      const item = data.queue.find((entry) => entry.id === req.params.id);
+      if (!item) return;
+
+      itemStatus = item.status;
+      item.deliveryAttemptedDestinationIds = Array.isArray(item.deliveryAttemptedDestinationIds)
+        ? [...new Set(item.deliveryAttemptedDestinationIds.map((id) => String(id)))]
+        : [];
+      item.deliverySentDestinationIds = Array.isArray(item.deliverySentDestinationIds)
+        ? [...new Set(item.deliverySentDestinationIds.map((id) => String(id)))]
+        : [];
+
+      if (item.deliveryAttemptedDestinationIds.includes(destinationId)) {
+        alreadyClaimed = true;
+        return;
+      }
+      if (!['pending', 'publishing'].includes(item.status)) return;
+
+      item.deliveryAttemptedDestinationIds.push(destinationId);
+      item.deliveryAttemptedDestinationNames = {
+        ...(item.deliveryAttemptedDestinationNames || {}),
+        [destinationId]: destinationName || item.deliveryAttemptedDestinationNames?.[destinationId] || ''
+      };
+      item.deliveryStartedAt ||= new Date().toISOString();
+      claimed = true;
+    });
+
+    if (!itemStatus) return res.status(404).json({ error: 'Publicação não encontrada.' });
+    return res.json({ ok: true, claimed, alreadyClaimed, status: itemStatus });
+  }
+);
+
+app.post(
+  '/api/worker/queue/:id/destination/complete',
+  requireWorker,
+  async (req, res) => {
+    const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
+    const destinationName = String(req.body?.destinationName || '').trim().slice(0, 200);
+    if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
+
+    let itemFound = false;
+    await updateStore((data) => {
+      const item = data.queue.find((entry) => entry.id === req.params.id);
+      if (!item) return;
+      itemFound = true;
+      item.deliverySentDestinationIds = Array.isArray(item.deliverySentDestinationIds)
+        ? [...new Set(item.deliverySentDestinationIds.map((id) => String(id)))]
+        : [];
+      if (!item.deliverySentDestinationIds.includes(destinationId)) item.deliverySentDestinationIds.push(destinationId);
+      item.deliveryCompletedDestinationNames = {
+        ...(item.deliveryCompletedDestinationNames || {}),
+        [destinationId]: destinationName || item.deliveryCompletedDestinationNames?.[destinationId] || ''
+      };
+    });
+
+    if (!itemFound) return res.status(404).json({ error: 'Publicação não encontrada.' });
+    return res.json({ ok: true });
+  }
+);
+
+app.post(
   '/api/worker/queue/:id/complete',
   requireWorker,
   async (
@@ -7632,6 +7792,19 @@ app.post(
           );
 
         if (!item) {
+          return;
+        }
+
+        // A confirmação é idempotente. Se o worker repetir a chamada depois
+        // de uma resposta de rede perdida, nunca recriamos a publicação.
+        if (item.status === 'sent') {
+          completedItem = {
+            id: item.id,
+            offerId: item.offerId,
+            offerTitle: item.offerTitle,
+            roundId: item.roundId,
+            roundAudienceCode: item.roundAudienceCode
+          };
           return;
         }
 
@@ -7795,6 +7968,7 @@ app.post(
     res
   ) => {
     let failedItem = null;
+    let alreadySent = false;
 
     await updateStore(
       (data) => {
@@ -7809,14 +7983,29 @@ app.post(
           return;
         }
 
+        // O envio pode ter sido aceito pelo WhatsApp mesmo que a resposta da
+        // confirmação tenha falhado. Nunca devolva uma publicação confirmada
+        // para pending, pois isso causa uma segunda mensagem.
+        if (item.status === 'sent') {
+          alreadySent = true;
+          failedItem = {
+            title: item.offerTitle,
+            status: item.status,
+            attempts: item.attempts
+          };
+          return;
+        }
+
         item.attempts =
           Number(
             item.attempts ||
             0
           ) + 1;
 
+        const deliveryStarted = Array.isArray(item.deliveryAttemptedDestinationIds)
+          && item.deliveryAttemptedDestinationIds.length > 0;
         item.status =
-          item.attempts >= 3
+          deliveryStarted || item.attempts >= 3
             ? 'failed'
             : 'pending';
 
@@ -7830,6 +8019,10 @@ app.post(
             0,
             500
           );
+        if (deliveryStarted) {
+          item.error = 'O envio foi iniciado, mas não foi confirmado. Para não repetir a oferta, ela exige revisão manual antes de qualquer nova tentativa.';
+          item.failedAt = new Date().toISOString();
+        }
 
         /*
          * Se falhou definitivamente,
@@ -7906,13 +8099,16 @@ app.post(
       }
     );
 
-    await addLog(
-      `WhatsApp: falha ao publicar${failedItem?.title ? ` ${failedItem.title}` : ''} (${String(req.body.error || 'erro')}).`,
-      'error'
-    );
+    if (!alreadySent) {
+      await addLog(
+        `WhatsApp: falha ao publicar${failedItem?.title ? ` ${failedItem.title}` : ''} (${String(req.body.error || 'erro')}).`,
+        'error'
+      );
+    }
 
     res.json({
-      ok: true
+      ok: true,
+      alreadySent
     });
   }
 );

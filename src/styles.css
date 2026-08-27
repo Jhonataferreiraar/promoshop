@@ -1562,6 +1562,11 @@ footer {
   color: #b72131;
 }
 
+.status.skipped {
+  background: #eef2f7;
+  color: #526173;
+}
+
 .queue-remove {
   border: 0;
   background: #fff0f2;
@@ -1890,6 +1895,29 @@ footer {
 
 .setting-section .settings-grid {
   margin-bottom: 0;
+}
+
+.settings-note {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid #dbe7ff;
+  border-radius: 11px;
+  background: #f3f7ff;
+  color: #164aa8;
+}
+
+.settings-note strong {
+  font-size: 13px;
+}
+
+.settings-note small {
+  color: #59719a;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .groups-section .group-options {

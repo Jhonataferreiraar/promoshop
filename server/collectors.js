@@ -8,7 +8,7 @@ import {
   normalizeMercadoLivreAffiliateUrl
 } from './mercadolivreAffiliate.js';
 import { buildSearchQueryVariants } from './searchRelevance.js';
-import { hasPendingSource } from './whatsappDedup.js';
+import { hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -1003,7 +1003,11 @@ export async function runCollection() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
-    const key = urlKey || `${titleKey}|${Number(offer.price || 0).toFixed(2)}`;
+    const storeKey = String(offer.store || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const externalKey = String(offer.externalId || offer.productId || '').trim();
+    const key = externalKey
+      ? `external:${storeKey}|${externalKey}`
+      : urlKey || `${storeKey}|${titleKey}|${Number(offer.price || 0).toFixed(2)}`;
     const previous = uniqueCandidates.get(key);
     if (!previous || Number(offer.score || 0) > Number(previous.score || 0)) {
       uniqueCandidates.set(key, offer);
@@ -1021,8 +1025,12 @@ export async function runCollection() {
     const refreshedAt = new Date().toISOString();
     const existing = new Map(data.offers.map((offer) => [offer.id, offer]));
     for (const offer of candidates.sort((a, b) => b.score - a.score)) {
-      const savedOffer = existing.get(offer.id);
+      // O mesmo produto pode voltar da loja com outro ID interno ou uma URL
+      // de afiliado diferente. Reaproveite a oferta já salva pela fonte antes
+      // de criar um novo registro (e, consequentemente, uma nova publicação).
+      const savedOffer = existing.get(offer.id) || data.offers.find((entry) => queueItemSourceMatches(entry, offer));
       if (savedOffer) {
+        existing.set(offer.id, savedOffer);
         for (const key of ['title', 'store', 'category', 'price', 'originalPrice', 'image', 'freeShipping', 'featured']) {
           if (offer[key] !== undefined && offer[key] !== null && offer[key] !== '') savedOffer[key] = offer[key];
         }
@@ -1106,7 +1114,9 @@ export async function runCollection() {
       imported += 1;
       if (data.config.autoQueue && offer.status === 'active') {
         const queueItem = makeQueueItem(offer, data.config);
-        if (!hasPendingSource(data.queue, queueItem)) data.queue.push(queueItem);
+        if (!hasSentSource(data.queue, queueItem) && !hasPendingSource(data.queue, queueItem)) {
+          data.queue.push(queueItem);
+        }
       }
     }
     data.offers = data.offers.slice(0, 500);
