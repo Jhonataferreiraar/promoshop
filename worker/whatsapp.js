@@ -444,7 +444,7 @@ async function startConnectedServices() {
   processQueue();
   setInterval(() => {
     processQueue();
-  }, 2000);
+  }, 10_000);
   setInterval(() => {
     if (!whatsappReady) {
       return;

@@ -6,6 +6,7 @@ import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setPriority } from 'node:os';
+import { Worker } from 'node:worker_threads';
 import v8 from 'node:v8';
 
 import express from 'express';
@@ -32,8 +33,8 @@ import {
   collectAliexpress,
   collectMercadoLivre,
   collectShopee,
+  applyCollectedOffers,
   makeQueueItem,
-  runCollection,
   searchMercadoLivreProducts,
   searchShopeeProducts
 } from './collectors.js';
@@ -83,7 +84,7 @@ import {
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
-import { hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
+import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
 
 const app = express();
@@ -102,6 +103,41 @@ const root = path.resolve(
 );
 
 let indexHtmlPromise = null;
+
+function collectOffersOutsideWebProcess() {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./collectionWorker.js', import.meta.url), {
+      resourceLimits: { maxOldGenerationSizeMb: 256 }
+    });
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      worker.terminate().catch(() => {});
+      reject(new Error('A coleta excedeu o tempo de segurança e foi encerrada.'));
+    }, 12 * 60_000);
+    timeout.unref?.();
+
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    worker.once('message', (message) => finish(() => {
+      if (message?.ok) resolve(message.result);
+      else reject(new Error(message?.error || 'A coleta isolada falhou.'));
+    }));
+    worker.once('error', (error) => finish(() => reject(error)));
+    worker.once('exit', (code) => {
+      if (!settled) finish(() => reject(new Error(`A coleta isolada foi encerrada sem retornar resultado (${code}).`)));
+    });
+  });
+}
+
+async function runCollectionIsolated() {
+  return applyCollectedOffers(await collectOffersOutsideWebProcess());
+}
 
 function readIndexHtml() {
   if (!indexHtmlPromise) {
@@ -286,7 +322,7 @@ async function runCollectionWhenIdle({
     }
 
     const result =
-      await runCollection();
+      await runCollectionIsolated();
 
     await updateStore(
       (freshData) => {
@@ -5985,11 +6021,12 @@ app.get(
     }
 
     let store = await readStore();
+    let sentSourceIndex = createQueueSourceIndex(store.queue, (item) => item?.status === 'sent');
     const repeatedPendingIds = store.queue
       .filter((item) => (
         item?.status === 'pending' &&
         item?.kind !== 'group-directory' &&
-        hasSentSource(store.queue, item)
+        hasSentSource(store.queue, item, sentSourceIndex)
       ))
       .map((item) => item.id);
     if (repeatedPendingIds.length) {
@@ -6004,6 +6041,7 @@ app.get(
         }
       });
       store = await readStore();
+      sentSourceIndex = createQueueSourceIndex(store.queue, (item) => item?.status === 'sent');
       await addLog(`${repeatedPendingIds.length} duplicata(s) pendente(s) bloqueada(s) para não repetir ofertas.`, 'info');
     }
     const stalePublishingCutoff = Date.now() - 15 * 60 * 1000;
@@ -6048,14 +6086,16 @@ app.get(
     const now =
       new Date();
 
+    const pendingSourceIndex = createQueueSourceIndex(queue, (item) => ['pending', 'publishing'].includes(item?.status));
+
     const forced =
       queue.find(
         (item) =>
           item.status ===
             'pending' &&
           item.force &&
-          !hasSentSource(queue, item) &&
-          !hasBlockingPendingSource(queue, item)
+          !hasSentSource(queue, item, sentSourceIndex) &&
+          !hasBlockingPendingSource(queue, item, pendingSourceIndex)
       );
 
     /*
@@ -7131,12 +7171,12 @@ app.get(
               return false;
             }
 
-            if (hasSentSource(queue, item)) {
+            if (hasSentSource(queue, item, sentSourceIndex)) {
               historySkipped += 1;
               return false;
             }
 
-            if (hasBlockingPendingSource(queue, item)) {
+            if (hasBlockingPendingSource(queue, item, pendingSourceIndex)) {
               duplicatePendingSkipped += 1;
               return false;
             }

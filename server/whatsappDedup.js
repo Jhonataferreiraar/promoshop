@@ -65,6 +65,43 @@ function sourceData(item) {
   return { kind, id, externalId, source, links: [...new Set(links)], title, store };
 }
 
+function sourceBucketKeys(item) {
+  const source = sourceData(item);
+  if (source.kind === DIRECTORY_KIND) return [];
+  const keys = [];
+  if (source.id) keys.push(`${source.kind}:id:${source.id}`);
+  if (source.externalId) keys.push(`${source.kind}:external:${source.externalId}`);
+  for (const link of source.links) keys.push(`${source.kind}:link:${link}`);
+  if (source.title) keys.push(`${source.kind}:title:${source.title}`);
+  return keys;
+}
+
+export function createQueueSourceIndex(queue, predicate = () => true) {
+  const buckets = new Map();
+  for (const item of Array.isArray(queue) ? queue : []) {
+    if (!predicate(item)) continue;
+    for (const key of sourceBucketKeys(item)) {
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(item);
+      else buckets.set(key, [item]);
+    }
+  }
+  return {
+    matchingItems(candidate) {
+      const matches = [];
+      const seen = new Set();
+      for (const key of sourceBucketKeys(candidate)) {
+        for (const item of buckets.get(key) || []) {
+          if (seen.has(item)) continue;
+          seen.add(item);
+          if (queueItemSourceMatches(item, candidate)) matches.push(item);
+        }
+      }
+      return matches;
+    }
+  };
+}
+
 export function queueItemSourceMatches(left, right) {
   const a = sourceData(left);
   const b = sourceData(right);
@@ -108,8 +145,9 @@ export function hasPendingSource(queue, candidate) {
  * única publicação e não deve reaparecer por causa de uma nova URL de
  * afiliado, de uma tentativa manual ou de uma nova rodada.
  */
-export function hasSentSource(queue, candidate) {
+export function hasSentSource(queue, candidate, sourceIndex = null) {
   if (!Array.isArray(queue) || !candidate) return false;
+  if (sourceIndex) return sourceIndex.matchingItems(candidate).some((item) => item?.status === 'sent');
   return queue.some((item) => item?.status === 'sent' && queueItemSourceMatches(item, candidate));
 }
 
@@ -131,12 +169,13 @@ export function hasOtherPendingSource(queue, candidate) {
  * vez. Um item que já está sendo publicado sempre bloqueia os demais; entre
  * itens pendentes, fica válida somente a cópia mais antiga.
  */
-export function hasBlockingPendingSource(queue, candidate) {
+export function hasBlockingPendingSource(queue, candidate, sourceIndex = null) {
   if (!Array.isArray(queue) || !candidate) return false;
   const candidateCreatedAt = new Date(candidate.createdAt || 0).getTime();
   const candidateOrder = Number.isFinite(candidateCreatedAt) ? candidateCreatedAt : Number.MAX_SAFE_INTEGER;
 
-  return queue.some((item) => {
+  const comparableItems = sourceIndex ? sourceIndex.matchingItems(candidate) : queue;
+  return comparableItems.some((item) => {
     if (
       item?.id === candidate?.id ||
       !['pending', 'publishing'].includes(item?.status) ||

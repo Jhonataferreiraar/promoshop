@@ -80,7 +80,7 @@ async function fetchJson(url, options = {}) {
   return payload;
 }
 
-export async function collectMercadoLivre(config, secrets) {
+export async function collectMercadoLivre(config, secrets, activitySink = null) {
   if (!config.enableMercadoLivre) return [];
 
   const activityLogs = [];
@@ -484,7 +484,8 @@ export async function collectMercadoLivre(config, secrets) {
     automaticLinks ? 'success' : 'info'
   );
 
-  await addLogs(activityLogs);
+  if (Array.isArray(activitySink)) activitySink.push(...activityLogs);
+  else await addLogs(activityLogs);
   return uniqueOffers;
 }
 
@@ -981,13 +982,14 @@ export async function collectAliexpress(config, secrets) {
   });
 }
 
-export async function runCollection() {
+export async function collectOfferCandidates() {
   const snapshot = await (await import('./store.js')).readStore();
   const config = snapshot.config;
   const secrets = await readSecrets();
   let candidates = [];
   const errors = [];
-  try { candidates.push(...await collectMercadoLivre(config, secrets)); }
+  const activityLogs = [];
+  try { candidates.push(...await collectMercadoLivre(config, secrets, activityLogs)); }
   catch (error) { errors.push(`Mercado Livre: ${error.message}`); }
   try { candidates.push(...await collectShopee(config, secrets)); }
   catch (error) { errors.push(`Shopee: ${error.message}`); }
@@ -1026,6 +1028,10 @@ export async function runCollection() {
     const discount = Math.max(calculatedDiscount, reportedDiscount);
     return Boolean(offer.title) && Number(offer.price) > 0 && discount >= minDiscount && discount <= 95;
   });
+  return { candidates, errors, activityLogs };
+}
+
+export async function applyCollectedOffers({ candidates = [], errors = [], activityLogs = [] } = {}) {
   let imported = 0;
   let refreshedLinks = 0;
   await updateStore((data) => {
@@ -1130,6 +1136,7 @@ export async function runCollection() {
     data.meta.lastCollectionAt = new Date().toISOString();
   });
   await addLogs([
+    ...activityLogs,
     {
       message: `Coleta finalizada: ${imported} ofertas novas${refreshedLinks ? ` e ${refreshedLinks} links compactados` : ''}.`,
       level: imported || refreshedLinks ? 'success' : 'info'
@@ -1137,6 +1144,10 @@ export async function runCollection() {
     ...errors.map((message) => ({ message, level: 'error' }))
   ]);
   return { imported, refreshedLinks, errors };
+}
+
+export async function runCollection() {
+  return applyCollectedOffers(await collectOfferCandidates());
 }
 
 export function makeQueueItem(offer, config) {
