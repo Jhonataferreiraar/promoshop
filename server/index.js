@@ -2042,6 +2042,22 @@ async function reconnectWhatsappWorker() {
   }
 }
 
+function reportWhatsappReconnectFailure(error) {
+  const message = `Não foi possível reconectar o WhatsApp: ${safeErrorMessage(error, 'o publicador não encerrou corretamente')}`;
+  updateWhatsappRuntime({ status: 'error', qrDataUrl: null, pairingCode: null, message });
+  void updateStore((data) => {
+    data.meta.whatsapp = {
+      ...data.meta.whatsapp,
+      status: 'error',
+      qrDataUrl: null,
+      pairingCode: null,
+      message,
+      lastSeenAt: new Date().toISOString()
+    };
+    appendStoreLog(data, `WhatsApp: ${message}`, 'error');
+  }).catch((storeError) => console.error('Falha ao salvar erro de reconexão:', storeError.message));
+}
+
 
 
 /*
@@ -5831,46 +5847,19 @@ app.post(
   '/api/admin/whatsapp/reconnect',
   requireAdmin,
   async (_req, res) => {
-    const data = await readStore();
-    const whatsapp = effectiveWhatsappState(data);
-    const processRunning = Boolean(whatsappProcess) && whatsappProcess.exitCode === null;
-    const lastSeenAt = whatsapp.lastSeenAt ? new Date(whatsapp.lastSeenAt).getTime() : 0;
-    const heartbeatFresh = lastSeenAt > 0 && Date.now() - lastSeenAt < 30_000;
-
-    if (processRunning && whatsapp.status === 'connected' && heartbeatFresh) {
-      return res.json({
-        ok: true,
-        connected: true,
-        processRunning: true,
-        status: 'connected',
-        message: 'WhatsApp já estava conectado. O painel foi atualizado.'
-      });
+    const alreadyRunning = Boolean(whatsappReconnectPromise);
+    if (!alreadyRunning) {
+      void reconnectWhatsappWorker().catch(reportWhatsappReconnectFailure);
     }
-
-    const transitionalStatuses = new Set(['starting', 'qr', 'pairing', 'authenticated']);
-
-    if (processRunning && heartbeatFresh && transitionalStatuses.has(whatsapp.status)) {
-      return res.json({
-        ok: true,
-        connected: false,
-        reconnecting: false,
-        processRunning: true,
-        status: whatsapp.status,
-        message: 'O publicador já está iniciando. Aguarde alguns segundos para o painel atualizar.'
-      });
-    }
-
-    const result = await reconnectWhatsappWorker();
-
     return res.json({
       ok: true,
       connected: false,
-      reconnecting: Boolean(result.started),
-      processRunning: Boolean(result.started),
+      reconnecting: true,
+      processRunning: Boolean(whatsappProcess) || !alreadyRunning,
       status: 'starting',
-      message: result.started
-        ? 'Reconexão iniciada. A sessão salva será restaurada; se necessário, um novo QR Code aparecerá.'
-        : result.message
+      message: alreadyRunning
+        ? 'A reconexão já está em andamento. Aguarde alguns segundos para o painel atualizar.'
+        : 'Reconexão iniciada. A sessão salva será restaurada; se necessário, um novo QR Code aparecerá.'
     });
   }
 );

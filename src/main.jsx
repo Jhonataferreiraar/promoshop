@@ -133,19 +133,35 @@ const fallbackOffers = [
 ];
 
 async function api(path, options = {}) {
+  const { timeoutMs = 20_000, ...requestOptions } = options;
   const headers = { ...(options.headers || {}) };
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const method = String(options.method || 'GET').toUpperCase();
+  if (requestOptions.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const method = String(requestOptions.method || 'GET').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     const csrf = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('promoshop_csrf='))?.slice('promoshop_csrf='.length) || '';
     if (csrf && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = decodeURIComponent(csrf);
   }
-  const response = await fetch(`/api${path}`, {
-    ...options,
-    method,
-    credentials: 'same-origin',
-    headers
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), Math.max(5_000, Number(timeoutMs) || 20_000));
+  let response;
+  try {
+    response = await fetch(`/api${path}`, {
+      ...requestOptions,
+      method,
+      credentials: 'same-origin',
+      headers,
+      signal: requestOptions.signal || controller.signal
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError' && !requestOptions.signal) {
+      const timeoutError = new Error('O servidor demorou para responder. Atualize a página e tente novamente.');
+      timeoutError.code = 'REQUEST_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!response.ok) {
     const error = new Error((await response.json().catch(() => ({}))).error || 'Falha na solicitação');
     error.status = response.status;
