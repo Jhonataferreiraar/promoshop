@@ -644,10 +644,17 @@ async function processQueue() {
                 caption: delivery.message,
                 waitUntilMsgSent: true
               });
-              // Uma mensagem recém-criada pode chegar com hasMedia=false antes
-              // da sincronização, embora o WhatsApp já tenha aceitado a mídia.
-              if (!sentMedia) throw new Error('O WhatsApp não confirmou o recebimento da imagem.');
-              console.log(`Imagem e mensagem enviadas: ${item.offerTitle}`);
+              // `waitUntilMsgSent` já aguarda a conclusão da ação de envio. Em
+              // algumas versões do WhatsApp Web, a mensagem aceita ainda não
+              // aparece na coleção local e a biblioteca devolve `undefined`.
+              // Isso não é uma falha de entrega e não pode interromper os
+              // próximos destinos (comunidade/canal). O claim persistido no
+              // servidor continua impedindo qualquer reenvio duplicado.
+              if (!sentMedia) {
+                console.warn(`Envio aceito sem confirmação local imediata: ${item.offerTitle}`);
+              } else {
+                console.log(`Imagem e mensagem enviadas: ${item.offerTitle}`);
+              }
             }
           } else {
             console.warn(
