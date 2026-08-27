@@ -86,6 +86,7 @@ import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
+import { getWhatsappPublicationIntervalState } from './whatsappSchedule.js';
 
 const app = express();
 
@@ -6997,67 +6998,31 @@ app.get(
      * INTERVALO CONFIGURADO NO PAINEL
      * ======================================================
      *
-     * Este intervalo vale ENTRE RODADAS.
+     * Este intervalo vale ENTRE OFERTAS AUTOMÁTICAS.
      *
      * Exemplo:
      *
      * Painel = 15 minutos
      *
-     * 10:00:
-     * G01
-     * G02
-     * G03
-     * ...
-     * G10
+     * 10:00: oferta para G01
+     * 10:15: oferta para G02
+     * 10:30: oferta para G03
      *
-     * Próxima rodada:
-     * aproximadamente 10:15.
+     * Publicações marcadas como "Publicar agora" são tratadas antes deste
+     * bloco e continuam imediatas.
      */
+    const publicationInterval =
+      getWhatsappPublicationIntervalState(
+        queue,
+        config.whatsappIntervalMinutes,
+        now.getTime()
+      );
 
-    const allowedIntervals =
-      [
-        5,
-        10,
-        15,
-        20,
-        25,
-        30
-      ];
-
-    const intervalMinutes =
-      allowedIntervals.includes(
-        Number(
-          config
-            .whatsappIntervalMinutes
-        )
-      )
-        ? Number(
-            config
-              .whatsappIntervalMinutes
-          )
-        : 15;
-
-    const lastSentAt =
-      queue
-        .filter(
-          (item) =>
-            item.status ===
-              'sent' &&
-            item.sentAt
-        )
-        .reduce(
-          (
-            latest,
-            item
-          ) =>
-            Math.max(
-              latest,
-              new Date(
-                item.sentAt
-              ).getTime()
-            ),
-          0
-        );
+    if (!publicationInterval.elapsed) {
+      return res
+        .status(204)
+        .end();
+    }
 
     /*
      * ======================================================
@@ -7090,26 +7055,10 @@ app.get(
      * significa que estamos prestes
      * a começar uma nova.
      *
-     * Aqui aplicamos o intervalo
-     * configurado no painel.
+     * O intervalo já foi validado acima para qualquer oferta automática,
+     * inclusive quando esta rodada já estava em andamento.
      */
     if (!round) {
-      if (
-        lastSentAt &&
-        now.getTime() -
-          lastSentAt <
-        intervalMinutes *
-          60_000
-      ) {
-        return res
-          .status(204)
-          .end();
-      }
-
-      /*
-       * Intervalo cumprido.
-       * Agora começa a nova rodada.
-       */
       round =
         await getPublicationRound(
           true
