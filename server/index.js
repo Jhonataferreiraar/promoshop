@@ -8676,9 +8676,20 @@ const httpServer = app.listen(
       2000
     );
 
+    const processInstagramQueues = async () => {
+      try {
+        await processInstagramQueue();
+      } catch (error) {
+        console.error('Instagram:', error.message);
+      }
+      try {
+        await processInstagramFeedQueue();
+      } catch (error) {
+        console.error('Instagram Feed:', error.message);
+      }
+    };
     const instagramTimer = setInterval(() => {
-      processInstagramQueue().catch((error) => console.error('Instagram:', error.message));
-      processInstagramFeedQueue().catch((error) => console.error('Instagram Feed:', error.message));
+      processInstagramQueues().catch((error) => console.error('Instagram:', error.message));
     }, 30_000);
     instagramTimer.unref?.();
   }

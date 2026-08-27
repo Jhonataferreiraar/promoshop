@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
@@ -36,6 +36,12 @@ const signedSecret = 'app-secret-for-test';
 const signedSignature = crypto.createHmac('sha256', signedSecret).update(signedPayload).digest('base64url');
 assert.equal(verifyInstagramSignedRequest(`${signedSignature}.${signedPayload}`, signedSecret).user_id, '123');
 assert.throws(() => verifyInstagramSignedRequest(`invalid.${signedPayload}`, signedSecret));
+assert.equal(isInstagramRateLimitError({ metaCode: 429, message: 'Too many requests' }), true);
+const futureRetry = new Date(Date.now() + 60_000).toISOString();
+assert.equal(instagramRateLimitUntil({
+  instagramQueue: [{ status: 'sent', instagramRateLimited: true, retryAt: new Date(Date.now() + 120_000).toISOString() }],
+  instagramFeedQueue: [{ status: 'pending', instagramRateLimited: true, retryAt: futureRetry }]
+}), new Date(futureRetry).getTime(), 'a pausa deve considerar apenas publicações pendentes');
 
 const data = {
   config,

@@ -30,7 +30,10 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const mediaDir = path.join(dataDir, 'instagram-stories');
 const MEDIA_FILE = /^[a-z0-9][a-z0-9._-]{5,100}\.jpe?g$/i;
 const DAY = 24 * 60 * 60 * 1000;
+const META_REQUEST_TIMEOUT_MS = 90_000;
+const STALE_PUBLICATION_MS = 15 * 60_000;
 let processing = false;
+let metaPublishing = false;
 
 function cleanVersion(value) {
   return /^v\d+\.\d+$/.test(String(value || '')) ? String(value) : 'v25.0';
@@ -130,9 +133,29 @@ function validHttps(value) {
   }
 }
 
-function isInstagramRateLimitError(error) {
+export function isInstagramRateLimitError(error) {
   const message = String(error?.message || error || '').toLowerCase();
-  return /user is performing too many actions|too many actions|too many requests|rate[ _-]?limit|(#4|#613)/i.test(message);
+  const code = Number(error?.metaCode || error?.code || 0);
+  return [4, 17, 32, 429, 613].includes(code) || /user is performing too many actions|too many actions|too many requests|rate[ _-]?limit|limitou temporariamente|excesso de ações|(#4|#17|#32|#613)/i.test(message);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isTransientMetaError(error) {
+  const status = Number(error?.httpStatus || error?.status || error?.metaCode || 0);
+  return error?.name === 'AbortError' || error instanceof TypeError || status >= 500;
+}
+
+export function instagramRateLimitUntil(data = {}) {
+  return Math.max(
+    0,
+    ...[...(data.instagramQueue || []), ...(data.instagramFeedQueue || [])]
+      .filter((item) => ['pending', 'publishing'].includes(item.status) && (item.instagramRateLimited === true || isInstagramRateLimitError({ message: item.error })))
+      .map((item) => new Date(item.retryAt || 0).getTime())
+      .filter((timestamp) => Number.isFinite(timestamp) && timestamp > Date.now())
+  );
 }
 
 async function fetchBuffer(url, maximumBytes = 12 * 1024 * 1024) {
@@ -825,23 +848,46 @@ export function backfillInstagramFeedFromRecentWhatsapp(data) {
 }
 
 async function metaJson(url, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    const text = await response.text();
-    let body = {};
-    try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text.slice(0, 400) }; }
-    if (!response.ok || body.error) {
-      const error = new Error(body.error?.message || body.message || `Meta respondeu ${response.status}`);
-      error.metaCode = body.error?.code || body.code || response.status;
-      error.instagramRateLimited = isInstagramRateLimitError(error);
+  const { retryAttempts: requestedRetries, timeoutMs: requestedTimeout, ...fetchOptions } = options;
+  const method = String(fetchOptions.method || 'GET').toUpperCase();
+  const retryAttempts = Math.max(0, Math.min(2, Number(requestedRetries ?? (method === 'GET' ? 2 : 0))));
+  const timeoutMs = Math.max(30_000, Math.min(120_000, Number(requestedTimeout || META_REQUEST_TIMEOUT_MS)));
+
+  for (let attempt = 0; attempt <= retryAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      const text = await response.text();
+      let body = {};
+      try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text.slice(0, 400) }; }
+      if (!response.ok || body.error) {
+        const error = new Error(body.error?.message || body.message || `Meta respondeu ${response.status}`);
+        error.metaCode = body.error?.code || body.code || response.status;
+        error.httpStatus = response.status;
+        error.instagramRateLimited = isInstagramRateLimitError(error);
+        throw error;
+      }
+      return body;
+    } catch (error) {
+      const rateLimited = Boolean(error?.instagramRateLimited) || isInstagramRateLimitError(error);
+      if (!rateLimited && isTransientMetaError(error) && attempt < retryAttempts) {
+        await wait(1500 * (attempt + 1));
+        continue;
+      }
+      if (error?.name === 'AbortError') {
+        throw new Error(`A Meta não respondeu dentro de ${Math.round(timeoutMs / 1000)} segundos.`);
+      }
+      if (error instanceof TypeError && /fetch failed/i.test(String(error.message || ''))) {
+        throw new Error('Falha temporária de conexão com a Meta.');
+      }
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
-    return body;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw new Error('A Meta não respondeu à solicitação.');
 }
 
 export async function testInstagramConnection(config, secrets) {
@@ -906,7 +952,7 @@ export function verifyInstagramSignedRequest(value, appSecret) {
 
 async function publishAsset(config, secrets, imageUrl) {
   const params = new URLSearchParams({ media_type: 'STORIES', image_url: imageUrl, access_token: secrets.instagramAccessToken });
-  const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
+  const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params, retryAttempts: 1 });
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
     const status = await metaJson(`${graphUrl(config, `/${container.id}`)}?fields=status_code&access_token=${encodeURIComponent(secrets.instagramAccessToken)}`);
@@ -934,7 +980,7 @@ async function publishFeedPost(config, secrets, imageUrls, caption) {
   if (!urls.length) throw new Error('Nenhuma imagem pública foi preparada para o Feed.');
   if (urls.length === 1) {
     const params = new URLSearchParams({ image_url: urls[0], caption: String(caption || '').slice(0, 2200), access_token: secrets.instagramAccessToken });
-    const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
+    const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params, retryAttempts: 1 });
     await waitForMediaContainer(config, secrets, container.id);
     const publish = new URLSearchParams({ creation_id: container.id, access_token: secrets.instagramAccessToken });
     const result = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media_publish`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: publish });
@@ -944,12 +990,12 @@ async function publishFeedPost(config, secrets, imageUrls, caption) {
   const childIds = [];
   for (const imageUrl of urls.slice(0, 10)) {
     const childParams = new URLSearchParams({ image_url: imageUrl, is_carousel_item: 'true', access_token: secrets.instagramAccessToken });
-    const child = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: childParams });
+    const child = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: childParams, retryAttempts: 1 });
     await waitForMediaContainer(config, secrets, child.id);
     childIds.push(child.id);
   }
   const carouselParams = new URLSearchParams({ media_type: 'CAROUSEL', children: childIds.join(','), caption: String(caption || '').slice(0, 2200), access_token: secrets.instagramAccessToken });
-  const carousel = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: carouselParams });
+  const carousel = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: carouselParams, retryAttempts: 1 });
   await waitForMediaContainer(config, secrets, carousel.id);
   const publish = new URLSearchParams({ creation_id: carousel.id, access_token: secrets.instagramAccessToken });
   const result = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media_publish`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: publish });
@@ -1016,16 +1062,17 @@ function latestAutomaticCarousel(data, config) {
 }
 
 export async function processInstagramQueue({ forceId = '' } = {}) {
-  if (processing) return { busy: true };
+  if (processing || metaPublishing) return { busy: true };
   processing = true;
+  metaPublishing = true;
   let selected = null;
   try {
     let [data, secrets] = await Promise.all([readStore(), readSecrets()]);
-    const stalePublishing = (data.instagramQueue || []).some((item) => item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > 15 * 60_000);
+    const stalePublishing = (data.instagramQueue || []).some((item) => item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > STALE_PUBLICATION_MS);
     if (stalePublishing) {
       await updateStore((fresh) => {
         for (const item of fresh.instagramQueue || []) {
-          if (item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > 15 * 60_000) {
+          if (item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > STALE_PUBLICATION_MS) {
             Object.assign(item, { status: 'pending', publishingAt: null, retryAt: null, error: 'Publicação retomada após reinício do servidor.' });
           }
         }
@@ -1036,13 +1083,7 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
     if (!forceId && (config.instagramEnabled !== true || !withinSchedule(config))) return { paused: true };
-    const rateLimitUntil = Math.max(
-      0,
-      ...(data.instagramQueue || [])
-        .filter((item) => item.instagramRateLimited === true || isInstagramRateLimitError({ message: item.error }))
-        .map((item) => new Date(item.retryAt || 0).getTime())
-        .filter(Number.isFinite)
-    );
+    const rateLimitUntil = instagramRateLimitUntil(data);
     if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };
     const sentLastDay = (data.instagramQueue || []).filter((item) => item.status === 'sent' && Date.now() - new Date(item.publishedAt || 0).getTime() < DAY);
     if (!forceId && sentLastDay.length >= Math.max(1, Number(config.instagramMaxPerDay || 15))) return { limited: true };
@@ -1099,20 +1140,36 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     throw error;
   } finally {
     processing = false;
+    metaPublishing = false;
   }
 }
 
 let feedProcessing = false;
 
 export async function processInstagramFeedQueue({ forceId = '' } = {}) {
-  if (feedProcessing) return { busy: true };
+  if (feedProcessing || metaPublishing) return { busy: true };
   feedProcessing = true;
+  metaPublishing = true;
   let selected = null;
   try {
     let [data, secrets] = await Promise.all([readStore(), readSecrets()]);
+    const stalePublishing = (data.instagramFeedQueue || []).some((item) => item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > STALE_PUBLICATION_MS);
+    if (stalePublishing) {
+      await updateStore((fresh) => {
+        for (const item of fresh.instagramFeedQueue || []) {
+          if (item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > STALE_PUBLICATION_MS) {
+            Object.assign(item, { status: 'pending', publishingAt: null, retryAt: null, error: 'Publicação retomada após reinício do servidor.' });
+          }
+        }
+      });
+      data = await readStore();
+      secrets = await readSecrets();
+    }
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
     if (!forceId && (config.instagramFeedEnabled !== true || !withinFeedSchedule(config))) return { paused: true };
+    const rateLimitUntil = instagramRateLimitUntil(data);
+    if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };
     if (!forceId && config.instagramFeedAutoFromWhatsapp === true) {
       let backfilled = 0;
       await updateStore((fresh) => { backfilled = backfillInstagramFeedFromRecentWhatsapp(fresh); });
@@ -1208,5 +1265,6 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     throw error;
   } finally {
     feedProcessing = false;
+    metaPublishing = false;
   }
 }
