@@ -8542,6 +8542,15 @@ app.use(
     }
 
     try {
+      // O painel não precisa de SEO renderizado no servidor. Entregue o shell
+      // imediatamente para que uma leitura lenta do banco (por exemplo,
+      // durante a reconexão do WhatsApp) não deixe o navegador preso no
+      // carregamento; os dados do painel são buscados depois pela API.
+      if (req.path.startsWith('/admin')) {
+        const html = await readIndexHtml();
+        return res.type('html').send(injectSeo(html, { config: {} }, req));
+      }
+
       const [html, data] = await Promise.all([
         readIndexHtml(),
         readStore()
