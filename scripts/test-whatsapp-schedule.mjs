@@ -21,6 +21,20 @@ assert.equal(getWhatsappPublicationIntervalState([
   { status: 'failed', sentAt: '2026-08-27T14:59:00.000Z' },
   { status: 'sent', sentAt: '2026-08-27T14:30:00.000Z' }
 ], 15, now).elapsed, true);
+assert.equal(getWhatsappPublicationIntervalState([
+  {
+    status: 'failed',
+    failedAt: '2026-08-27T14:55:00.000Z',
+    deliveryAttemptedDestinationIds: ['1201@g.us']
+  }
+], 10, now).elapsed, false);
+assert.equal(getWhatsappPublicationIntervalState([
+  {
+    status: 'failed',
+    failedAt: '2026-08-27T14:59:00.000Z',
+    deliveryAttemptedDestinationIds: []
+  }
+], 10, now).elapsed, true);
 
 const waiting = getWhatsappPublicationIntervalState([
   { status: 'sent', sentAt: '2026-08-27T14:50:00.000Z' }

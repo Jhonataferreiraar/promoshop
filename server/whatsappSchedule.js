@@ -7,20 +7,32 @@ export function normalizeWhatsappIntervalMinutes(value, fallback = 15) {
 
 export function getWhatsappPublicationIntervalState(queue, configuredMinutes, now = Date.now()) {
   const intervalMinutes = normalizeWhatsappIntervalMinutes(configuredMinutes);
-  const lastSentAt = (Array.isArray(queue) ? queue : [])
-    .filter((item) => item?.status === 'sent' && item?.sentAt)
+  const lastPublicationAt = (Array.isArray(queue) ? queue : [])
+    .map((item) => {
+      if (item?.status === 'sent' && item?.sentAt) return item.sentAt;
+
+      // Depois que o envio começou, uma resposta perdida do WhatsApp pode
+      // marcar o item como falha mesmo que a mensagem já tenha aparecido no
+      // destino. Essa tentativa também precisa iniciar o intervalo para não
+      // liberar várias ofertas em sequência.
+      const deliveryStarted = Array.isArray(item?.deliveryAttemptedDestinationIds)
+        && item.deliveryAttemptedDestinationIds.length > 0;
+      if (item?.status === 'failed' && deliveryStarted && item?.failedAt) return item.failedAt;
+      return null;
+    })
+    .filter(Boolean)
     .reduce((latest, item) => {
-      const sentAt = new Date(item.sentAt).getTime();
-      return Number.isFinite(sentAt) ? Math.max(latest, sentAt) : latest;
+      const publishedAt = new Date(item).getTime();
+      return Number.isFinite(publishedAt) ? Math.max(latest, publishedAt) : latest;
     }, 0);
-  const elapsedMs = lastSentAt ? Math.max(0, Number(now) - lastSentAt) : Infinity;
-  const remainingMs = lastSentAt
+  const elapsedMs = lastPublicationAt ? Math.max(0, Number(now) - lastPublicationAt) : Infinity;
+  const remainingMs = lastPublicationAt
     ? Math.max(0, intervalMinutes * 60_000 - elapsedMs)
     : 0;
 
   return {
     intervalMinutes,
-    lastSentAt,
+    lastPublicationAt,
     remainingMs,
     elapsed: remainingMs === 0
   };
