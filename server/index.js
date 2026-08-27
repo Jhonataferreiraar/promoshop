@@ -129,6 +129,43 @@ let whatsappRestartAttempts = 0;
 let collectionInProgress = false;
 let lastDeferredCollectionRoundId = '';
 const extensionRateLimit = new Map();
+const WHATSAPP_HEARTBEAT_PERSIST_MS = 2 * 60_000;
+let whatsappRuntimeState = null;
+let whatsappHeartbeatPersistedAt = 0;
+
+function updateWhatsappRuntime(patch = {}, now = new Date()) {
+  whatsappRuntimeState = {
+    ...(whatsappRuntimeState || {}),
+    ...patch,
+    lastSeenAt: patch.lastSeenAt || now.toISOString()
+  };
+  return whatsappRuntimeState;
+}
+
+function effectiveWhatsappState(data = {}, now = Date.now()) {
+  const persisted = data.meta?.whatsapp || {};
+  const persistedAt = new Date(persisted.lastSeenAt || 0).getTime();
+  const runtimeAt = new Date(whatsappRuntimeState?.lastSeenAt || 0).getTime();
+  const current = runtimeAt >= persistedAt && whatsappRuntimeState
+    ? { ...persisted, ...whatsappRuntimeState }
+    : { ...persisted };
+  const lastSeenAt = new Date(current.lastSeenAt || 0).getTime();
+  if (current.status === 'connected' && (!Number.isFinite(lastSeenAt) || now - lastSeenAt > 90_000)) {
+    current.status = 'offline';
+  }
+  return current;
+}
+
+function appendStoreLog(data, message, level = 'info') {
+  data.logs ||= [];
+  data.logs.unshift({
+    id: createId('log'),
+    message,
+    level,
+    createdAt: new Date().toISOString()
+  });
+  data.logs = data.logs.slice(0, 200);
+}
 
 function activePublicationRound(data) {
   const round =
@@ -1820,6 +1857,17 @@ async function startWhatsappWorker({
   whatsappProcess =
     child;
 
+  updateWhatsappRuntime({
+    status: 'starting',
+    qrDataUrl: null,
+    pairingCode: null,
+    message: automatic
+      ? 'Restaurando a conexão do WhatsApp…'
+      : mode === 'phone'
+        ? 'Gerando código de pareamento…'
+        : 'Gerando QR Code…'
+  });
+
   child.once(
     'exit',
     async (code) => {
@@ -1829,6 +1877,13 @@ async function startWhatsappWorker({
       ) {
         whatsappProcess =
           null;
+      }
+
+      if (whatsappRuntimeState?.status !== 'error') {
+        updateWhatsappRuntime({
+          status: 'offline',
+          message: `Publicador encerrado (${code ?? 'sem código'}).`
+        });
       }
 
       await updateStore(
@@ -3265,45 +3320,28 @@ app.get(
     const secrets =
       await readSecrets();
 
-    const lastSeen =
-      data.meta.whatsapp
-        ?.lastSeenAt
-        ? new Date(
-            data.meta
-              .whatsapp
-              .lastSeenAt
-          ).getTime()
-        : 0;
-
-    if (
-      Date.now() -
-      lastSeen >
-      90_000 &&
-      data.meta
-        .whatsapp
-        ?.status ===
-      'connected'
-    ) {
-      data.meta
-        .whatsapp
-        .status =
-        'offline';
-    }
+    const dashboardData = {
+      ...data,
+      meta: {
+        ...(data.meta || {}),
+        whatsapp: effectiveWhatsappState(data)
+      }
+    };
 
     res.json({
-      ...data,
-      offers: (Array.isArray(data.offers) ? data.offers : []).map((offer) => {
-        const quality = offerQuality(offer, data.config);
+      ...dashboardData,
+      offers: (Array.isArray(dashboardData.offers) ? dashboardData.offers : []).map((offer) => {
+        const quality = offerQuality(offer, dashboardData.config);
         return {
           ...offer,
           publicSlug: offerPublicSlug(offer),
           qualityScore: quality.score,
           qualityIssues: quality.issues,
-          isStale: !offerIsFresh(offer, data.config)
+          isStale: !offerIsFresh(offer, dashboardData.config)
         };
       }),
-      queue: (Array.isArray(data.queue) ? data.queue : []).map(adminQueueItem),
-      coupons: (Array.isArray(data.coupons) ? data.coupons : []).map((coupon) => ({
+      queue: (Array.isArray(dashboardData.queue) ? dashboardData.queue : []).map(adminQueueItem),
+      coupons: (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
         shortUrl: couponShortUrl(coupon, req)
@@ -3311,12 +3349,12 @@ app.get(
 
       analytics:
         summarizeAnalytics(
-          data.analytics
+          dashboardData.analytics
         ),
 
       systemHealth:
         summarizeSystemHealth(
-          data
+          dashboardData
         ),
 
       secrets:
@@ -5737,6 +5775,13 @@ app.post(
     whatsappProcess =
       null;
 
+    updateWhatsappRuntime({
+      status: 'offline',
+      qrDataUrl: null,
+      pairingCode: null,
+      message: 'Publicador parado pelo painel.'
+    });
+
     await updateStore(
       (store) => {
         store.meta.whatsapp = {
@@ -5769,7 +5814,7 @@ app.post(
   requireAdmin,
   async (_req, res) => {
     const data = await readStore();
-    const whatsapp = data.meta.whatsapp || {};
+    const whatsapp = effectiveWhatsappState(data);
     const processRunning = Boolean(whatsappProcess) && whatsappProcess.exitCode === null;
     const lastSeenAt = whatsapp.lastSeenAt ? new Date(whatsapp.lastSeenAt).getTime() : 0;
     const heartbeatFresh = lastSeenAt > 0 && Date.now() - lastSeenAt < 30_000;
@@ -5843,9 +5888,7 @@ app.post(
     const data =
       await readStore();
 
-    const whatsapp =
-      data.meta.whatsapp ||
-      {};
+    const whatsapp = effectiveWhatsappState(data);
 
     const lastSeenAt =
       whatsapp.lastSeenAt
@@ -7434,6 +7477,8 @@ app.post(
             )
         : [];
 
+    updateWhatsappRuntime({ groups });
+
     await updateStore(
       (data) => {
         data.meta =
@@ -7498,6 +7543,13 @@ app.post(
           margin: 2
         }
       );
+
+    updateWhatsappRuntime({
+      status: 'qr',
+      qrDataUrl,
+      pairingCode: null,
+      message: 'Leia o QR Code com o WhatsApp.'
+    });
 
     await updateStore(
       (data) => {
@@ -7568,6 +7620,13 @@ app.post(
             'Código ausente.'
         });
     }
+
+    updateWhatsappRuntime({
+      status: 'pairing',
+      qrDataUrl: null,
+      pairingCode,
+      message: 'Digite este código no WhatsApp do celular.'
+    });
 
     await updateStore(
       (data) => {
@@ -7640,53 +7699,38 @@ app.post(
         0;
     }
 
-    await updateStore(
-      (data) => {
-        data.meta =
-          data.meta || {};
+    const now = new Date();
+    const message = String(req.body.message || '').slice(0, 200);
+    const previousRuntime = whatsappRuntimeState;
+    const stateChanged = !previousRuntime || previousRuntime.status !== status || previousRuntime.message !== message;
+    const shouldPersist = stateChanged || now.getTime() - whatsappHeartbeatPersistedAt >= WHATSAPP_HEARTBEAT_PERSIST_MS;
 
-        data.meta.whatsapp = {
-          ...data.meta
-            .whatsapp,
+    updateWhatsappRuntime({
+      status,
+      message,
+      ...(status === 'connected' ? { qrDataUrl: null, pairingCode: null } : {})
+    }, now);
 
-          status,
-
-          lastSeenAt:
-            new Date()
-              .toISOString(),
-
-          qrDataUrl:
-            [
-              'authenticated',
-              'connected'
-            ].includes(
-              status
-            )
+    if (shouldPersist) {
+      await updateStore(
+        (data) => {
+          data.meta = data.meta || {};
+          data.meta.whatsapp = {
+            ...data.meta.whatsapp,
+            status,
+            lastSeenAt: now.toISOString(),
+            qrDataUrl: ['authenticated', 'connected'].includes(status)
               ? null
-              : data.meta
-                  .whatsapp
-                  ?.qrDataUrl,
-
-          pairingCode:
-            status ===
-            'connected'
+              : data.meta.whatsapp?.qrDataUrl,
+            pairingCode: status === 'connected'
               ? null
-              : data.meta
-                  .whatsapp
-                  ?.pairingCode,
-
-          message:
-            String(
-              req.body
-                .message ||
-              ''
-            ).slice(
-              0,
-              200
-            )
-        };
-      }
-    );
+              : data.meta.whatsapp?.pairingCode,
+            message
+          };
+        }
+      );
+      whatsappHeartbeatPersistedAt = now.getTime();
+    }
 
     res.json({
       ok: true
@@ -7778,10 +7822,6 @@ app.post(
     req,
     res
   ) => {
-    let completedItem = null;
-    let instagramQueuedItem = null;
-    let instagramFeedQueuedItem = null;
-
     await updateStore(
       (data) => {
         const item =
@@ -7798,13 +7838,6 @@ app.post(
         // A confirmação é idempotente. Se o worker repetir a chamada depois
         // de uma resposta de rede perdida, nunca recriamos a publicação.
         if (item.status === 'sent') {
-          completedItem = {
-            id: item.id,
-            offerId: item.offerId,
-            offerTitle: item.offerTitle,
-            roundId: item.roundId,
-            roundAudienceCode: item.roundAudienceCode
-          };
           return;
         }
 
@@ -7820,25 +7853,32 @@ app.post(
         item.error =
           null;
 
-        completedItem = {
-          id:
-            item.id,
+        const instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
+        const instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
 
-          offerId:
-            item.offerId,
+        appendStoreLog(
+          data,
+          item.roundAudienceCode
+            ? `WhatsApp: ${item.offerTitle} enviado para ${item.roundAudienceCode}.`
+            : `WhatsApp: publicação enviada (${req.params.id}).`,
+          'success'
+        );
 
-          offerTitle:
-            item.offerTitle,
+        if (instagramQueuedItem) {
+          appendStoreLog(
+            data,
+            `Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`,
+            'success'
+          );
+        }
 
-          roundId:
-            item.roundId,
-
-          roundAudienceCode:
-            item.roundAudienceCode
-        };
-
-        instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
-        instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
+        if (instagramFeedQueuedItem) {
+          appendStoreLog(
+            data,
+            `Instagram: ${instagramFeedQueuedItem.title} entrou na fila do Feed após o envio no WhatsApp.`,
+            'success'
+          );
+        }
 
         /*
          * ==================================================
@@ -7923,30 +7963,6 @@ app.post(
         }
       }
     );
-
-    if (completedItem) {
-      if (
-        completedItem
-          .roundAudienceCode
-      ) {
-        await addLog(
-          `WhatsApp: ${completedItem.offerTitle} enviado para ${completedItem.roundAudienceCode}.`,
-          'success'
-        );
-      } else {
-        await addLog(
-          `WhatsApp: publicação enviada (${req.params.id}).`,
-          'success'
-        );
-      }
-    }
-
-    if (instagramQueuedItem) {
-      await addLog(`Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`, 'success');
-    }
-    if (instagramFeedQueuedItem) {
-      await addLog(`Instagram: ${instagramFeedQueuedItem.title} entrou na fila do Feed após o envio no WhatsApp.`, 'success');
-    }
 
     res.json({
       ok: true

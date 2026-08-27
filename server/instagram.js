@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 
-import { addLog, createId, readStore, updateStore } from './store.js';
+import { addBufferedLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
 import { selectInstagramTheme } from './instagramThemes.js';
 
@@ -158,6 +158,12 @@ export function instagramRateLimitUntil(data = {}) {
   );
 }
 
+function appendActivity(data, message, level = 'info') {
+  data.logs ||= [];
+  data.logs.unshift({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
+  data.logs = data.logs.slice(0, 200);
+}
+
 async function fetchBuffer(url, maximumBytes = 12 * 1024 * 1024) {
   const safeUrl = validHttps(url);
   if (!safeUrl) return null;
@@ -264,7 +270,7 @@ export async function generateInstagramStory(story, config, requestedThemeId = '
     const source = await fetchBuffer(story.image);
     if (source) product = await sharp(source).rotate().resize(820, 780, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
   } catch (error) {
-    await addLog(`Instagram: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
+    addBufferedLog(`Instagram: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
   }
 
   const logo = await logoBuffer();
@@ -722,7 +728,7 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     const source = await fetchBuffer(story.image);
     if (source) product = await sharp(source).rotate().resize(productWidth, productHeight, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
   } catch (error) {
-    await addLog(`Instagram Feed: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
+    addBufferedLog(`Instagram Feed: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
   }
   const logo = await logoBuffer(106);
   const composites = [];
@@ -1108,8 +1114,8 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
       Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, assetFileName: asset.fileName, themeId: asset.themeId, containerId: published.containerId, mediaId: published.mediaId, error: null, retryAt: null, instagramRateLimited: false });
+      appendActivity(fresh, `Instagram: Story publicado — ${selected.title}.`, 'success');
     });
-    await addLog(`Instagram: Story publicado — ${selected.title}.`, 'success');
     return { ok: true, id: selected.id, ...published };
   } catch (error) {
     if (selected) {
@@ -1128,14 +1134,11 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
           ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000
           : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
         item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
+        const message = rateLimited
+          ? `Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${new Date(item.retryAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`
+          : `Instagram: falha ao publicar ${selected.title}: ${error.message}`;
+        appendActivity(fresh, message, rateLimited ? 'warning' : 'error');
       });
-      if (rateLimited) {
-        const nextAttempt = Number(selected.attempts || 0) + 1;
-        const retryAt = new Date(Date.now() + Math.min(24, 6 * 2 ** Math.min(Math.max(0, nextAttempt - 1), 2)) * 60 * 60_000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-        await addLog(`Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${retryAt}.`, 'warning');
-      } else {
-        await addLog(`Instagram: falha ao publicar ${selected.title}: ${error.message}`, 'error');
-      }
     }
     throw error;
   } finally {
@@ -1172,10 +1175,13 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };
     if (!forceId && config.instagramFeedAutoFromWhatsapp === true) {
       let backfilled = 0;
-      await updateStore((fresh) => { backfilled = backfillInstagramFeedFromRecentWhatsapp(fresh); });
-      if (backfilled > 0) {
+      const preview = { ...data, instagramFeedQueue: structuredClone(data.instagramFeedQueue || []) };
+      if (backfillInstagramFeedFromRecentWhatsapp(preview) > 0) {
+        await updateStore((fresh) => {
+          backfilled = backfillInstagramFeedFromRecentWhatsapp(fresh);
+          if (backfilled > 0) appendActivity(fresh, `Instagram Feed: ${backfilled} promoção(ões) recente(s) dos grupos adicionada(s) automaticamente à fila.`, 'success');
+        });
         data = await readStore();
-        await addLog(`Instagram Feed: ${backfilled} promoção(ões) recente(s) dos grupos adicionada(s) automaticamente à fila.`, 'success');
       }
     }
     const queue = Array.isArray(data.instagramFeedQueue) ? data.instagramFeedQueue : [];
@@ -1243,8 +1249,8 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
       Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, assetFileNames: assets.map((asset) => asset.fileName), themeId: assets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false });
+      appendActivity(fresh, `Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
     });
-    await addLog(`Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
     return { ok: true, id: selected.id, ...published };
   } catch (error) {
     if (selected) {
@@ -1259,8 +1265,8 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         item.publishingAt = null;
         const retryDelay = rateLimited ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000 : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
         item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
+        appendActivity(fresh, `Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
       });
-      await addLog(`Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
     }
     throw error;
   } finally {

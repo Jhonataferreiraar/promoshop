@@ -343,6 +343,29 @@ let writeChain = Promise.resolve();
 let ensurePromise = null;
 let cachedData = null;
 let cachedSignature = '';
+let bufferedLogs = [];
+let bufferedLogTimer = null;
+
+function scheduleBufferedLogFlush(delay = 250) {
+  if (bufferedLogTimer) return;
+  bufferedLogTimer = setTimeout(async () => {
+    bufferedLogTimer = null;
+    const batch = bufferedLogs.splice(0);
+    if (!batch.length) return;
+    try {
+      await updateStore((data) => {
+        data.logs ||= [];
+        data.logs.unshift(...[...batch].reverse());
+        data.logs = data.logs.slice(0, 200);
+      });
+    } catch (error) {
+      bufferedLogs.unshift(...batch);
+      console.error('Falha ao salvar logs agrupados:', error.message);
+      scheduleBufferedLogFlush(2000);
+    }
+  }, delay);
+  bufferedLogTimer.unref?.();
+}
 
 async function ensureStore() {
   if (!ensurePromise) {
@@ -531,4 +554,9 @@ export async function addLog(message, level = 'info') {
     data.logs.unshift({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
     data.logs = data.logs.slice(0, 200);
   });
+}
+
+export function addBufferedLog(message, level = 'info') {
+  bufferedLogs.push({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
+  scheduleBufferedLogFlush();
 }
