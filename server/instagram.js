@@ -10,6 +10,12 @@ import { addBufferedLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
 import { selectInstagramTheme } from './instagramThemes.js';
 
+// O servidor também atende o site e mantém o WhatsApp no mesmo serviço.
+// Uma única tarefa nativa do Sharp evita que a geração de carrosséis ocupe
+// todos os CPUs do Render e deixe as rotas HTTP sem tempo de processamento.
+sharp.concurrency(1);
+sharp.cache({ memory: 32, files: 16, items: 64 });
+
 function highlightIconSvg(icon, color = '#1269f3') {
   const common = `fill="none" stroke="${escapeXml(color)}" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"`;
   const icons = {

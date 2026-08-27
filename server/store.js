@@ -13,20 +13,29 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const dataFile = path.join(dataDir, 'db.json');
 const dataKeyFile = path.join(dataDir, '.data-key');
 let dataMigrationPromise = null;
+let cachedDataKey = null;
 
 async function getDataKey() {
+  if (cachedDataKey) return cachedDataKey;
   const configured = String(process.env.DATA_ENCRYPTION_KEY || '').trim();
-  if (/^[a-f0-9]{64}$/i.test(configured)) return Buffer.from(configured, 'hex');
+  if (/^[a-f0-9]{64}$/i.test(configured)) {
+    cachedDataKey = Buffer.from(configured, 'hex');
+    return cachedDataKey;
+  }
   await fs.mkdir(dataDir, { recursive: true });
   try {
     const saved = (await fs.readFile(dataKeyFile, 'utf8')).trim();
-    if (/^[a-f0-9]{64}$/i.test(saved)) return Buffer.from(saved, 'hex');
+    if (/^[a-f0-9]{64}$/i.test(saved)) {
+      cachedDataKey = Buffer.from(saved, 'hex');
+      return cachedDataKey;
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
   }
   const key = crypto.randomBytes(32);
   await fs.writeFile(dataKeyFile, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
-  return key;
+  cachedDataKey = key;
+  return cachedDataKey;
 }
 
 async function encryptSensitive(value) {
@@ -521,6 +530,7 @@ export async function readStore() {
 
 const FULL_WHATSAPP_HISTORY = 500;
 const FULL_INSTAGRAM_HISTORY = 100;
+const MAX_INSTAGRAM_TERMINAL_HISTORY = 1000;
 
 function compactWhatsappHistoryItem(item) {
   if (item.historyCompacted === true) return item;
@@ -585,26 +595,38 @@ function compactInstagramHistoryItem(item, feed = false) {
 }
 
 export function compactStoreHistory(data) {
-  const sentIndexes = (data.queue || [])
-    .map((item, index) => item?.status === 'sent' ? index : -1)
-    .filter((index) => index >= 0);
-  const fullWhatsappIndexes = new Set([...sentIndexes]
-    .sort((left, right) => new Date(data.queue[right]?.sentAt || data.queue[right]?.createdAt || 0).getTime() - new Date(data.queue[left]?.sentAt || data.queue[left]?.createdAt || 0).getTime())
-    .slice(0, FULL_WHATSAPP_HISTORY));
-  for (const index of sentIndexes) {
-    if (!fullWhatsappIndexes.has(index)) data.queue[index] = compactWhatsappHistoryItem(data.queue[index]);
+  // As filas recebem itens com push(), portanto os registros mais novos ficam
+  // no fim. Percorrer uma vez de trás para frente evita ordenar todo o
+  // histórico em cada heartbeat do WhatsApp ou atualização do painel.
+  let fullWhatsappItems = 0;
+  const whatsappQueue = Array.isArray(data.queue) ? data.queue : [];
+  for (let index = whatsappQueue.length - 1; index >= 0; index -= 1) {
+    const item = whatsappQueue[index];
+    if (item?.status !== 'sent') continue;
+    fullWhatsappItems += 1;
+    if (fullWhatsappItems > FULL_WHATSAPP_HISTORY && item.historyCompacted !== true) {
+      whatsappQueue[index] = compactWhatsappHistoryItem(item);
+    }
   }
 
   for (const [key, feed] of [['instagramQueue', false], ['instagramFeedQueue', true]]) {
     const queue = Array.isArray(data[key]) ? data[key] : [];
-    const terminalIndexes = queue
-      .map((item, index) => ['sent', 'cancelled', 'failed'].includes(item?.status) ? index : -1)
-      .filter((index) => index >= 0);
-    const fullInstagramIndexes = new Set([...terminalIndexes]
-      .sort((left, right) => new Date(queue[right]?.publishedAt || queue[right]?.createdAt || 0).getTime() - new Date(queue[left]?.publishedAt || queue[left]?.createdAt || 0).getTime())
-      .slice(0, FULL_INSTAGRAM_HISTORY));
-    for (const index of terminalIndexes) {
-      if (!fullInstagramIndexes.has(index)) queue[index] = compactInstagramHistoryItem(queue[index], feed);
+    let terminalItems = 0;
+    const removableIndexes = [];
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const item = queue[index];
+      if (!['sent', 'cancelled', 'failed'].includes(item?.status)) continue;
+      terminalItems += 1;
+      if (terminalItems > MAX_INSTAGRAM_TERMINAL_HISTORY) {
+        removableIndexes.push(index);
+      } else if (terminalItems > FULL_INSTAGRAM_HISTORY && item.historyCompacted !== true) {
+        queue[index] = compactInstagramHistoryItem(item, feed);
+      }
+    }
+    // Registros encerrados muito antigos não participam mais da janela de
+    // repetição e só aumentavam indefinidamente o arquivo do banco.
+    for (const index of removableIndexes) {
+      queue.splice(index, 1);
     }
   }
   return data;
