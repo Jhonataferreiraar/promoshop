@@ -128,6 +128,9 @@ let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let whatsappReconnectPromise = null;
+// Evita que o início automático, a reconexão solicitada pelo painel e o
+// reinício após uma queda criem dois publicadores ao mesmo tempo.
+let whatsappStartPromise = null;
 const intentionallyStoppedWhatsappChildren = new WeakSet();
 let collectionInProgress = false;
 let lastDeferredCollectionRoundId = '';
@@ -1799,7 +1802,7 @@ app.use(express.urlencoded({ extended: false, limit: '100kb' }));
  * ==========================================================
  */
 
-async function startWhatsappWorker({
+async function startWhatsappWorkerUnlocked({
   mode = 'qr',
   phoneNumber = '',
   automatic = false
@@ -2007,6 +2010,17 @@ async function startWhatsappWorker({
   };
 }
 
+async function startWhatsappWorker(options = {}) {
+  if (whatsappStartPromise) return whatsappStartPromise;
+
+  whatsappStartPromise = startWhatsappWorkerUnlocked(options);
+  try {
+    return await whatsappStartPromise;
+  } finally {
+    whatsappStartPromise = null;
+  }
+}
+
 async function stopWhatsappWorkerProcess() {
   if (whatsappRestartTimer) clearTimeout(whatsappRestartTimer);
   whatsappRestartTimer = null;
@@ -2031,6 +2045,12 @@ async function reconnectWhatsappWorker() {
   whatsappReconnectPromise = (async () => {
     const stopped = await stopWhatsappWorkerProcess();
     if (!stopped.exited) throw new Error('O publicador anterior não encerrou corretamente. Tente novamente em alguns segundos.');
+    // Uma inicialização automática pode ter começado no mesmo instante em que
+    // o painel solicitou a reconexão. Espere essa operação terminar antes de
+    // criar o novo processo, evitando matar o processo recém-criado e depois
+    // reutilizar uma promessa já concluída.
+    const pendingStart = whatsappStartPromise;
+    if (pendingStart) await pendingStart.catch(() => {});
     whatsappStopRequested = false;
     whatsappRestartAttempts = 0;
     return startWhatsappWorker({ mode: 'qr', automatic: true });

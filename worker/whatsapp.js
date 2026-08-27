@@ -13,6 +13,31 @@ import {
 } from './whatsappMentions.js';
 
 const { Client, LocalAuth, MessageMedia } = pkg;
+
+// whatsapp-web.js pode chamar inject() novamente durante uma navegação da
+// página enquanto a injeção anterior ainda está registrando os bindings. Isso
+// faz o Puppeteer tentar expor onQRChangedEvent duas vezes e encerra o worker.
+// Serializamos as injeções por cliente, mantendo o comportamento da biblioteca
+// e evitando a corrida sem alterar os arquivos em node_modules.
+const originalInject = Client.prototype.inject;
+if (typeof originalInject === 'function' && !originalInject.__promoshopSerialized) {
+  const injectQueue = new WeakMap();
+  const serializedInject = function serializedInject(...args) {
+    const previous = injectQueue.get(this) || Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(() => originalInject.apply(this, args));
+    injectQueue.set(this, current);
+    const clear = () => {
+      if (injectQueue.get(this) === current) injectQueue.delete(this);
+    };
+    current.then(clear, clear);
+    return current;
+  };
+  serializedInject.__promoshopSerialized = true;
+  Client.prototype.inject = serializedInject;
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
 const authDataPath = process.env.WHATSAPP_AUTH_DIR
