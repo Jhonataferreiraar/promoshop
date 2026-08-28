@@ -7,6 +7,7 @@ import {
 } from './audienceRouting.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramThemes.js';
 import { DEFAULT_INSTAGRAM_HIGHLIGHTS, sanitizeInstagramHighlights } from './instagramHighlights.js';
+import { createPostgresStateBackend } from './postgresStore.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -356,6 +357,12 @@ let cachedData = null;
 let cachedSignature = '';
 let bufferedLogs = [];
 let bufferedLogTimer = null;
+const configuredStoreBackend = String(process.env.STORE_BACKEND || 'file').trim().toLowerCase();
+let postgresBackend = null;
+
+if (!['file', 'postgres'].includes(configuredStoreBackend)) {
+  throw new Error(`STORE_BACKEND inválido: "${configuredStoreBackend}". Use "file" ou "postgres".`);
+}
 
 function scheduleBufferedLogFlush(delay = 250) {
   if (bufferedLogTimer) return;
@@ -396,7 +403,7 @@ function storeSignature(stats) {
   return `${stats.size}:${stats.mtimeMs}`;
 }
 
-export async function readStore() {
+async function readFileStore() {
   await ensureStore();
   const stats = await fs.stat(dataFile);
   const signature = storeSignature(stats);
@@ -425,6 +432,13 @@ export async function readStore() {
     }
     await dataMigrationPromise;
   }
+  data = normalizeStoreData(data);
+  cachedData = data;
+  cachedSignature = signature;
+  return data;
+}
+
+function normalizeStoreData(data) {
   data.config = {
     ...initialData.config,
     ...(data.config || {})
@@ -523,8 +537,6 @@ export async function readStore() {
       ...(data.analytics?.daily || {})
     }
   };
-  cachedData = data;
-  cachedSignature = signature;
   return data;
 }
 
@@ -632,9 +644,9 @@ export function compactStoreHistory(data) {
   return data;
 }
 
-export async function updateStore(mutator) {
+async function updateFileStore(mutator) {
   writeChain = writeChain.catch(() => { }).then(async () => {
-    const data = structuredClone(await readStore());
+    const data = structuredClone(await readFileStore());
     const result = await mutator(data);
     compactStoreHistory(data);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
@@ -659,6 +671,50 @@ export async function updateStore(mutator) {
     return result;
   });
   return writeChain;
+}
+
+function getPostgresBackend() {
+  if (postgresBackend) return postgresBackend;
+  const connectionString = String(process.env.DATABASE_URL || '').trim();
+  if (!connectionString) {
+    throw new Error('STORE_BACKEND=postgres exige a variável DATABASE_URL. O banco em arquivo não foi alterado.');
+  }
+  postgresBackend = createPostgresStateBackend({
+    connectionString,
+    loadInitialData: async () => structuredClone(await readFileStore()),
+    normalizeData: normalizeStoreData,
+    restoreData: restoreSensitiveData,
+    protectData: protectSensitiveData,
+    compactData: compactStoreHistory
+  });
+  return postgresBackend;
+}
+
+export function getStoreBackendStatus() {
+  if (configuredStoreBackend === 'postgres') {
+    return postgresBackend?.status() || {
+      backend: 'postgres',
+      configured: Boolean(String(process.env.DATABASE_URL || '').trim()),
+      connected: false,
+      cachedVersion: null
+    };
+  }
+  return {
+    backend: 'file',
+    configured: true,
+    connected: true,
+    cachedVersion: null
+  };
+}
+
+export async function readStore() {
+  if (configuredStoreBackend === 'postgres') return getPostgresBackend().read();
+  return readFileStore();
+}
+
+export async function updateStore(mutator) {
+  if (configuredStoreBackend === 'postgres') return getPostgresBackend().update(mutator);
+  return updateFileStore(mutator);
 }
 
 export function createId(prefix = 'item') {

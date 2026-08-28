@@ -17,6 +17,7 @@ import QRCode from 'qrcode';
 import {
   addLog,
   createId,
+  getStoreBackendStatus,
   readStore,
   updateStore
 } from './store.js';
@@ -2178,7 +2179,9 @@ app.get(
 
         lastFailureAt:
           aiStatus.lastFailureAt
-      }
+      },
+
+      storage: getStoreBackendStatus()
     });
   }
 );
