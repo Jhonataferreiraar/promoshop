@@ -873,6 +873,17 @@ function publicOfferAllowed(offer, config, nowMs = Date.now()) {
   return quality.score >= boundedNumber(config.qualityMinimumScore, 55, 0, 100);
 }
 
+function publicOfferTotal(offers, config, nowMs = Date.now()) {
+  const eligible = (Array.isArray(offers) ? offers : [])
+    .filter((offer) => publicOfferAllowed(offer, config, nowMs));
+
+  if (config.duplicateGroupingEnabled === false) return eligible.length;
+
+  return new Set(
+    eligible.map((offer) => productFingerprint(offer) || String(offer.id || ''))
+  ).size;
+}
+
 function catalogSlug(value) {
   return String(value || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -2406,7 +2417,7 @@ app.get(
     }
     if (sort === 'smart' && config.rankingDiversityEnabled !== false) filtered = diversifyOffers(filtered);
 
-    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
     return res.json({
       offers: filtered.slice(offset, offset + limit).map((offer) => publicOfferPayload(offer, config, analytics)),
       total: filtered.length,
@@ -3452,6 +3463,10 @@ app.get(
 
     res.json({
       ...dashboardData,
+      publicOfferTotal: publicOfferTotal(
+        dashboardData.offers,
+        dashboardData.config
+      ),
       offers: (Array.isArray(dashboardData.offers) ? dashboardData.offers : []).map((offer) => {
         const quality = offerQuality(offer, dashboardData.config);
         return {
