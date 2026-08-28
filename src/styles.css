@@ -5535,3 +5535,18 @@ button {
   .review-row-actions .button { flex: 1; text-align: center; }
   .offer-form-actions { flex-direction: column-reverse; align-items: stretch; }
 }
+
+/* No cabeçalho compacto, o botão deve ocupar o extremo direito do espaço útil.
+   O bloco de ações fica vazio no celular (o link do WhatsApp é ocultado); manter
+   uma margem automática nele dividia o espaço e deslocava o botão para a esquerda. */
+@media (max-width: 640px) {
+  .site-shell .topbar.compact-mobile-nav .nav-actions {
+    margin-left: 0;
+  }
+
+  .site-shell .topbar.compact-mobile-nav .mobile-menu-button {
+    display: block;
+    flex: 0 0 42px;
+    margin-left: auto;
+  }
+}
