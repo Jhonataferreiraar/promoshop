@@ -270,7 +270,8 @@ async function rememberCollectionRequest() {
 
 async function runCollectionWhenIdle({
   requestedByAdmin = false,
-  allowOutsidePublishingWindow = false
+  allowOutsidePublishingWindow = false,
+  ignorePublicationRound = false
 } = {}) {
   if (collectionInProgress) {
     if (requestedByAdmin) {
@@ -304,7 +305,9 @@ async function runCollectionWhenIdle({
       && allowOutsidePublishingWindow
       && !isPublishingWindow(data.config || {});
 
-    if (round && !manualOutsideSchedule) {
+    const bypassRoundWait = ignorePublicationRound || manualOutsideSchedule;
+
+    if (round && !bypassRoundWait) {
       if (requestedByAdmin) {
         await rememberCollectionRequest();
       }
@@ -329,8 +332,13 @@ async function runCollectionWhenIdle({
       };
     }
 
-    if (round && manualOutsideSchedule) {
-      await addLog('Coleta manual iniciada fora do horário de publicação; a rodada existente foi mantida.', 'info');
+    if (round && bypassRoundWait) {
+      await addLog(
+        ignorePublicationRound
+          ? 'Coleta manual iniciada com pausa temporária da rodada de publicação; a rodada existente será retomada ao finalizar.'
+          : 'Coleta manual iniciada fora do horário de publicação; a rodada existente foi mantida.',
+        'info'
+      );
     }
 
     const result =
@@ -351,7 +359,8 @@ async function runCollectionWhenIdle({
 
     return {
       ...result,
-      queued: false
+      queued: false,
+      pausedRound: Boolean(ignorePublicationRound && round)
     };
   } finally {
     collectionInProgress = false;
@@ -5555,15 +5564,18 @@ app.post(
   '/api/admin/collect',
   requireAdmin,
   async (
-    _req,
+    req,
     res
-  ) =>
-    res.json(
+  ) => {
+    const pauseRound = req.body?.pauseRound === true;
+    return res.json(
       await runCollectionWhenIdle({
         requestedByAdmin: true,
-        allowOutsidePublishingWindow: true
+        allowOutsidePublishingWindow: true,
+        ignorePublicationRound: pauseRound
       })
-    )
+    );
+  }
 );
 
 /*
@@ -6162,6 +6174,13 @@ app.get(
     }
 
     let store = await readStore();
+    // A coleta pode ter iniciado enquanto esta requisição aguardava o banco.
+    // Reconfira o bloqueio antes de recuperar ou reivindicar qualquer item.
+    if (collectionInProgress) {
+      return res
+        .status(204)
+        .end();
+    }
     let sentSourceIndex = createQueueSourceIndex(store.queue, (item) => item?.status === 'sent');
     const repeatedPendingIds = store.queue
       .filter((item) => (
