@@ -62,14 +62,16 @@ try {
 
   const validLogin = await login('SenhaInicialSegura123!');
   assert.equal(validLogin.status, 200);
-  const { token } = await validLogin.json();
+  const loginBody = await validLogin.json();
+  assert.equal(loginBody.authenticated, true);
+  assert.equal(Object.hasOwn(loginBody, 'token'), false);
   const setCookies = validLogin.headers.getSetCookie?.() || [];
   assert.ok(setCookies.some((cookie) => /promoshop_session=.*HttpOnly/i.test(cookie)));
   assert.ok(setCookies.some((cookie) => /promoshop_csrf=.*SameSite=Lax/i.test(cookie)));
   const cookieHeader = setCookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
   const csrfToken = decodeURIComponent(cookieHeader.match(/(?:^|; )promoshop_csrf=([^;]+)/)?.[1] || '');
   assert.ok(csrfToken);
-  const authorization = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const authorization = { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' };
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 200);
   const whatsappStateResponse = await fetch(`${origin}/api/admin/whatsapp/state`, { headers: authorization });
   assert.equal(whatsappStateResponse.status, 200);

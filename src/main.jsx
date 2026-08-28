@@ -126,12 +126,6 @@ const mercadoLivreCategories = [
   { id: 'MLB264586', name: 'Saúde' }
 ];
 
-const fallbackOffers = [
-  { id: 'demo-1', title: 'Fone Bluetooth com cancelamento de ruído', store: 'Mercado Livre', category: 'Eletrônicos', price: 129.9, originalPrice: 219.9, image: 'https://http2.mlstatic.com/D_NQ_NP_2X_629644-MLA79812359049_102024-F.webp', affiliateUrl: '#', featured: true, freeShipping: true },
-  { id: 'demo-2', title: 'Kit organizador para cozinha', store: 'Shopee', category: 'Casa', price: 49.9, originalPrice: 89.9, image: 'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=900&q=80', affiliateUrl: '#', featured: true, freeShipping: false },
-  { id: 'demo-3', title: 'Smartwatch esportivo resistente à água', store: 'Mercado Livre', category: 'Tecnologia', price: 159.9, originalPrice: 299.9, image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80', affiliateUrl: '#', featured: false, freeShipping: true }
-];
-
 async function api(path, options = {}) {
   const { timeoutMs = 20_000, ...requestOptions } = options;
   const headers = { ...(options.headers || {}) };
@@ -1221,7 +1215,7 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   async function submit(event) {
     event.preventDefault(); setError('');
-    try { const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(form) }); onLogin(result.token || 'cookie'); }
+    try { await api('/auth/login', { method: 'POST', body: JSON.stringify(form) }); onLogin('cookie'); }
     catch (err) { setError(err.message); }
   }
   return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{error && <p className="error">{error}</p>}<button className="button primary full">Entrar</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
@@ -1363,7 +1357,8 @@ function AdminApp() {
   const [phoneNumber, setPhoneNumber] = useState('55');
   const [message, setMessage] = useState('');
   const [bulkQueueing, setBulkQueueing] = useState('');
-  const [queueVisibleLimit, setQueueVisibleLimit] = useState(50);
+  const [queueItems, setQueueItems] = useState([]);
+  const [queuePage, setQueuePage] = useState({ total: 0, hasMore: false, summary: {} });
   const [dialog, setDialog] = useState(null);
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
@@ -1482,7 +1477,7 @@ function AdminApp() {
       }
     });
   }
-  const authApi = (path, options = {}) => api(path, { ...options, headers: { ...(options.headers || {}), ...(token && token !== 'cookie' ? { Authorization: `Bearer ${token}` } : {}) } });
+  const authApi = (path, options = {}) => api(path, options);
 
   async function load({ preserveConfig = false, background = false } = {}) {
     if (background && (document.hidden || dashboardLoadCountRef.current > 0)) return;
@@ -1532,9 +1527,25 @@ function AdminApp() {
     catch (error) {
       if (error.status === 401) {
         setToken(null);
+      } else if (!background) {
+        setMessage(`Não foi possível carregar o painel: ${error.message}`);
       }
     } finally {
       dashboardLoadCountRef.current = Math.max(0, dashboardLoadCountRef.current - 1);
+    }
+  }
+  async function loadQueuePage(reset = false) {
+    const offset = reset ? 0 : queueItems.length;
+    try {
+      const result = await authApi(`/admin/queue?offset=${offset}&limit=50`);
+      setQueueItems((current) => reset ? result.items : [...current, ...result.items]);
+      setQueuePage({
+        total: Number(result.summary?.total || 0),
+        hasMore: Boolean(result.hasMore),
+        summary: result.summary || {}
+      });
+    } catch (error) {
+      setMessage(`Não foi possível carregar a fila: ${error.message}`);
     }
   }
   async function loadWhatsappState() {
@@ -1556,6 +1567,9 @@ function AdminApp() {
     }
   }
   useEffect(() => { if (token) load(); }, [token]);
+  useEffect(() => {
+    if (token && tab === 'queue') loadQueuePage(true);
+  }, [token, tab]);
   useEffect(() => {
     if (!message) return undefined;
     const timeout = window.setTimeout(() => setMessage(''), 6500);
@@ -1973,11 +1987,11 @@ function AdminApp() {
       }
     });
   }
-  async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await load(); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
-  async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await load(); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
-  async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await load(); setMessage('Item removido da fila.'); }
+  async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
+  async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
+  async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Item removido da fila.'); }
   function clearFailedQueue() {
-    const failedCount = data.queue.filter((item) => item.status === 'failed').length;
+    const failedCount = Number(queuePage.summary?.failed || data.queueSummary?.failed || 0);
     if (!failedCount) return;
     setDialog({
       type: 'confirm-action',
@@ -1988,7 +2002,7 @@ function AdminApp() {
       onConfirm: async () => {
         try {
           const result = await authApi('/admin/queue/failed', { method: 'DELETE' });
-          await load();
+          await Promise.all([load(), loadQueuePage(true)]);
           setMessage(`${result.removed || failedCount} publicação(ões) com falha removida(s).`);
         } catch (error) {
           setMessage(`Não foi possível excluir as falhas: ${error.message}`);
@@ -2268,7 +2282,7 @@ function AdminApp() {
   const seoPreviewUrl = formatSeoPreviewUrl(data.config.canonicalUrl);
 
   return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <button className="button primary" onClick={collect}>Atualizar ofertas</button>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
-    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{data.queue.filter((q) => q.status === 'pending').length}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{data.queue.filter((q) => q.status === 'sent').length}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue.filter((item) => item.status === 'pending').slice(0, 5)} /></section></div>}
+    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{Number(data.queueSummary?.pending || 0)}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{Number(data.queueSummary?.sent || 0)}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
 
@@ -2766,7 +2780,7 @@ function AdminApp() {
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).length} cadastrado(s). Cupons importados aguardando revisão ficam somente na Extensão de cupons.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).some((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)) && <div className="empty"><strong>Nenhum cupom aprovado</strong><p>Cupons importados pela extensão aparecem aqui depois que você aprová-los.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
-    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{data.queue.filter((item) => item.status === 'pending').length} aguardando · {data.queue.filter((item) => item.status === 'failed').length} com falha</p></div>{data.queue.some((item) => item.status === 'failed') && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={data.queue.slice(0, queueVisibleLimit)} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} />{data.queue.length > queueVisibleLimit && <div className="load-more"><button className="button subtle" type="button" onClick={() => setQueueVisibleLimit((current) => current + 50)}>Mostrar mais publicações</button><small>Exibindo {Math.min(queueVisibleLimit, data.queue.length)} de {data.queue.length}</small></div>}</section>}
+    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha</p></div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -3112,7 +3126,7 @@ function AdminApp() {
     </form>}
     {tab === 'whatsapp' && <div className="whatsapp-admin-grid">
       <section className="panel connection-panel">
-        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{data.queue.filter((item) => item.status === 'pending').length}</strong> aguardando na fila</span></div><div className="connection-actions">
+        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{Number(data.queueSummary?.pending || 0)}</strong> aguardando na fila</span></div><div className="connection-actions">
           <button
             className="button primary"
             type="button"

@@ -171,7 +171,20 @@ process.once('SIGTERM', () => { void shutdownWhatsappWorker('sinal de reiniciali
 process.once('SIGINT', () => { void shutdownWhatsappWorker('interrupção manual'); });
 
 async function request(path, options = {}) {
-  const response = await fetch(`${apiUrl}${path}`, { ...options, headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) } });
+  const timeoutMs = path.includes('/heartbeat') ? 8_000 : 20_000;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+  let response;
+  try {
+    response = await fetch(`${apiUrl}${path}`, {
+      ...options,
+      signal,
+      headers: { 'Content-Type': 'application/json', 'x-worker-token': workerToken, ...(options.headers || {}) }
+    });
+  } catch (error) {
+    if (timeoutSignal.aborted) throw new Error(`A API não respondeu em ${Math.round(timeoutMs / 1000)} segundos.`);
+    throw error;
+  }
   if (response.status === 204) return null;
   if (!response.ok) throw new Error(`API respondeu ${response.status}`);
   return response.json();
@@ -189,6 +202,20 @@ async function completeDestination(item, destination) {
   await request(`/api/worker/queue/${item.id}/destination/complete`, {
     method: 'POST',
     body: JSON.stringify({ destinationId: destination.id, destinationName: destination.name })
+  });
+}
+
+async function startDestination(item, destination) {
+  await request(`/api/worker/queue/${item.id}/destination/started`, {
+    method: 'POST',
+    body: JSON.stringify({ destinationId: destination.id })
+  });
+}
+
+async function releaseDestination(item, destination) {
+  await request(`/api/worker/queue/${item.id}/destination/release`, {
+    method: 'POST',
+    body: JSON.stringify({ destinationId: destination.id })
   });
 }
 
@@ -564,7 +591,11 @@ async function resolveDestinations(item) {
   }
 
   const attempted = new Set(
-    (Array.isArray(item?.deliveryAttemptedDestinationIds) ? item.deliveryAttemptedDestinationIds : [])
+    [
+      ...(Array.isArray(item?.deliveryClaimedDestinationIds) ? item.deliveryClaimedDestinationIds : []),
+      ...(Array.isArray(item?.deliveryAttemptedDestinationIds) ? item.deliveryAttemptedDestinationIds : []),
+      ...(Array.isArray(item?.deliverySentDestinationIds) ? item.deliverySentDestinationIds : [])
+    ]
       .map((id) => String(id))
   );
   return unique.filter((destination) => !attempted.has(String(destination.id)));
@@ -604,6 +635,8 @@ async function processQueue() {
         console.warn(`Destino já protegido contra repetição: ${destination.name || destination.id}`);
         continue;
       }
+      let deliveryStarted = false;
+      try {
       const delivery = await buildDelivery(destination, item.message, item);
       let sent = false;
       let lastSendError;
@@ -629,6 +662,8 @@ async function processQueue() {
               }
 
               console.log('Enviando somente o texto como alternativa no grupo.');
+              await startDestination(item, destination);
+              deliveryStarted = true;
               await client.sendMessage(destination.id, delivery.message, {
                 ...delivery.options,
                 waitUntilMsgSent: true
@@ -639,6 +674,8 @@ async function processQueue() {
             if (!sent) {
               const media = new MessageMedia(prepared.mimetype, prepared.data.toString('base64'), prepared.filename, prepared.filesize);
               console.log(`Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`);
+              await startDestination(item, destination);
+              deliveryStarted = true;
               const sentMedia = await client.sendMessage(destination.id, media, {
                 ...delivery.options,
                 caption: delivery.message,
@@ -661,6 +698,8 @@ async function processQueue() {
               `Oferta sem imagem: "${item.offerTitle}"`
             );
 
+            await startDestination(item, destination);
+            deliveryStarted = true;
             await client.sendMessage(destination.id, delivery.message, delivery.options);
           }
 
@@ -693,6 +732,10 @@ async function processQueue() {
             audienceDelaySeconds * 1000
           )
       );
+      } catch (error) {
+        if (!deliveryStarted) await releaseDestination(item, destination).catch(() => {});
+        throw error;
+      }
     }
     if (!deliveredDestinations) {
       throw new Error('Nenhum destino novo pôde ser reservado; a oferta foi protegida contra repetição.');

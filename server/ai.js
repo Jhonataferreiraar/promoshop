@@ -24,11 +24,54 @@ const aiAvailability = {
   lastSuccessAt: null,
   lastFailureAt: null
 };
+const providerCooldowns = new Map();
+
+function providerCooldownSnapshot() {
+  const now = Date.now();
+  return Object.fromEntries(
+    [...providerCooldowns.entries()]
+      .filter(([, value]) => value.until > now)
+      .map(([provider, value]) => [provider, {
+        until: new Date(value.until).toISOString(),
+        reason: value.reason
+      }])
+  );
+}
 
 export function getAiAvailability() {
   return {
-    ...aiAvailability
+    ...aiAvailability,
+    providerCooldowns: providerCooldownSnapshot()
   };
+}
+
+function providerHttpError(provider, response, raw) {
+  const error = new Error(`${provider} respondeu ${response.status}: ${raw.slice(0, 250)}`);
+  error.status = response.status;
+  const retryAfter = Number(response.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1000;
+  const duration = raw.match(/try again in\s+(?:(\d+)m)?\s*(\d+(?:\.\d+)?)s/i);
+  if (duration) error.retryAfterMs = (Number(duration[1] || 0) * 60 + Number(duration[2] || 0)) * 1000;
+  return error;
+}
+
+function pauseProvider(provider, error) {
+  const message = String(error?.message || error).slice(0, 300);
+  let delay = null;
+  if (Number(error?.status) === 429) {
+    delay = Number(error?.retryAfterMs) || (/insufficient_quota|no credits|exceeded your current quota/i.test(message) ? 6 * 60 * 60_000 : 10 * 60_000);
+  } else if ([401, 403].includes(Number(error?.status)) || /chave não configurada|modelo não configurado/i.test(message)) {
+    delay = 60 * 60_000;
+  } else if (Number(error?.status) >= 500) {
+    delay = 2 * 60_000;
+  } else if (/aborted|fetch failed|timeout|network/i.test(message)) {
+    delay = 60_000;
+  }
+  if (!delay) return;
+  providerCooldowns.set(provider, {
+    until: Date.now() + Math.max(30_000, Math.min(delay, 24 * 60 * 60_000)),
+    reason: message
+  });
 }
 
 function markAiAvailable(
@@ -610,7 +653,7 @@ async function callJsonProvider({
 
           signal:
             AbortSignal.timeout(
-              45_000
+              20_000
             ),
 
           headers: {
@@ -673,9 +716,7 @@ async function callJsonProvider({
       await response.text();
 
     if (!response.ok) {
-      throw new Error(
-        `Gemini respondeu ${response.status}: ${raw.slice(0, 250)}`
-      );
+      throw providerHttpError('Gemini', response, raw);
     }
 
     const payload =
@@ -750,7 +791,7 @@ async function callJsonProvider({
 
           signal:
             AbortSignal.timeout(
-              45_000
+              20_000
             ),
 
           headers: {
@@ -778,9 +819,7 @@ async function callJsonProvider({
       await response.text();
 
     if (!response.ok) {
-      throw new Error(
-        `OpenAI respondeu ${response.status}: ${raw.slice(0, 250)}`
-      );
+      throw providerHttpError('OpenAI', response, raw);
     }
 
     const payload =
@@ -850,7 +889,7 @@ async function callJsonProvider({
 
           signal:
             AbortSignal.timeout(
-              45_000
+              20_000
             ),
 
           headers: {
@@ -888,9 +927,7 @@ async function callJsonProvider({
       await response.text();
 
     if (!response.ok) {
-      throw new Error(
-        `Groq respondeu ${response.status}: ${raw.slice(0, 250)}`
-      );
+      throw providerHttpError('Groq', response, raw);
     }
 
     const payload =
@@ -950,6 +987,12 @@ async function callJsonWithFallback(
     const provider
     of providers
   ) {
+    const cooldown = providerCooldowns.get(provider);
+    if (cooldown?.until > Date.now()) {
+      errors.push(`${provider}: pausado até ${new Date(cooldown.until).toISOString()}`);
+      continue;
+    }
+    if (cooldown) providerCooldowns.delete(provider);
     const model =
       getProviderModel(
         provider,
@@ -975,6 +1018,7 @@ async function callJsonWithFallback(
         provider,
         model
       );
+      providerCooldowns.delete(provider);
 
       console.log(
         `[IA] ${provider} respondeu com sucesso usando ${model || 'modelo não informado'}.`
@@ -995,6 +1039,8 @@ async function callJsonWithFallback(
       errors.push(
         `${provider}: ${message}`
       );
+
+      pauseProvider(provider, error);
 
       console.warn(
         `[IA] ${provider} falhou. Tentando próximo provedor: ${message}`

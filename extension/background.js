@@ -25,15 +25,29 @@ async function sendCoupons(coupons, { allowDuplicate = false } = {}) {
   const known = new Set(settings.sentFingerprints || []);
   const fresh = allowDuplicate ? list : list.filter((coupon) => !known.has(couponFingerprint(coupon)));
   if (!fresh.length) return { sent: 0, duplicates: list.length, message: 'Estes cupons já foram enviados.' };
-  await fetch(`${settings.endpoint}/api/extension/coupons`, {
+  const response = await fetch(`${settings.endpoint}/api/extension/coupons`, {
     method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: JSON.stringify({ token: settings.token, coupons: fresh, allowDuplicate })
+    headers: {
+      'Content-Type': 'application/json',
+      'x-promoshop-extension-token': settings.token
+    },
+    body: JSON.stringify({ coupons: fresh, allowDuplicate })
   });
-  const nextFingerprints = [...known, ...fresh.map(couponFingerprint)].slice(-500);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || payload.errors?.join(' · ') || `O PromoShop recusou o envio (${response.status}).`);
+  }
+  const accepted = new Set(Array.isArray(payload.acceptedFingerprints) ? payload.acceptedFingerprints : []);
+  const acceptedCoupons = fresh.filter((coupon) => accepted.has(couponFingerprint(coupon)));
+  if (!acceptedCoupons.length) throw new Error(payload.errors?.join(' · ') || 'Nenhum cupom foi aceito pelo PromoShop.');
+  const nextFingerprints = [...known, ...acceptedCoupons.map(couponFingerprint)].slice(-500);
   await chrome.storage.local.set({ sentFingerprints: nextFingerprints });
-  return { sent: fresh.length, duplicates: list.length - fresh.length, message: 'Cupom(ns) enviado(s). Confira a revisão no painel.' };
+  return {
+    sent: acceptedCoupons.length,
+    duplicates: Number(payload.duplicates?.length || 0) + list.length - fresh.length,
+    rejected: fresh.length - acceptedCoupons.length,
+    message: 'Cupom(ns) confirmado(s) pelo PromoShop. Confira a revisão no painel.'
+  };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

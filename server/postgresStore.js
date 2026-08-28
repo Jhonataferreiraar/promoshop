@@ -58,6 +58,8 @@ export function createPostgresStateBackend({
         max: Math.max(2, Math.min(10, Number(process.env.PG_POOL_MAX) || 5)),
         idleTimeoutMillis: 30_000,
         connectionTimeoutMillis: 10_000,
+        query_timeout: 15_000,
+        statement_timeout: 15_000,
         keepAlive: true,
         ssl: process.env.PGSSL === 'disable' || isLocalDatabase(connectionString)
           ? false

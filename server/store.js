@@ -8,6 +8,7 @@ import {
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramThemes.js';
 import { DEFAULT_INSTAGRAM_HIGHLIGHTS, sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createPostgresStateBackend } from './postgresStore.js';
+import { recordSentSourceInLedger } from './whatsappDedup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -474,6 +475,7 @@ function normalizeStoreData(data) {
 
   data.config.instagramThemes = sanitizeInstagramThemes(data.config.instagramThemes);
   data.config.instagramHighlights = sanitizeInstagramHighlights(data.config.instagramHighlights);
+  data.config.inboxInboundWebhookUrl = String(data.config.inboxInboundWebhookUrl || '').split('?')[0].slice(0, 500);
   data.config.instagramStores = Array.isArray(data.config.instagramStores)
     ? data.config.instagramStores.map((entry) => String(entry).trim()).filter(Boolean)
     : [...initialData.config.instagramStores];
@@ -541,40 +543,9 @@ function normalizeStoreData(data) {
 }
 
 const FULL_WHATSAPP_HISTORY = 500;
+const MAX_WHATSAPP_OTHER_TERMINAL_HISTORY = 1000;
 const FULL_INSTAGRAM_HISTORY = 100;
 const MAX_INSTAGRAM_TERMINAL_HISTORY = 1000;
-
-function compactWhatsappHistoryItem(item) {
-  if (item.historyCompacted === true) return item;
-  const snapshot = item.couponSnapshot || item.offerSnapshot || {};
-  const sourceId = item.couponId || item.offerId || snapshot.id;
-  if (!sourceId) return item;
-  const compact = {
-    id: item.id,
-    kind: item.kind,
-    couponId: item.couponId,
-    offerId: item.offerId,
-    offerTitle: item.offerTitle || item.title || snapshot.title,
-    store: item.store || snapshot.store,
-    status: 'sent',
-    sentAt: item.sentAt,
-    createdAt: item.createdAt,
-    roundAudienceCode: item.roundAudienceCode,
-    targetAudienceCodes: item.targetAudienceCodes,
-    historyCompacted: true
-  };
-  const compactSnapshot = {
-    id: sourceId,
-    title: snapshot.title || compact.offerTitle,
-    store: snapshot.store || compact.store,
-    externalId: snapshot.externalId,
-    productId: snapshot.productId,
-    source: snapshot.source
-  };
-  if (item.kind === 'coupon') compact.couponSnapshot = compactSnapshot;
-  else compact.offerSnapshot = compactSnapshot;
-  return Object.fromEntries(Object.entries(compact).filter(([, value]) => value !== undefined));
-}
 
 function compactInstagramHistoryItem(item, feed = false) {
   if (item.historyCompacted === true) return item;
@@ -611,14 +582,30 @@ export function compactStoreHistory(data) {
   // no fim. Percorrer uma vez de trás para frente evita ordenar todo o
   // histórico em cada heartbeat do WhatsApp ou atualização do painel.
   let fullWhatsappItems = 0;
+  let otherTerminalItems = 0;
+  let removedSentItems = 0;
+  const removableWhatsappIndexes = [];
   const whatsappQueue = Array.isArray(data.queue) ? data.queue : [];
   for (let index = whatsappQueue.length - 1; index >= 0; index -= 1) {
     const item = whatsappQueue[index];
-    if (item?.status !== 'sent') continue;
-    fullWhatsappItems += 1;
-    if (fullWhatsappItems > FULL_WHATSAPP_HISTORY && item.historyCompacted !== true) {
-      whatsappQueue[index] = compactWhatsappHistoryItem(item);
+    if (item?.status === 'sent') {
+      fullWhatsappItems += 1;
+      if (fullWhatsappItems > FULL_WHATSAPP_HISTORY) {
+        recordSentSourceInLedger(data, item);
+        removableWhatsappIndexes.push(index);
+        removedSentItems += 1;
+      }
+      continue;
     }
+    if (['failed', 'skipped', 'cancelled'].includes(item?.status)) {
+      otherTerminalItems += 1;
+      if (otherTerminalItems > MAX_WHATSAPP_OTHER_TERMINAL_HISTORY) removableWhatsappIndexes.push(index);
+    }
+  }
+  for (const index of removableWhatsappIndexes) whatsappQueue.splice(index, 1);
+  if (removedSentItems > 0) {
+    data.meta ||= {};
+    data.meta.whatsappSentHistoryCount = Math.max(0, Number(data.meta.whatsappSentHistoryCount) || 0) + removedSentItems;
   }
 
   for (const [key, feed] of [['instagramQueue', false], ['instagramFeedQueue', true]]) {

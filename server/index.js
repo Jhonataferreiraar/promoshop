@@ -85,7 +85,7 @@ import {
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
-import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
+import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
 import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
 
@@ -150,6 +150,17 @@ function readIndexHtml() {
       });
   }
   return indexHtmlPromise;
+}
+
+function resolveWithin(promise, milliseconds, fallback) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(fallback), milliseconds);
+      timer.unref?.();
+    })
+  ]).finally(() => clearTimeout(timer));
 }
 
 /*
@@ -689,9 +700,14 @@ function isValidInboundDomain(value) {
 }
 
 function requestBaseUrl(req) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  const protocol = forwardedProto || req.protocol || 'https';
-  return `${protocol}://${req.get('host')}`;
+  const configured = String(process.env.PUBLIC_URL || process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '')
+    .split(',')[0].trim().replace(/\/$/, '');
+  if (/^https:\/\//i.test(configured)) return configured;
+  if (process.env.NODE_ENV === 'production') return 'https://promoshop.jhonatafaraujo.com.br';
+  const host = String(req.get('host') || '').split(',')[0].trim();
+  return /^localhost(?::\d+)?$|^127\.0\.0\.1(?::\d+)?$/i.test(host)
+    ? `${req.protocol || 'http'}://${host}`
+    : `http://localhost:${port}`;
 }
 
 function publicBaseUrl(req) {
@@ -727,6 +743,19 @@ function couponShortUrl(coupon, req) {
 
 function inboundWebhookUrl(req, token) {
   return `${requestBaseUrl(req)}/api/webhooks/brevo/inbound?token=${encodeURIComponent(token)}`;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`O serviço externo não respondeu em ${Math.round(timeoutMs / 1000)} segundos.`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function inboundReplyAddress(config, inboxId) {
@@ -1512,6 +1541,10 @@ function getLocalCodesForQueueItem(
   ];
 }
 
+function hasSentSourceInStore(data, candidate, sourceIndex = null) {
+  return hasSentSource(data?.queue, candidate, sourceIndex) || hasSentSourceInLedger(data, candidate);
+}
+
 async function getPublicationRound(
   createIfMissing = true
 ) {
@@ -1522,6 +1555,24 @@ async function getPublicationRound(
    */
   if (collectionInProgress) {
     return null;
+  }
+
+  // O worker faz esta consulta com frequência. Sem criação de rodada, ela
+  // deve ser somente leitura para não abrir transações ou copiar o estado.
+  if (!createIfMissing) {
+    const data = await readStore();
+    const round = data.meta?.publicationRound;
+    if (!round || !Array.isArray(round.pendingAudienceCodes)) return null;
+    const availableCodes = getRoundAudienceCodes(data);
+    const pendingAudienceCodes = round.pendingAudienceCodes
+      .map(normalizeAudienceCode)
+      .filter((code) => availableCodes.includes(code));
+    if (!pendingAudienceCodes.length) return null;
+    return {
+      id: round.id,
+      pendingAudienceCodes,
+      usedOfferIds: Array.isArray(round.usedOfferIds) ? [...round.usedOfferIds] : []
+    };
   }
 
   let result = null;
@@ -2611,7 +2662,7 @@ app.post(
     }
 
     try {
-      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+      const brevoResponse = await fetchWithTimeout('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
           accept: 'application/json',
@@ -2633,7 +2684,7 @@ app.post(
           textContent,
           htmlContent: buildContactEmailHtml({ name, email, subject, message })
         })
-      });
+      }, 15_000);
 
       if (!brevoResponse.ok) {
         const details = (await brevoResponse.text()).slice(0, 300);
@@ -2742,7 +2793,7 @@ app.post(
     }
 
     try {
-      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+      const brevoResponse = await fetchWithTimeout('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
           accept: 'application/json',
@@ -2757,7 +2808,7 @@ app.post(
           textContent: `Olá, ${entry.name}!\n\n${replyMessage}\n\nObrigado por entrar em contato com o PromoShop.\n\n© ${new Date().getFullYear()} PromoShop · promoshop.jhonatafaraujo.com.br`,
           htmlContent: buildContactReplyHtml({ name: entry.name, message: replyMessage })
         })
-      });
+      }, 15_000);
 
       if (!brevoResponse.ok) {
         const details = (await brevoResponse.text()).slice(0, 300);
@@ -2919,18 +2970,18 @@ app.post(
       method = 'PUT';
     }
 
-    let brevoResponse = await fetch(endpoint, {
+    let brevoResponse = await fetchWithTimeout(endpoint, {
       method,
       headers: { accept: 'application/json', 'api-key': apiKey, 'content-type': 'application/json' },
       body: JSON.stringify(payload)
-    });
+    }, 15_000);
 
     if (!brevoResponse.ok && method === 'PUT' && brevoResponse.status === 404) {
-      brevoResponse = await fetch('https://api.brevo.com/v3/webhooks', {
+      brevoResponse = await fetchWithTimeout('https://api.brevo.com/v3/webhooks', {
         method: 'POST',
         headers: { accept: 'application/json', 'api-key': apiKey, 'content-type': 'application/json' },
         body: JSON.stringify(payload)
-      });
+      }, 15_000);
     }
 
     if (!brevoResponse.ok) {
@@ -2944,14 +2995,14 @@ app.post(
       data.config.inboxInboundEnabled = true;
       data.config.inboxInboundDomain = domain;
       data.config.inboxInboundWebhookId = String(brevoResult.id || data.config.inboxInboundWebhookId || '').trim();
-      data.config.inboxInboundWebhookUrl = webhookUrl;
+      data.config.inboxInboundWebhookUrl = `${requestBaseUrl(req)}/api/webhooks/brevo/inbound`;
     });
     await addLog(`Recebimento de respostas por e-mail ativado em ${domain}.`, 'success');
 
     res.json({
       ok: true,
       domain,
-      webhookUrl,
+      webhookUrl: `${requestBaseUrl(req)}/api/webhooks/brevo/inbound`,
       webhookId: String(brevoResult.id || '').trim(),
       mxRecords: [
         { host: domain, type: 'MX', priority: 10, value: 'inbound1.sendinblue.com.' },
@@ -3404,9 +3455,7 @@ app.post(
 
     const token = createToken(expectedUser, secrets.adminSessionVersion);
     setSessionCookies(res, token);
-    // Mantido no corpo por compatibilidade com a extensão/testes antigos. O
-    // painel web usa o cookie HttpOnly e não persiste este valor.
-    res.json({ token, authenticated: true });
+    res.json({ authenticated: true });
   }
 );
 
@@ -3442,6 +3491,30 @@ function adminQueueItem(item = {}) {
     force: Boolean(item.force)
   };
 }
+
+function summarizeQueue(queue = [], historicalSent = 0) {
+  const summary = { total: 0, pending: 0, publishing: 0, sent: 0, failed: 0, skipped: 0 };
+  for (const item of Array.isArray(queue) ? queue : []) {
+    summary.total += 1;
+    if (Object.hasOwn(summary, item?.status)) summary[item.status] += 1;
+  }
+  summary.sent += Math.max(0, Number(historicalSent) || 0);
+  return summary;
+}
+
+app.get('/api/admin/queue', requireAdmin, async (req, res) => {
+  const data = await readStore();
+  const queue = Array.isArray(data.queue) ? data.queue : [];
+  const offset = Math.max(0, Math.trunc(Number(req.query.offset) || 0));
+  const limit = Math.max(1, Math.min(100, Math.trunc(Number(req.query.limit) || 50)));
+  res.json({
+    items: queue.slice(offset, offset + limit).map(adminQueueItem),
+    offset,
+    limit,
+    hasMore: offset + limit < queue.length,
+    summary: summarizeQueue(queue, data.meta?.whatsappSentHistoryCount)
+  });
+});
 
 app.get(
   '/api/admin/dashboard',
@@ -3480,7 +3553,13 @@ app.get(
           isStale: !offerIsFresh(offer, dashboardData.config)
         };
       }),
-      queue: (Array.isArray(dashboardData.queue) ? dashboardData.queue : []).map(adminQueueItem),
+      // O resumo inicial precisa apenas das próximas publicações. A aba da
+      // fila carrega páginas de 50 itens por uma rota dedicada.
+      queue: (Array.isArray(dashboardData.queue) ? dashboardData.queue : [])
+        .filter((item) => item?.status === 'pending')
+        .slice(0, 5)
+        .map(adminQueueItem),
+      queueSummary: summarizeQueue(dashboardData.queue, dashboardData.meta?.whatsappSentHistoryCount),
       coupons: (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
@@ -3589,6 +3668,15 @@ app.put(
           monitoringCollectionHours: [6, 1, 168],
           monitoringFailedQueueLimit: [10, 1, 500],
           extensionMaxCouponsPerRequest: [10, 1, 50],
+          minDiscount: [20, 0, 99],
+          maxPostsPerDay: [100, 1, 5000],
+          maxPostsPerAudiencePerDay: [10, 1, 500],
+          collectionIntervalMinutes: [15, 5, 1440],
+          whatsappMaxPerHour: [100, 1, 500],
+          whatsappIntervalMinutes: [15, 1, 1440],
+          whatsappMinDelaySeconds: [12, 1, 300],
+          whatsappMaxDelaySeconds: [30, 1, 600],
+          whatsappAudienceDelaySeconds: [15, 1, 600],
           whatsappAudienceCooldownHours: [24, 0, 720],
           instagramIntervalMinutes: [20, 1, 1440],
           instagramMaxPerDay: [15, 1, 1500],
@@ -3605,6 +3693,13 @@ app.put(
         };
         for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
           data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
+        }
+        if (data.config.whatsappMaxDelaySeconds < data.config.whatsappMinDelaySeconds) {
+          data.config.whatsappMaxDelaySeconds = data.config.whatsappMinDelaySeconds;
+        }
+        for (const [key, previousValue] of Object.entries(previousConfig)) {
+          if (typeof previousValue !== 'boolean' || !Object.prototype.hasOwnProperty.call(body, key)) continue;
+          data.config[key] = typeof body[key] === 'boolean' ? body[key] : previousValue;
         }
         if (!/^\d{4}-\d{2}-\d{2}(?:-v\d+)?$/.test(String(data.config.legalPolicyVersion || ''))) {
           data.config.legalPolicyVersion = previousConfig.legalPolicyVersion || privacyPolicyVersion;
@@ -3665,7 +3760,7 @@ app.put(
           data.config[key] = String(data.config[key] || '').trim().slice(0, 300);
         }
         if (!/^https:\/\//i.test(data.config.instagramRedirectUri)) data.config.instagramRedirectUri = previousConfig.instagramRedirectUri || '';
-        for (const key of ['instagramPublishingStart', 'instagramPublishingEnd']) {
+        for (const key of ['instagramPublishingStart', 'instagramPublishingEnd', 'instagramFeedPublishingStart', 'instagramFeedPublishingEnd', 'publishingStart', 'publishingEnd', 'quietStart', 'quietEnd']) {
           if (!/^\d{2}:\d{2}$/.test(String(data.config[key] || ''))) data.config[key] = previousConfig[key];
         }
 
@@ -4361,7 +4456,7 @@ app.post(
         }
 
         const history = data.queue.filter((item) => queueItemSourceMatches(item, offer));
-        if (hasSentSource(data.queue, offer)) {
+        if (hasSentSourceInStore(data, offer)) {
           skippedHistory += 1;
           continue;
         }
@@ -4437,7 +4532,7 @@ app.post(
             )
         };
 
-        if (hasSentSource(data.queue, nextItem)) {
+        if (hasSentSourceInStore(data, nextItem)) {
           alreadySent = true;
           return;
         }
@@ -4487,11 +4582,11 @@ async function googleSearchConsoleAccessToken(secrets) {
   const now = Date.now();
   if (secrets.googleSearchConsoleAccessToken && Number(secrets.googleSearchConsoleTokenExpiresAt || 0) > now + 60_000) return secrets.googleSearchConsoleAccessToken;
   if (!secrets.googleSearchConsoleRefreshToken) throw new Error('Conecte sua conta Google primeiro.');
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, refresh_token: secrets.googleSearchConsoleRefreshToken, grant_type: 'refresh_token' })
-  });
+  }, 15_000);
   const body = await response.json();
   if (!response.ok || !body.access_token) throw new Error(body.error_description || 'O Google não renovou o acesso ao Search Console.');
   await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleTokenExpiresAt: now + Number(body.expires_in || 3600) * 1000 });
@@ -4514,7 +4609,7 @@ app.get('/api/search-console/callback', async (req, res) => {
   const adminUrl = `${String(config.canonicalUrl || '').replace(/\/+$/, '')}/admin`;
   if (!req.query.code || !req.query.state || req.query.state !== secrets.googleSearchConsoleOAuthState) return res.redirect(`${adminUrl}?searchconsole=error`);
   try {
-    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, code: String(req.query.code), redirect_uri: String(config.searchConsoleRedirectUri), grant_type: 'authorization_code' }) });
+    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, code: String(req.query.code), redirect_uri: String(config.searchConsoleRedirectUri), grant_type: 'authorization_code' }) }, 15_000);
     const body = await response.json();
     if (!response.ok || !body.access_token) throw new Error(body.error_description || 'Falha ao autorizar.');
     await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleRefreshToken: body.refresh_token || secrets.googleSearchConsoleRefreshToken, googleSearchConsoleTokenExpiresAt: Date.now() + Number(body.expires_in || 3600) * 1000, googleSearchConsoleOAuthState: '' });
@@ -4534,7 +4629,7 @@ app.get('/api/admin/search-console/summary', requireAdmin, async (_req, res) => 
     const startDate = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const endpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(config.searchConsoleSiteUrl || 'sc-domain:jhonatafaraujo.com.br')}/searchAnalytics/query`;
     const request = async (dimensions, rowLimit = 20) => {
-      const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ startDate, endDate, dimensions, rowLimit }) });
+      const response = await fetchWithTimeout(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ startDate, endDate, dimensions, rowLimit }) }, 20_000);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || 'Search Console não respondeu.');
       return body.rows || [];
@@ -4926,7 +5021,7 @@ app.post('/api/admin/instagram/feed/queue/:id/retry', requireAdmin, async (req, 
     const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });
@@ -4957,7 +5052,7 @@ app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) 
     const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });
@@ -5121,6 +5216,7 @@ app.post('/api/extension/coupons', async (req, res) => {
   const imported = [];
   const duplicates = [];
   const errors = [];
+  const acceptedFingerprints = new Set();
 
   await updateStore((storeData) => {
     storeData.coupons ||= [];
@@ -5137,7 +5233,7 @@ app.post('/api/extension/coupons', async (req, res) => {
       if (!extensionValidLink(storeName, parsed.fields.link)) { errors.push('Link não pertence à loja informada.'); continue; }
       const fingerprint = extensionCouponFingerprint(parsed.fields);
       if (existingFingerprints.has(fingerprint)) {
-        if (!allowDuplicate) { duplicates.push(parsed.fields.title); continue; }
+        if (!allowDuplicate) { duplicates.push(parsed.fields.title); acceptedFingerprints.add(fingerprint); continue; }
         const existing = storeData.coupons.find((entry) => extensionCouponFingerprint(entry) === fingerprint);
         if (!existing) { duplicates.push(parsed.fields.title); continue; }
         Object.assign(existing, parsed.fields, {
@@ -5149,6 +5245,7 @@ app.post('/api/extension/coupons', async (req, res) => {
           shortUrl: couponShortUrl(existing, req)
         });
         imported.push({ id: existing.id, title: existing.title, status: existing.approvalStatus, reimported: true });
+        acceptedFingerprints.add(fingerprint);
         continue;
       }
       existingFingerprints.add(fingerprint);
@@ -5165,12 +5262,19 @@ app.post('/api/extension/coupons', async (req, res) => {
       coupon.shortUrl = couponShortUrl(coupon, req);
       storeData.coupons.unshift(coupon);
       imported.push({ id: coupon.id, title: coupon.title, status: coupon.approvalStatus });
+      acceptedFingerprints.add(fingerprint);
     }
     storeData.coupons = storeData.coupons.slice(0, 300);
   });
 
   if (imported.length) await addLog(`Extensão: ${imported.length} cupom(ns) recebido(s)${config.extensionAutoApprove === true ? ' e aprovado(s)' : ' para revisão'}.`, 'success');
-  res.status(imported.length || duplicates.length ? 202 : 400).json({ ok: imported.length > 0, imported, duplicates, errors: errors.slice(0, 10) });
+  res.status(imported.length || duplicates.length ? 202 : 400).json({
+    ok: imported.length > 0,
+    imported,
+    duplicates,
+    acceptedFingerprints: [...acceptedFingerprints],
+    errors: errors.slice(0, 10)
+  });
 });
 
 app.post(
@@ -5378,7 +5482,7 @@ app.post(
         error: null,
         force: Boolean(req.body?.force)
       };
-      if (hasSentSource(data.queue, nextItem)) {
+      if (hasSentSourceInStore(data, nextItem)) {
         alreadySent = true;
         return;
       }
@@ -5704,7 +5808,7 @@ app.post(
           );
 
         if (item) {
-          if (hasSentSource(data.queue, item) || hasBlockingPendingSource(data.queue, item)) {
+          if (hasSentSourceInStore(data, item) || hasBlockingPendingSource(data.queue, item)) {
             item.status = 'skipped';
             item.force = false;
             item.publishingAt = null;
@@ -5765,14 +5869,15 @@ app.post(
           );
 
         if (item) {
+          const sourceAlreadySent = hasSentSourceInStore(data, item);
           if (
-            hasSentSource(data.queue, item) ||
+            sourceAlreadySent ||
             (Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length > 0)
           ) {
             item.status = 'skipped';
             item.force = false;
             item.publishingAt = null;
-            item.error = hasSentSource(data.queue, item)
+            item.error = sourceAlreadySent
               ? 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.'
               : 'Esta publicação já iniciou o envio e não será repetida automaticamente.';
             item.skippedAt = new Date().toISOString();
@@ -5791,6 +5896,8 @@ app.post(
 
           item.failedAt =
             null;
+
+          item.deliveryClaimedDestinationIds = [];
 
           delete item.aiStatus;
           delete item.aiError;
@@ -6059,13 +6166,14 @@ app.get(
       .filter((item) => (
         item?.status === 'pending' &&
         item?.kind !== 'group-directory' &&
-        hasSentSource(store.queue, item, sentSourceIndex)
+        hasSentSourceInStore(store, item, sentSourceIndex)
       ))
       .map((item) => item.id);
     if (repeatedPendingIds.length) {
+      const repeatedPendingIdSet = new Set(repeatedPendingIds);
       await updateStore((data) => {
         for (const item of data.queue) {
-          if (!repeatedPendingIds.includes(item.id) || item.status !== 'pending') continue;
+          if (!repeatedPendingIdSet.has(item.id) || item.status !== 'pending') continue;
           item.status = 'skipped';
           item.force = false;
           item.publishingAt = null;
@@ -6093,6 +6201,7 @@ app.get(
           const deliveryStarted = Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length > 0;
           item.status = deliveryStarted ? 'failed' : 'pending';
           item.publishingAt = null;
+          if (!deliveryStarted) item.deliveryClaimedDestinationIds = [];
           item.error = deliveryStarted
             ? 'O envio foi interrompido depois de começar. Para não repetir a oferta, ela não será reenviada automaticamente.'
             : 'Publicação retomada após uma interrupção do publicador.';
@@ -6127,7 +6236,7 @@ app.get(
           item.status ===
             'pending' &&
           item.force &&
-          !hasSentSource(queue, item, sentSourceIndex) &&
+          !hasSentSourceInStore(store, item, sentSourceIndex) &&
           !hasBlockingPendingSource(queue, item, pendingSourceIndex)
       );
 
@@ -6286,7 +6395,13 @@ app.get(
               ]
             : [];
 
+        const normalizedRoundAudienceCode =
+          normalizeAudienceCode(
+            roundAudienceCode
+          );
+
         if (
+          !normalizedRoundAudienceCode &&
           config.aiEnabled !==
             false &&
           config
@@ -6340,11 +6455,6 @@ app.get(
          * Público que a rodada está
          * tentando alimentar agora.
          */
-        const normalizedRoundAudienceCode =
-          normalizeAudienceCode(
-            roundAudienceCode
-          );
-
         /*
          * Na rodada, validamos também
          * com o roteador local.
@@ -6993,24 +7103,14 @@ app.get(
      * ======================================================
      */
 
-    const today =
-      now
-        .toISOString()
-        .slice(
-          0,
-          10
-        );
+    const today = analyticsDay(now);
 
     const sentToday =
       queue.filter(
         (item) =>
           item.status ===
             'sent' &&
-          item.sentAt
-            ?.slice(
-              0,
-              10
-            ) === today
+          item.sentAt && analyticsDay(new Date(item.sentAt)) === today
       ).length;
 
     if (
@@ -7056,10 +7156,9 @@ app.get(
      * INTERVALO CONFIGURADO NO PAINEL
      * ======================================================
      *
-     * O intervalo separa RODADAS, não os grupos da mesma rodada.
-     * Assim, uma rodada entrega uma oferta diferente para cada grupo
-     * disponível; depois que ela terminar, o sistema aguarda o tempo
-     * configurado antes de iniciar a próxima.
+     * O intervalo separa cada promoção, inclusive os grupos da mesma rodada.
+     * Assim, uma configuração de 10 minutos é respeitada entre G01, G02,
+     * G03 e os demais destinos, sem disparos em sequência.
      *
      * Publicações marcadas como "Publicar agora" são tratadas antes deste
      * bloco e continuam imediatas.
@@ -7076,6 +7175,15 @@ app.get(
       return res
         .status(204)
         .end();
+    }
+
+    const sentLastHour = queue.filter((item) => (
+      item.status === 'sent' &&
+      Number.isFinite(new Date(item.sentAt || 0).getTime()) &&
+      now.getTime() - new Date(item.sentAt).getTime() < 60 * 60 * 1000
+    )).length;
+    if (sentLastHour >= Number(config.whatsappMaxPerHour || 100)) {
+      return res.status(204).end();
     }
 
     /*
@@ -7148,7 +7256,7 @@ app.get(
               return false;
             }
 
-            if (hasSentSource(queue, item, sentSourceIndex)) {
+            if (hasSentSourceInStore(store, item, sentSourceIndex)) {
               historySkipped += 1;
               return false;
             }
@@ -7199,7 +7307,7 @@ app.get(
          * Acabou a rodada.
          *
          * Não cria outra agora.
-         * A próxima esperará o intervalo.
+     * A próxima esperará o intervalo configurado.
          */
         if (!round) {
           return res
@@ -7794,6 +7902,9 @@ app.post(
       if (!item) return;
 
       itemStatus = item.status;
+      item.deliveryClaimedDestinationIds = Array.isArray(item.deliveryClaimedDestinationIds)
+        ? [...new Set(item.deliveryClaimedDestinationIds.map((id) => String(id)))]
+        : [];
       item.deliveryAttemptedDestinationIds = Array.isArray(item.deliveryAttemptedDestinationIds)
         ? [...new Set(item.deliveryAttemptedDestinationIds.map((id) => String(id)))]
         : [];
@@ -7801,18 +7912,21 @@ app.post(
         ? [...new Set(item.deliverySentDestinationIds.map((id) => String(id)))]
         : [];
 
-      if (item.deliveryAttemptedDestinationIds.includes(destinationId)) {
+      if (
+        item.deliveryClaimedDestinationIds.includes(destinationId) ||
+        item.deliveryAttemptedDestinationIds.includes(destinationId) ||
+        item.deliverySentDestinationIds.includes(destinationId)
+      ) {
         alreadyClaimed = true;
         return;
       }
       if (!['pending', 'publishing'].includes(item.status)) return;
 
-      item.deliveryAttemptedDestinationIds.push(destinationId);
+      item.deliveryClaimedDestinationIds.push(destinationId);
       item.deliveryAttemptedDestinationNames = {
         ...(item.deliveryAttemptedDestinationNames || {}),
         [destinationId]: destinationName || item.deliveryAttemptedDestinationNames?.[destinationId] || ''
       };
-      item.deliveryStartedAt ||= new Date().toISOString();
       claimed = true;
     });
 
@@ -7820,6 +7934,37 @@ app.post(
     return res.json({ ok: true, claimed, alreadyClaimed, status: itemStatus });
   }
 );
+
+app.post('/api/worker/queue/:id/destination/started', requireWorker, async (req, res) => {
+  const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
+  if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
+  let found = false;
+  await updateStore((data) => {
+    const item = data.queue.find((entry) => entry.id === req.params.id);
+    if (!item) return;
+    found = true;
+    item.deliveryClaimedDestinationIds = (item.deliveryClaimedDestinationIds || []).filter((id) => String(id) !== destinationId);
+    item.deliveryAttemptedDestinationIds = [...new Set([...(item.deliveryAttemptedDestinationIds || []).map(String), destinationId])];
+    item.deliveryStartedAt ||= new Date().toISOString();
+  });
+  if (!found) return res.status(404).json({ error: 'Publicação não encontrada.' });
+  return res.json({ ok: true });
+});
+
+app.post('/api/worker/queue/:id/destination/release', requireWorker, async (req, res) => {
+  const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
+  if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
+  await updateStore((data) => {
+    const item = data.queue.find((entry) => entry.id === req.params.id);
+    if (!item) return;
+    const attempted = (item.deliveryAttemptedDestinationIds || []).map(String).includes(destinationId);
+    const sent = (item.deliverySentDestinationIds || []).map(String).includes(destinationId);
+    if (!attempted && !sent) {
+      item.deliveryClaimedDestinationIds = (item.deliveryClaimedDestinationIds || []).filter((id) => String(id) !== destinationId);
+    }
+  });
+  return res.json({ ok: true });
+});
 
 app.post(
   '/api/worker/queue/:id/destination/complete',
@@ -7834,6 +7979,7 @@ app.post(
       const item = data.queue.find((entry) => entry.id === req.params.id);
       if (!item) return;
       itemFound = true;
+      item.deliveryClaimedDestinationIds = (item.deliveryClaimedDestinationIds || []).filter((id) => String(id) !== destinationId);
       item.deliverySentDestinationIds = Array.isArray(item.deliverySentDestinationIds)
         ? [...new Set(item.deliverySentDestinationIds.map((id) => String(id)))]
         : [];
@@ -7886,6 +8032,8 @@ app.post(
 
         item.error =
           null;
+
+        recordSentSourceInLedger(data, item);
 
         const instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
         const instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
@@ -8054,6 +8202,7 @@ app.post(
 
         const deliveryStarted = Array.isArray(item.deliveryAttemptedDestinationIds)
           && item.deliveryAttemptedDestinationIds.length > 0;
+        if (!deliveryStarted) item.deliveryClaimedDestinationIds = [];
         item.status =
           deliveryStarted || item.attempts >= 3
             ? 'failed'
@@ -8404,7 +8553,7 @@ function publicSiteOrigin(config, req) {
     const url = new URL(configured);
     if (['http:', 'https:'].includes(url.protocol)) return url.origin;
   } catch { }
-  return `${req.protocol}://${req.get('host')}`;
+  return requestBaseUrl(req);
 }
 
 function xmlEscape(value) {
@@ -8582,7 +8731,10 @@ app.use(
 
       const [html, data] = await Promise.all([
         readIndexHtml(),
-        readStore()
+        // SEO é um aprimoramento, não um motivo para prender o navegador.
+        // Se o banco estiver ocupado, entregue o site imediatamente e deixe
+        // o React buscar os dados pela API depois.
+        resolveWithin(readStore(), 2_000, { config: {}, offers: [] })
       ]);
       res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
       res.type('html').send(injectSeo(html, data, req));

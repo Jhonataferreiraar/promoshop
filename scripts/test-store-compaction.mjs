@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { compactStoreHistory } from '../server/store.js';
-import { hasSentSource } from '../server/whatsappDedup.js';
+import { hasSentSourceInLedger } from '../server/whatsappDedup.js';
 
 const sentAt = (index) => new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString();
 const data = {
@@ -41,13 +41,14 @@ const data = {
 const originalSize = JSON.stringify(data).length;
 compactStoreHistory(data);
 
-assert.equal(data.queue[0].historyCompacted, true, 'O histórico antigo do WhatsApp deve ser compactado.');
-assert.equal(data.queue[0].message, undefined, 'Mensagens antigas não devem permanecer duplicadas no histórico.');
-assert.equal(data.queue[649].historyCompacted, undefined, 'As 500 publicações mais recentes devem continuar completas.');
+assert.equal(data.queue.length, 500, 'A fila deve manter somente as 500 publicações enviadas mais recentes.');
+assert.equal(data.meta.whatsappSentHistoryCount, 150, 'O painel deve preservar o total histórico mesmo após a limpeza.');
+assert.equal(data.queue[0].id, 'queue-150', 'As publicações antigas devem sair da fila operacional.');
+assert.equal(data.queue[499].historyCompacted, undefined, 'As 500 publicações mais recentes devem continuar completas.');
 assert.equal(
-  hasSentSource(data.queue, { offerId: 'offer-0', offerTitle: 'Oferta 0', store: 'Loja' }),
+  hasSentSourceInLedger(data, { offerId: 'offer-0', offerTitle: 'Oferta 0', store: 'Loja' }),
   true,
-  'A compactação não pode permitir que uma oferta enviada seja repetida.'
+  'A limpeza não pode permitir que uma oferta enviada seja repetida.'
 );
 assert.equal(data.instagramQueue[0].historyCompacted, true, 'Stories antigos devem ser compactados.');
 assert.equal(data.instagramQueue[0].payload, undefined, 'O conteúdo pesado de Stories antigos deve ser removido.');

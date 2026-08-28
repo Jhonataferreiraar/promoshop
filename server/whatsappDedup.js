@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 const OFFER_KIND = 'offer';
 const COUPON_KIND = 'coupon';
 const DIRECTORY_KIND = 'group-directory';
@@ -74,6 +76,27 @@ function sourceBucketKeys(item) {
   for (const link of source.links) keys.push(`${source.kind}:link:${link}`);
   if (source.title) keys.push(`${source.kind}:title:${source.title}`);
   return keys;
+}
+
+export function queueSourceLedgerKeys(item) {
+  return sourceBucketKeys(item).map((key) => crypto.createHash('sha256').update(key).digest('base64url'));
+}
+
+export function recordSentSourceInLedger(data, item) {
+  const keys = queueSourceLedgerKeys(item);
+  if (!keys.length) return;
+  data.meta ||= {};
+  data.meta.whatsappSentSourceLedger = data.meta.whatsappSentSourceLedger && typeof data.meta.whatsappSentSourceLedger === 'object'
+    ? data.meta.whatsappSentSourceLedger
+    : {};
+  const sentAt = item?.sentAt || new Date().toISOString();
+  for (const key of keys) data.meta.whatsappSentSourceLedger[key] = sentAt;
+}
+
+export function hasSentSourceInLedger(data, candidate) {
+  const ledger = data?.meta?.whatsappSentSourceLedger;
+  if (!ledger || typeof ledger !== 'object') return false;
+  return queueSourceLedgerKeys(candidate).some((key) => Object.hasOwn(ledger, key));
 }
 
 export function createQueueSourceIndex(queue, predicate = () => true) {

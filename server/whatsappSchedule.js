@@ -46,7 +46,8 @@ export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRo
     activeRound.pendingAudienceCodes.length
   );
 
-  return roundInProgress
-    ? { ...interval, elapsed: true, remainingMs: 0, continuingRound: true }
-    : { ...interval, continuingRound: false };
+  // O intervalo vale entre cada promoção, inclusive quando a rodada ainda
+  // está percorrendo os grupos. Assim uma configuração de 10 minutos nunca
+  // libera G01, G02 e G03 em sequência de poucos segundos.
+  return { ...interval, continuingRound: roundInProgress };
 }

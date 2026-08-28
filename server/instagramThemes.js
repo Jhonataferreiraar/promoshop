@@ -75,7 +75,13 @@ export function selectInstagramTheme(config = {}, date = new Date(), requestedId
     return themes.find((theme) => theme.enabled && theme.id === config.instagramManualThemeId) || themes[0];
   }
 
-  const monthDay = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const monthDay = `${values.month}-${values.day}`;
   return themes
     .filter((theme) => theme.enabled && theme.automatic && theme.id !== 'default' && inAnnualRange(monthDay, theme.start, theme.end))
     .sort((a, b) => b.priority - a.priority)[0]
