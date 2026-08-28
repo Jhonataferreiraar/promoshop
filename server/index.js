@@ -16,8 +16,8 @@ import QRCode from 'qrcode';
 
 import {
   addLog,
+  checkStoreHealth,
   createId,
-  getStoreBackendStatus,
   readStore,
   updateStore
 } from './store.js';
@@ -50,8 +50,7 @@ import {
 import {
   classifyOfferAudience,
   generateFallbackOfferMessage,
-  generateOfferMessage,
-  getAiAvailability
+  generateOfferMessage
 } from './ai.js';
 
 import {
@@ -901,6 +900,10 @@ function publicOfferAllowed(offer, config, nowMs = Date.now()) {
   if (offer?.qualityOverride === true || config.qualityFilterEnabled === false) return true;
   const quality = offerQuality(offer, config);
   return quality.score >= boundedNumber(config.qualityMinimumScore, 55, 0, 100);
+}
+
+function validClockTime(value) {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
 }
 
 function publicOfferTotal(offers, config, nowMs = Date.now()) {
@@ -1820,7 +1823,7 @@ app.use(
     if (process.env.NODE_ENV === 'production' && !isHttps && req.method !== 'OPTIONS') {
       const host = String(req.get('host') || '').split(',')[0].trim();
       if (host && !/^localhost(?::\d+)?$/i.test(host) && !/^127\.0\.0\.1(?::\d+)?$/.test(host)) {
-        return res.redirect(308, `https://${host}${req.originalUrl}`);
+        return res.redirect(308, `${requestBaseUrl(req)}${req.originalUrl}`);
       }
     }
 
@@ -2199,40 +2202,13 @@ function reportWhatsappReconnectFailure(error) {
 
 app.get(
   '/api/health',
-  (_req, res) => {
-    const aiStatus =
-      getAiAvailability();
-
-    res.json({
-      ok: true,
-
-      time:
-        new Date()
-          .toISOString(),
-
-      aiGenerationVersion,
-
-      aiTextMode:
-        'ai-with-local-fallback',
-
-      ai: {
-        available:
-          aiStatus.available,
-
-        provider:
-          aiStatus.provider,
-
-        model:
-          aiStatus.model,
-
-        lastSuccessAt:
-          aiStatus.lastSuccessAt,
-
-        lastFailureAt:
-          aiStatus.lastFailureAt
-      },
-
-      storage: getStoreBackendStatus()
+  async (_req, res) => {
+    const databaseOk = await resolveWithin(checkStoreHealth(), 2_500, false);
+    const status = databaseOk ? 200 : 503;
+    res.status(status).json({
+      ok: databaseOk,
+      time: new Date().toISOString(),
+      services: { database: databaseOk ? 'ok' : 'unavailable' }
     });
   }
 );
@@ -2427,7 +2403,15 @@ app.get(
       .filter((offer) => publicOfferAllowed(offer, config, nowMs));
 
     if (String(req.query?.paged || '') !== '1') {
-      return res.json(eligible.sort((a, b) => Number(b.featured) - Number(a.featured)).map((offer) => publicOfferPayload(offer, config, analytics)));
+      // Compatibilidade com consumidores antigos, porém com limite rígido.
+      // A vitrine atual usa a resposta paginada abaixo.
+      res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=30');
+      return res.json(
+        eligible
+          .sort((a, b) => Number(b.featured) - Number(a.featured))
+          .slice(0, 60)
+          .map((offer) => publicOfferPayload(offer, config, analytics))
+      );
     }
 
     const query = String(req.query?.query || '').trim().toLocaleLowerCase('pt-BR').slice(0, 120);
@@ -3537,8 +3521,25 @@ app.get(
       }
     };
 
+    // O painel não precisa receber comprovantes de consentimento nem o
+    // ledger permanente de deduplicação. Esses objetos crescem ao longo do
+    // tempo e, além de sensíveis, tornavam cada abertura do painel maior.
+    const {
+      privacyConsents: _privacyConsents,
+      meta: dashboardMeta,
+      ...dashboardPayload
+    } = dashboardData;
+    const safeDashboardMeta = {
+      lastCollectionAt: dashboardMeta?.lastCollectionAt || null,
+      collectionRequestedAt: dashboardMeta?.collectionRequestedAt || null,
+      publicationRound: dashboardMeta?.publicationRound || null,
+      lastPublicationRound: dashboardMeta?.lastPublicationRound || null,
+      whatsapp: dashboardMeta?.whatsapp || {}
+    };
+
     res.json({
-      ...dashboardData,
+      ...dashboardPayload,
+      meta: safeDashboardMeta,
       publicOfferTotal: publicOfferTotal(
         dashboardData.offers,
         dashboardData.config
@@ -3559,7 +3560,9 @@ app.get(
         .filter((item) => item?.status === 'pending')
         .slice(0, 5)
         .map(adminQueueItem),
-      queueSummary: summarizeQueue(dashboardData.queue, dashboardData.meta?.whatsappSentHistoryCount),
+      queueSummary: summarizeQueue(dashboardData.queue, dashboardMeta?.whatsappSentHistoryCount),
+      instagramQueue: (Array.isArray(dashboardData.instagramQueue) ? dashboardData.instagramQueue : []).slice(-200),
+      instagramFeedQueue: (Array.isArray(dashboardData.instagramFeedQueue) ? dashboardData.instagramFeedQueue : []).slice(-200),
       coupons: (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
@@ -3761,7 +3764,7 @@ app.put(
         }
         if (!/^https:\/\//i.test(data.config.instagramRedirectUri)) data.config.instagramRedirectUri = previousConfig.instagramRedirectUri || '';
         for (const key of ['instagramPublishingStart', 'instagramPublishingEnd', 'instagramFeedPublishingStart', 'instagramFeedPublishingEnd', 'publishingStart', 'publishingEnd', 'quietStart', 'quietEnd']) {
-          if (!/^\d{2}:\d{2}$/.test(String(data.config[key] || ''))) data.config[key] = previousConfig[key];
+          if (!validClockTime(data.config[key])) data.config[key] = previousConfig[key];
         }
 
         if (audienceRoutingChanged) {
@@ -5870,16 +5873,11 @@ app.post(
 
         if (item) {
           const sourceAlreadySent = hasSentSourceInStore(data, item);
-          if (
-            sourceAlreadySent ||
-            (Array.isArray(item.deliveryAttemptedDestinationIds) && item.deliveryAttemptedDestinationIds.length > 0)
-          ) {
+          if (sourceAlreadySent) {
             item.status = 'skipped';
             item.force = false;
             item.publishingAt = null;
-            item.error = sourceAlreadySent
-              ? 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.'
-              : 'Esta publicação já iniciou o envio e não será repetida automaticamente.';
+            item.error = 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.';
             item.skippedAt = new Date().toISOString();
             duplicateBlocked = true;
             return;
@@ -5897,6 +5895,9 @@ app.post(
           item.failedAt =
             null;
 
+          // Claims anteriores podem ser liberados. Destinos efetivamente
+          // tentados ou concluídos permanecem registrados e serão excluídos
+          // do novo envio, permitindo retomar somente o que ficou faltando.
           item.deliveryClaimedDestinationIds = [];
 
           delete item.aiStatus;
@@ -8200,11 +8201,19 @@ app.post(
             0
           ) + 1;
 
-        const deliveryStarted = Array.isArray(item.deliveryAttemptedDestinationIds)
-          && item.deliveryAttemptedDestinationIds.length > 0;
-        if (!deliveryStarted) item.deliveryClaimedDestinationIds = [];
+        const attemptedIds = new Set(
+          (Array.isArray(item.deliveryAttemptedDestinationIds) ? item.deliveryAttemptedDestinationIds : [])
+            .map((id) => String(id))
+        );
+        const sentIds = new Set(
+          (Array.isArray(item.deliverySentDestinationIds) ? item.deliverySentDestinationIds : [])
+            .map((id) => String(id))
+        );
+        const hasUnconfirmedDelivery = [...attemptedIds].some((id) => !sentIds.has(id));
+        const retrySafe = req.body?.retrySafe === true;
+        item.deliveryClaimedDestinationIds = [];
         item.status =
-          deliveryStarted || item.attempts >= 3
+          (!retrySafe && hasUnconfirmedDelivery) || item.attempts >= 3
             ? 'failed'
             : 'pending';
 
@@ -8218,9 +8227,11 @@ app.post(
             0,
             500
           );
-        if (deliveryStarted) {
+        if (hasUnconfirmedDelivery && !retrySafe) {
           item.error = 'O envio foi iniciado, mas não foi confirmado. Para não repetir a oferta, ela exige revisão manual antes de qualquer nova tentativa.';
           item.failedAt = new Date().toISOString();
+        } else if (retrySafe && item.status === 'pending') {
+          item.error = 'Alguns destinos foram concluídos. O sistema tentará novamente somente os destinos que ainda não foram iniciados.';
         }
 
         /*

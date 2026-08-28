@@ -13,8 +13,10 @@ const child = spawn(process.execPath, ['server/index.js'], {
     ...process.env,
     PORT: String(port),
     DATA_DIR: testDataDir,
+    STORE_BACKEND: 'file',
     ADMIN_PASSWORD: 'SenhaInicialSegura123!',
     AUTH_SECRET: 'security-test-secret-that-is-long-and-random',
+    WORKER_TOKEN: 'security-test-worker-token-that-is-long-enough',
     SITE_URL: origin,
     WHATSAPP_AUTOSTART: 'false',
     NODE_ENV: 'test'
@@ -49,6 +51,10 @@ try {
   assert.equal(health.headers.get('x-powered-by'), null);
   assert.equal(health.headers.get('x-frame-options'), 'DENY');
   assert.match(health.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
+  const healthBody = await health.json();
+  assert.deepEqual(healthBody.services, { database: 'ok' });
+  assert.equal(Object.hasOwn(healthBody, 'ai'), false);
+  assert.equal(Object.hasOwn(healthBody, 'storage'), false);
 
   const publicHomeResponse = await fetch(`${origin}/api/home`);
   assert.equal(publicHomeResponse.status, 200);
@@ -99,6 +105,16 @@ try {
   assert.deepEqual(savedTechnologyAudience.keywords, ['notebook', 'ultrabook', 'fone bluetooth']);
   assert.deepEqual(savedTechnologyAudience.blockedKeywords, ['usado']);
 
+  const originalPublishingStart = dashboardWithKeywords.config.publishingStart;
+  const invalidClockSave = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT',
+    headers: authorization,
+    body: JSON.stringify({ publishingStart: '29:90' })
+  });
+  assert.equal(invalidClockSave.status, 200);
+  const dashboardAfterInvalidClock = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  assert.equal(dashboardAfterInvalidClock.config.publishingStart, originalPublishingStart);
+
   const receiptId = 'privacyreceipt1234567890';
   const currentPolicyVersion = (await fetch(`${origin}/api/config/public`).then((response) => response.json())).legalPolicyVersion;
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
@@ -108,8 +124,8 @@ try {
   });
   assert.equal(privacyReceipt.status, 200);
   const dashboardWithReceipt = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
-  assert.equal(dashboardWithReceipt.privacyConsents[receiptId].choice, 'accepted');
-  assert.equal(Object.hasOwn(dashboardWithReceipt.privacyConsents[receiptId], 'ip'), false);
+  assert.equal(Object.hasOwn(dashboardWithReceipt, 'privacyConsents'), false);
+  assert.equal(Object.hasOwn(dashboardWithReceipt.meta || {}, 'whatsappSentSourceLedger'), false);
 
   const visitorId = 'anonymousvisitor1234567890';
   const sessionId = 'anonymoussession1234567890';
@@ -160,6 +176,7 @@ try {
     body: JSON.stringify({ title: 'Fone Bluetooth Teste Premium', store: 'Loja Teste', category: 'Tecnologia', price: 99.9, originalPrice: 199.9, image: 'https://example.com/fone.jpg', affiliateUrl: 'https://example.com/produto', freeShipping: true, status: 'active' })
   });
   assert.equal(createdOfferResponse.status, 201);
+  const createdOffer = await createdOfferResponse.json();
   const publicOffers = await fetch(`${origin}/api/offers?paged=1&sort=smart`).then((response) => response.json());
   assert.equal(publicOffers.total, 1);
   assert.equal(publicOffers.categories[0], 'Tecnologia');
@@ -168,6 +185,34 @@ try {
   assert.equal(Object.hasOwn(publicOffers.offers[0], 'source'), false);
   const productPage = await fetch(`${origin}/api/offer/${publicOffers.offers[0].publicSlug}`).then((response) => response.json());
   assert.equal(productPage.offer.title, 'Fone Bluetooth Teste Premium');
+
+  const queuedResponse = await fetch(`${origin}/api/admin/offers/${createdOffer.id}/queue`, {
+    method: 'POST', headers: authorization, body: JSON.stringify({ force: true })
+  });
+  assert.equal(queuedResponse.status, 201);
+  const queuedItem = await queuedResponse.json();
+  const workerHeaders = {
+    'content-type': 'application/json',
+    'x-worker-token': 'security-test-worker-token-that-is-long-enough'
+  };
+  const workerPost = (route, body) => fetch(`${origin}${route}`, {
+    method: 'POST', headers: workerHeaders, body: JSON.stringify(body)
+  });
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/destination/claim`, { destinationId: 'group-1', destinationName: 'Grupo 1' })).status, 200);
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/destination/started`, { destinationId: 'group-1' })).status, 200);
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/destination/complete`, { destinationId: 'group-1', destinationName: 'Grupo 1' })).status, 200);
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/destination/claim`, { destinationId: 'channel-1', destinationName: 'Canal 1' })).status, 200);
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/destination/release`, { destinationId: 'channel-1' })).status, 200);
+  assert.equal((await workerPost(`/api/worker/queue/${queuedItem.id}/fail`, { error: 'Canal indisponível antes do envio', retrySafe: true })).status, 200);
+  const deliveryStore = JSON.parse(await fs.readFile(path.join(testDataDir, 'db.json'), 'utf8'));
+  const partialQueueItem = deliveryStore.queue.find((item) => item.id === queuedItem.id);
+  assert.equal(partialQueueItem.status, 'pending');
+  assert.deepEqual(partialQueueItem.deliverySentDestinationIds, ['group-1']);
+  const completedClaim = await workerPost(`/api/worker/queue/${queuedItem.id}/destination/claim`, { destinationId: 'group-1', destinationName: 'Grupo 1' }).then((response) => response.json());
+  assert.equal(completedClaim.claimed, false);
+  assert.equal(completedClaim.alreadyClaimed, true);
+  const missingClaim = await workerPost(`/api/worker/queue/${queuedItem.id}/destination/claim`, { destinationId: 'channel-1', destinationName: 'Canal 1' }).then((response) => response.json());
+  assert.equal(missingClaim.claimed, true);
 
   const assistantQuestion = await fetch(`${origin}/api/assistant/recommend`, {
     method: 'POST',

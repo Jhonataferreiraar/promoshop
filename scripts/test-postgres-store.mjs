@@ -16,7 +16,9 @@ class MemoryPool {
   row = null;
 
   async query(sql, values = []) {
-    const normalized = sql.replace(/\s+/g, ' ').trim();
+    const queryText = typeof sql === 'object' ? sql.text : sql;
+    const normalized = queryText.replace(/\s+/g, ' ').trim();
+    if (/^SELECT 1$/i.test(normalized)) return { rowCount: 1, rows: [{ '?column?': 1 }] };
     if (/^CREATE TABLE/i.test(normalized)) return { rowCount: 0, rows: [] };
     if (/^SELECT version FROM/i.test(normalized)) {
       return { rowCount: this.row ? 1 : 0, rows: this.row ? [{ version: this.row.version }] : [] };
@@ -68,6 +70,7 @@ const firstProcess = createPostgresStateBackend(callbacks);
 const imported = await firstProcess.read();
 assert.equal(imported.config.brandName, 'PromoShop');
 assert.equal(imported.meta.imported, true);
+assert.equal(await firstProcess.check(), true);
 
 await firstProcess.update((data) => {
   data.offers.push({ id: 'offer-1', title: 'Oferta migrada' });

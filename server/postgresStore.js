@@ -49,6 +49,8 @@ export function createPostgresStateBackend({
   let cachedData = null;
   let cachedVersion = -1;
   let lastVersionCheckAt = 0;
+  let versionCheckPromise = null;
+  let dataLoadPromise = null;
   let connected = false;
 
   async function getPool() {
@@ -120,6 +122,7 @@ export function createPostgresStateBackend({
     const pool = await getPool();
     const result = await pool.query('SELECT version FROM promoshop_state WHERE id = 1');
     if (!result.rowCount) throw new Error('O estado principal do PromoShop não foi encontrado no PostgreSQL.');
+    connected = true;
     return Number(result.rows[0].version);
   }
 
@@ -129,20 +132,36 @@ export function createPostgresStateBackend({
     if (!result.rowCount) throw new Error('O estado principal do PromoShop não foi encontrado no PostgreSQL.');
     const row = result.rows[0];
     const restored = await restoreData(rowToPersistedData(row));
-    cachedData = normalizeData(restored.data);
-    cachedVersion = Number(row.version);
-    lastVersionCheckAt = Date.now();
+    const loadedData = normalizeData(restored.data);
+    const loadedVersion = Number(row.version);
+    // Uma leitura iniciada antes de uma gravação não pode substituir o cache
+    // mais novo quando terminar depois dela.
+    if (loadedVersion >= cachedVersion) {
+      cachedData = loadedData;
+      cachedVersion = loadedVersion;
+      lastVersionCheckAt = Date.now();
+    }
     connected = true;
-    return cachedData;
+    return loadedData;
+  }
+
+  async function loadCurrentDataOnce() {
+    if (!dataLoadPromise) {
+      dataLoadPromise = loadCurrentData().finally(() => { dataLoadPromise = null; });
+    }
+    return dataLoadPromise;
   }
 
   async function read() {
     await ensureDatabase();
     if (cachedData && Date.now() - lastVersionCheckAt < CACHE_REVALIDATE_MS) return cachedData;
-    const version = await loadVersion();
+    if (!versionCheckPromise) {
+      versionCheckPromise = loadVersion().finally(() => { versionCheckPromise = null; });
+    }
+    const version = await versionCheckPromise;
     lastVersionCheckAt = Date.now();
     if (cachedData && version === cachedVersion) return cachedData;
-    return loadCurrentData();
+    return loadCurrentDataOnce();
   }
 
   async function update(mutator) {
@@ -202,5 +221,18 @@ export function createPostgresStateBackend({
     };
   }
 
-  return { read, update, status };
+  async function check() {
+    try {
+      await ensureDatabase();
+      const pool = await getPool();
+      await pool.query({ text: 'SELECT 1', query_timeout: 2_000 });
+      connected = true;
+      return true;
+    } catch {
+      connected = false;
+      return false;
+    }
+  }
+
+  return { read, update, status, check };
 }

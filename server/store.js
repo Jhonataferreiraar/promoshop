@@ -704,6 +704,16 @@ export async function updateStore(mutator) {
   return updateFileStore(mutator);
 }
 
+export async function checkStoreHealth() {
+  try {
+    if (configuredStoreBackend === 'postgres') return await getPostgresBackend().check();
+    await readFileStore();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createId(prefix = 'item') {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }

@@ -629,6 +629,8 @@ async function processQueue() {
       throw new Error('Escolha pelo menos um grupo na seção WhatsApp do painel.');
     }
     let deliveredDestinations = 0;
+    const destinationErrors = [];
+    let safeRetryAvailable = false;
     for (const destination of destinations) {
       const claimed = await claimDestination(item, destination);
       if (!claimed) {
@@ -733,9 +735,34 @@ async function processQueue() {
           )
       );
       } catch (error) {
-        if (!deliveryStarted) await releaseDestination(item, destination).catch(() => {});
-        throw error;
+        if (!deliveryStarted) {
+          safeRetryAvailable = true;
+          await releaseDestination(item, destination).catch(() => {});
+        }
+        destinationErrors.push({
+          destination: destination.name || destination.id,
+          message: String(error?.message || error || 'Falha desconhecida'),
+          deliveryStarted
+        });
+        console.error(
+          `Falha no destino "${destination.name || destination.id}"; os demais destinos continuarão: ${error?.message || error}`
+        );
       }
+    }
+    if (destinationErrors.length) {
+      if (deliveredDestinations > 0) sentTimes.push(Date.now());
+      const detail = destinationErrors
+        .map((entry) => `${entry.destination}: ${entry.message}`)
+        .join(' | ')
+        .slice(0, 500);
+      await request(`/api/worker/queue/${item.id}/fail`, {
+        method: 'POST',
+        body: JSON.stringify({ error: detail, retrySafe: safeRetryAvailable })
+      });
+      console.warn(
+        `${deliveredDestinations} destino(s) concluído(s) e ${destinationErrors.length} com falha para "${item.offerTitle}".`
+      );
+      return;
     }
     if (!deliveredDestinations) {
       throw new Error('Nenhum destino novo pôde ser reservado; a oferta foi protegida contra repetição.');
