@@ -14,21 +14,36 @@ const columns = {
 
 class MemoryPool {
   row = null;
+  offerRows = new Map();
 
   async query(sql, values = []) {
     const queryText = typeof sql === 'object' ? sql.text : sql;
     const normalized = queryText.replace(/\s+/g, ' ').trim();
     if (/^SELECT 1$/i.test(normalized)) return { rowCount: 1, rows: [{ '?column?': 1 }] };
     if (/^CREATE TABLE/i.test(normalized)) return { rowCount: 0, rows: [] };
+    if (/^CREATE INDEX/i.test(normalized)) return { rowCount: 0, rows: [] };
     if (/^SELECT version FROM/i.test(normalized)) {
       return { rowCount: this.row ? 1 : 0, rows: this.row ? [{ version: this.row.version }] : [] };
     }
     if (/^INSERT INTO/i.test(normalized)) {
+      if (/promoshop_offers/i.test(normalized)) {
+        for (let index = 0; index < values.length; index += 11) this.offerRows.set(String(values[index]), true);
+        return { rowCount: 1, rows: [] };
+      }
       if (!this.row) {
         this.row = { id: 1, version: 1 };
         stateKeys.forEach((key, index) => { this.row[columns[key]] = JSON.parse(values[index]); });
       }
       return { rowCount: 1, rows: [] };
+    }
+    if (/^DELETE FROM promoshop_offers/i.test(normalized)) {
+      if (Array.isArray(values[0])) {
+        const keep = new Set(values[0].map(String));
+        for (const id of this.offerRows.keys()) if (!keep.has(id)) this.offerRows.delete(id);
+      } else {
+        this.offerRows.clear();
+      }
+      return { rowCount: 0, rows: [] };
     }
     if (/^SELECT \* FROM/i.test(normalized)) {
       return { rowCount: this.row ? 1 : 0, rows: this.row ? [structuredClone(this.row)] : [] };
@@ -77,6 +92,7 @@ await firstProcess.update((data) => {
 });
 assert.equal(pool.row.offers.length, 1);
 assert.equal(pool.row.version, 2);
+assert.equal(pool.offerRows.has('offer-1'), true);
 
 const secondProcess = createPostgresStateBackend(callbacks);
 const shared = await secondProcess.read();

@@ -14,6 +14,7 @@ const STATE_COLUMNS = Object.freeze({
 
 const STATE_KEYS = Object.keys(STATE_COLUMNS);
 const CACHE_REVALIDATE_MS = 750;
+const OFFER_TABLE = 'promoshop_offers';
 
 function serialize(value) {
   return JSON.stringify(value ?? null);
@@ -23,6 +24,102 @@ function rowToPersistedData(row) {
   return Object.fromEntries(
     STATE_KEYS.map((key) => [key, row[STATE_COLUMNS[key]]])
   );
+}
+
+function offerTimestamp(value) {
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function offerNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+async function ensureOfferTable(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${OFFER_TABLE} (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      store TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      price NUMERIC,
+      original_price NUMERIC,
+      affiliate_url TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ,
+      data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ${OFFER_TABLE}_status_idx ON ${OFFER_TABLE} (status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ${OFFER_TABLE}_category_idx ON ${OFFER_TABLE} (category)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ${OFFER_TABLE}_updated_idx ON ${OFFER_TABLE} (updated_at DESC)`);
+}
+
+async function syncOfferTable(executor, offers) {
+  const normalizedOffers = (Array.isArray(offers) ? offers : [])
+    .filter((offer) => offer && String(offer.id || '').trim())
+    .map((offer) => ({
+      id: String(offer.id).trim().slice(0, 200),
+      title: String(offer.title || '').slice(0, 500),
+      status: String(offer.status || 'active').slice(0, 40),
+      store: String(offer.store || '').slice(0, 120),
+      category: String(offer.category || '').slice(0, 160),
+      price: offerNumber(offer.price),
+      originalPrice: offerNumber(offer.originalPrice),
+      affiliateUrl: String(offer.affiliateUrl || '').slice(0, 4000),
+      createdAt: offerTimestamp(offer.createdAt),
+      updatedAt: offerTimestamp(offer.updatedAt),
+      data: offer
+    }));
+
+  for (let offset = 0; offset < normalizedOffers.length; offset += 100) {
+    const batch = normalizedOffers.slice(offset, offset + 100);
+    const values = [];
+    const placeholders = batch.map((offer, index) => {
+      const base = index * 11;
+      values.push(
+        offer.id,
+        offer.title,
+        offer.status,
+        offer.store,
+        offer.category,
+        offer.price,
+        offer.originalPrice,
+        offer.affiliateUrl,
+        offer.createdAt,
+        offer.updatedAt,
+        serialize(offer.data)
+      );
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}::jsonb)`;
+    }).join(', ');
+    await executor.query(
+      `INSERT INTO ${OFFER_TABLE} (id, title, status, store, category, price, original_price, affiliate_url, created_at, updated_at, data)
+       VALUES ${placeholders}
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         status = EXCLUDED.status,
+         store = EXCLUDED.store,
+         category = EXCLUDED.category,
+         price = EXCLUDED.price,
+         original_price = EXCLUDED.original_price,
+         affiliate_url = EXCLUDED.affiliate_url,
+         created_at = EXCLUDED.created_at,
+         updated_at = EXCLUDED.updated_at,
+         data = EXCLUDED.data,
+         synced_at = NOW()`,
+      values
+    );
+  }
+
+  const ids = normalizedOffers.map((offer) => offer.id);
+  if (ids.length) {
+    await executor.query(`DELETE FROM ${OFFER_TABLE} WHERE NOT (id = ANY($1::text[]))`, [ids]);
+  } else {
+    await executor.query(`DELETE FROM ${OFFER_TABLE}`);
+  }
 }
 
 function isLocalDatabase(connectionString) {
@@ -97,6 +194,7 @@ export function createPostgresStateBackend({
         `);
 
         const existing = await pool.query('SELECT version FROM promoshop_state WHERE id = 1');
+        let offersForIndex = [];
         if (!existing.rowCount) {
           const initial = normalizeData(await loadInitialData());
           const protectedData = await protectData(initial);
@@ -107,7 +205,16 @@ export function createPostgresStateBackend({
             `INSERT INTO promoshop_state (id, ${columns}) VALUES (1, ${parameters}) ON CONFLICT (id) DO NOTHING`,
             values
           );
+          offersForIndex = initial.offers;
+        } else {
+          const current = await pool.query('SELECT * FROM promoshop_state WHERE id = 1');
+          if (current.rowCount) {
+            const restored = await restoreData(rowToPersistedData(current.rows[0]));
+            offersForIndex = normalizeData(restored.data).offers;
+          }
         }
+        await ensureOfferTable(pool);
+        await syncOfferTable(pool, offersForIndex);
         connected = true;
       })().catch((error) => {
         ensurePromise = null;
@@ -192,6 +299,7 @@ export function createPostgresStateBackend({
             values
           );
           cachedVersion = Number(updated.rows[0].version);
+          if (changedKeys.includes('offers')) await syncOfferTable(client, data.offers);
         } else {
           cachedVersion = Number(row.version);
         }
