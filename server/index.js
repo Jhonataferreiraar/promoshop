@@ -408,7 +408,7 @@ app.use((req, res, next) => {
   let canonical;
   try { canonical = new URL(process.env.SITE_URL || process.env.PUBLIC_URL || ''); }
   catch { return next(); }
-  const requestHost = String(req.get('host') || '').split(',')[0].trim().toLowerCase();
+  const requestHost = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim().toLowerCase();
   if (!canonical.hostname || !requestHost || requestHost === canonical.host.toLowerCase() || /^localhost(?::\d+)?$/.test(requestHost) || /^127\.0\.0\.1(?::\d+)?$/.test(requestHost)) return next();
   if (['GET', 'HEAD'].includes(req.method)) return res.redirect(308, `${canonical.origin}${req.originalUrl}`);
   return res.status(421).json({ error: 'Use o endereço oficial do PromoShop.' });
