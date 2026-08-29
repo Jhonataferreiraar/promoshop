@@ -195,6 +195,8 @@ body {
 .header-status i { width: 7px; height: 7px; border-radius: 50%; background: #98a2b3; }
 .header-status.online { color: #067647; background: #ecfdf3; border-color: #abefc6; }
 .header-status.online i { background: #17b26a; box-shadow: 0 0 0 4px #d1fadf; }
+.header-status.pending { color: #175cd3; background: #eff8ff; border-color: #b2ddff; }
+.header-status.pending i { background: #2e90fa; box-shadow: 0 0 0 4px #d1e9ff; }
 .admin-main .panel { border: 1px solid #e4e7ec; border-radius: 16px; background: #fff; box-shadow: var(--shadow-sm); }
 .toast { top: 20px; right: 24px; z-index: 30; max-width: 440px; padding: 13px 17px; border: 1px solid #b2ddff; border-radius: 12px; color: #175cd3; background: #eff8ff; box-shadow: var(--shadow-md); }
 
@@ -5041,6 +5043,9 @@ button {
 .coupon-store { color: #1269f3; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .coupon-card h3 { margin: 0; font: 800 20px/1.25 'Manrope'; }
 .coupon-card p { margin: 0; color: #667085; line-height: 1.5; }
+.coupon-card .coupon-description { display: -webkit-box; min-height: 3em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.coupon-card h3 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.connection-progress-note { display: block; margin-top: 8px; color: #175cd3; font-weight: 700; }
 .coupon-card-actions { display: grid; gap: 13px; margin-top: auto; }
 .coupon-discount { color: #079b63; font: 800 22px 'Manrope'; }
 .coupon-code { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px dashed #98a2b3; border-radius: 10px; background: #f8fafc; }

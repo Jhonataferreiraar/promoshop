@@ -739,9 +739,20 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
     const source = await fetchBuffer(story.image);
     if (source) product = await sharp(source).rotate().resize(productWidth, productHeight, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
   } catch (error) {
-    addBufferedLog(`Instagram Feed: não foi possível preparar a imagem de ${story.title}: ${error.message}`, 'warning');
+    console.warn(`Instagram Feed: imagem indisponível para ${story.title}: ${error.message}`);
   }
-  if (story.image && !product) throw new Error('Não foi possível carregar a imagem da oferta para montar o Feed.');
+  if (!product) {
+    // Uma imagem remota expirada não deve bloquear nem repetir toda a fila.
+    // O cartão alternativo mantém o carrossel válido e visualmente consistente.
+    const placeholder = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${productWidth}" height="${productHeight}">
+      <rect width="${productWidth}" height="${productHeight}" rx="32" fill="#f2f4f7"/>
+      <circle cx="${Math.round(productWidth / 2)}" cy="${Math.round(productHeight / 2) - 34}" r="66" fill="${theme.background2}"/>
+      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) - 9}" text-anchor="middle" font-family="Arial,sans-serif" font-size="72" font-weight="900" fill="${theme.text}">%</text>
+      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) + 76}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#101828">OFERTA SELECIONADA</text>
+      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) + 116}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#667085">${escapeXml(store)}</text>
+    </svg>`);
+    product = await sharp(placeholder).jpeg({ quality: 88 }).toBuffer();
+  }
   const logo = await logoBuffer(106);
   const composites = [];
   if (product) composites.push({ input: product, left: productLeft, top: productTop });

@@ -2444,13 +2444,37 @@ function publicHomeCoupons(coupons, req) {
     .map((coupon) => publicCouponPayload(coupon, req));
 }
 
+function publicCouponDescription(coupon) {
+  const fallbackDiscount = coupon.discountType === 'fixed'
+    ? `R$ ${Number(coupon.discountValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF`
+    : coupon.discountType === 'free-shipping'
+      ? 'Frete grátis'
+      : Number(coupon.discountValue || 0) > 0
+        ? `${Number(coupon.discountValue)}% OFF`
+        : 'Desconto';
+  const rawDescription = String(coupon.description || '');
+  const fallbackDescription = `${fallbackDiscount} em produtos selecionados.`;
+  // Alguns cards do Mercado Livre chegam com todo o texto da tela, inclusive
+  // orçamento da campanha e outros cupons. Nunca exponha esse conteúdo público.
+  if (/Cupons disponíveis|Códigos gerados|Orçamento restante|Seu código|Copiar código|Condições do cupom/i.test(rawDescription)) {
+    return fallbackDescription;
+  }
+  const cleaned = rawDescription
+    .replace(/\bOrçamento restante\s*:?\s*R\$\s*[\d.\s,]+/gi, ' ')
+    .replace(/\b(?:Condições do cupom|Copiar código|Ver produtos|Seu código)\b\s*:?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const description = cleaned || fallbackDescription;
+  return description.length > 180 ? `${description.slice(0, 177).trimEnd()}…` : description;
+}
+
 function publicCouponPayload(coupon, req) {
   return {
     id: String(coupon.id || ''),
     title: String(coupon.title || '').trim(),
     store: String(coupon.store || '').trim(),
     code: String(coupon.code || '').trim(),
-    description: String(coupon.description || '').trim(),
+    description: publicCouponDescription(coupon),
     discountType: String(coupon.discountType || 'percent'),
     discountValue: Number(coupon.discountValue || 0),
     minPurchase: Number(coupon.minPurchase || 0),
@@ -8031,7 +8055,7 @@ app.post(
     updateWhatsappRuntime({
       status,
       message,
-      ...(status === 'connected' ? { qrDataUrl: null, pairingCode: null } : {})
+      ...(['authenticated', 'connected'].includes(status) ? { qrDataUrl: null, pairingCode: null } : {})
     }, now);
 
     if (shouldPersist) {

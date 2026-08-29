@@ -383,16 +383,18 @@ function OfferCard({ offer, config, favorite = false, onFavorite }) {
 }
 
 function CouponCard({ coupon, config, copied = false, onCopy }) {
+  const description = String(coupon.description || '').replace(/\s+/g, ' ').trim();
+  const shortDescription = description.length > 130 ? `${description.slice(0, 127).trimEnd()}…` : description;
   return <article className="coupon-card">
     <div className="coupon-card-top">
       <span className="coupon-store">{coupon.store || 'Magalu'}</span>
       <small>{coupon.expiresAt ? `Até ${new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}` : 'Validade não informada'}</small>
     </div>
     <h3>{coupon.title}</h3>
-    {coupon.description && <p>{coupon.description}</p>}
+    {shortDescription && <p className="coupon-description" title={description}>{shortDescription}</p>}
     <div className="coupon-card-actions">
-      {coupon.discountValue > 0 && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
-      {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={onCopy}>{copied ? 'Copiado' : 'Copiar'}</button></div>}
+      {(coupon.discountValue > 0 || coupon.discountType === 'free-shipping') && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
+      {coupon.code && <div className="coupon-code"><span>{coupon.code}</span><button type="button" onClick={onCopy} aria-label={`Copiar cupom ${coupon.code}`}>{copied ? 'Copiado' : 'Copiar'}</button></div>}
       <small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small>
       <a className="button primary full" href={coupon.shortUrl || coupon.link} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('coupon', { id: coupon.id, label: coupon.title, store: coupon.store })}>Ativar cupom <span>↗</span></a>
     </div>
@@ -522,7 +524,7 @@ function PublicSite() {
 
       api('/coupons')
         .then((couponData) => {
-          setCoupons(Array.isArray(couponData) ? couponData : []);
+          setCoupons(Array.isArray(couponData) ? couponData.slice(0, 6) : []);
           setCouponTotal(Array.isArray(couponData) ? couponData.length : 0);
         })
         .catch(() => { });
@@ -2304,7 +2306,8 @@ function AdminApp() {
   ];
   const whatsapp = data.meta?.whatsapp || {};
   const unreadInboxCount = (data.inbox || []).filter((item) => item.status === 'unread').length;
-  const statusLabels = { offline: 'Desconectado', starting: 'Iniciando', qr: 'Aguardando leitura do QR Code', pairing: 'Código gerado', authenticated: 'Autenticado', connected: 'Conectado', error: 'Erro' };
+  const statusLabels = { offline: 'Desconectado', starting: 'Iniciando', qr: 'Aguardando leitura do QR Code', pairing: 'Código gerado', authenticated: 'Finalizando conexão', connected: 'Conectado', error: 'Erro' };
+  const whatsappConnecting = ['starting', 'qr', 'pairing', 'authenticated'].includes(whatsapp.status);
   const formattedPairingCode = String(whatsapp.pairingCode || '').replace(/\s/g, '').match(/.{1,4}/g)?.join(' ') || '';
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
@@ -2318,8 +2321,8 @@ function AdminApp() {
   const seoPreviewDescription = String(data.config.seoDescription || '').trim() || 'Encontre ofertas e cupons selecionados na PromoShop.';
   const seoPreviewUrl = formatSeoPreviewUrl(data.config.canonicalUrl);
 
-  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
-    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{Number(data.queueSummary?.pending || 0)}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{Number(data.queueSummary?.sent || 0)}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue} /></section></div>}
+  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : whatsappConnecting ? 'pending' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : whatsappConnecting ? 'conectando' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
+    {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : whatsappConnecting ? 'Finalizando a conexão' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : whatsappConnecting ? (whatsapp.message || 'O número foi vinculado e os grupos estão sendo sincronizados.') : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : whatsappConnecting ? 'Acompanhar conexão' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{Number(data.queueSummary?.pending || 0)}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{Number(data.queueSummary?.sent || 0)}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
 
@@ -3162,14 +3165,15 @@ function AdminApp() {
       <div className="form-footer"><span>As credenciais são armazenadas de forma protegida.</span><button className="button primary">Salvar todas as fontes</button></div>
     </form>}
     {tab === 'whatsapp' && <div className="whatsapp-admin-grid">
-      <section className="panel connection-panel">
-        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message}</p></div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{Number(data.queueSummary?.pending || 0)}</strong> aguardando na fila</span></div><div className="connection-actions">
+      <section className="panel connection-panel" aria-live="polite">
+        <div className="connection-head"><div className="connection-summary"><span className={`connection-dot ${whatsapp.status || 'offline'}`}></span><div><small>STATUS DO PUBLICADOR</small><h2>{statusLabels[whatsapp.status] || 'Desconectado'}</h2><p>{whatsapp.message || 'Aguardando atualização do publicador.'}</p>{whatsapp.status === 'authenticated' && <small className="connection-progress-note">✓ Número vinculado · Sincronizando conversas e grupos</small>}</div></div><div className="connection-meta"><span><strong>{(whatsapp.groups || []).length}</strong> grupos encontrados</span><span><strong>{Number(data.queueSummary?.pending || 0)}</strong> aguardando na fila</span></div><div className="connection-actions">
           <button
             className="button primary"
             type="button"
+            disabled={whatsappConnecting}
             onClick={reconnectWhatsapp}
           >
-            Reconectar
+            {whatsappConnecting ? 'Conectando…' : whatsapp.status === 'connected' ? 'Reiniciar conexão' : 'Reconectar'}
           </button>
 
           <button
@@ -3188,7 +3192,7 @@ function AdminApp() {
             Desconectar
           </button>
         </div></div>
-        {whatsapp.status !== 'connected' && <div className="phone-pairing"><label>Número com país e DDD<input inputMode="numeric" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, ''))} placeholder="5511999999999" /><small>Exemplo: 55 + DDD + número. Ele não será salvo.</small></label><div className="connection-actions"><button className="button primary" type="button" onClick={() => startWhatsapp('phone')}>Conectar pelo número</button><button className="button subtle" type="button" onClick={() => startWhatsapp('qr')}>Usar QR Code</button></div></div>}
+        {['offline', 'error'].includes(whatsapp.status) && <div className="phone-pairing"><label>Número com país e DDD<input inputMode="numeric" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, ''))} placeholder="5511999999999" /><small>Exemplo: 55 + DDD + número. Ele não será salvo.</small></label><div className="connection-actions"><button className="button primary" type="button" onClick={() => startWhatsapp('phone')}>Conectar pelo número</button><button className="button subtle" type="button" onClick={() => startWhatsapp('qr')}>Usar QR Code</button></div></div>}
         {whatsapp.pairingCode && <div className="pairing-box"><span className="pairing-code">{formattedPairingCode}</span><div><strong>Digite este código no WhatsApp</strong><p>No celular: Aparelhos conectados → Conectar aparelho → Conectar com número de telefone.</p></div></div>}
         {whatsapp.qrDataUrl && <div className="qr-box"><img src={whatsapp.qrDataUrl} alt="QR Code para conectar o WhatsApp" /><div><strong>Leia este QR Code</strong><p>No celular, abra WhatsApp → Aparelhos conectados → Conectar aparelho.</p></div></div>}
       </section>

@@ -150,6 +150,7 @@ let sentTimes = [];
 let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
+let authenticationReadyProbe = null;
 let shuttingDown = false;
 let shutdownPromise = null;
 const groupParticipantCache = new Map();
@@ -159,6 +160,8 @@ function shutdownWhatsappWorker(reason = 'encerramento solicitado', exitCode = 0
   if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
   whatsappReady = false;
+  if (authenticationReadyProbe) clearTimeout(authenticationReadyProbe);
+  authenticationReadyProbe = null;
   shutdownPromise = (async () => {
     console.log(`Encerrando publicador do WhatsApp: ${reason}.`);
     const timeout = new Promise((resolve) => setTimeout(resolve, 5_000));
@@ -605,6 +608,42 @@ async function resolveDestinations(item) {
   return unique.filter((destination) => !attempted.has(String(destination.id)));
 }
 
+function confirmReadyAfterAuthentication(attempt = 1) {
+  if (shuttingDown || whatsappReady || connectedServicesStarted) return;
+  // O evento `authenticated` pode chegar mais de uma vez. Preserve a sonda já
+  // agendada para que eventos repetidos não adiem indefinidamente a confirmação.
+  if (authenticationReadyProbe) return;
+  authenticationReadyProbe = setTimeout(async () => {
+    authenticationReadyProbe = null;
+    try {
+      const state = await Promise.race([
+        client.getState(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('tempo de confirmação excedido')), 8_000))
+      ]);
+      if (String(state || '').toUpperCase() === 'CONNECTED') {
+        console.log('WhatsApp conectado confirmado pelo estado interno. Iniciando o publicador.');
+        whatsappReady = true;
+        await startConnectedServices();
+        return;
+      }
+    } catch (error) {
+      if (attempt === 1 || attempt % 6 === 0) {
+        console.warn(`WhatsApp autenticado, mas a confirmação interna ainda não chegou: ${error.message}`);
+      }
+    }
+    if (attempt < 36) confirmReadyAfterAuthentication(attempt + 1);
+    else {
+      await request('/api/worker/heartbeat', {
+        method: 'POST',
+        body: JSON.stringify({
+          status: 'authenticated',
+          message: 'Número vinculado, mas o WhatsApp Web ainda não confirmou a sincronização. Use “Verificar conexão” ou reconecte se continuar assim.'
+        })
+      }).catch(() => {});
+    }
+  }, attempt === 1 ? 2_000 : 5_000);
+}
+
 async function processQueue() {
   if (processing) return;
   processing = true;
@@ -799,12 +838,23 @@ client.on('authenticated', async () => {
       message: 'Número vinculado. Aguardando o WhatsApp ficar pronto…'
     })
   }).catch(() => { });
+  confirmReadyAfterAuthentication();
 });
 client.on('ready', async () => {
   console.log('WhatsApp pronto. Iniciando o publicador.');
 
   whatsappReady = true;
+  if (authenticationReadyProbe) clearTimeout(authenticationReadyProbe);
+  authenticationReadyProbe = null;
 
+  await startConnectedServices();
+});
+client.on('change_state', async (state) => {
+  if (String(state || '').toUpperCase() !== 'CONNECTED' || shuttingDown || whatsappReady) return;
+  console.log('WhatsApp conectado confirmado pela mudança de estado. Iniciando o publicador.');
+  whatsappReady = true;
+  if (authenticationReadyProbe) clearTimeout(authenticationReadyProbe);
+  authenticationReadyProbe = null;
   await startConnectedServices();
 });
 client.on('auth_failure', async (message) => {
