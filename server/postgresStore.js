@@ -103,6 +103,30 @@ async function ensureRelationalTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS promoshop_logs_created_idx ON promoshop_logs ((data->>'createdAt'))`);
 }
 
+async function ensureRowSecurity(pool) {
+  const tables = ['promoshop_state', OFFER_TABLE, SECTION_TABLE, ...Object.values(ENTITY_TABLES)];
+  for (const table of tables) {
+    await pool.query(`REVOKE ALL ON TABLE ${table} FROM PUBLIC`);
+    await pool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+    await pool.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+    await pool.query(`
+      DO $policy$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policy
+          WHERE polrelid = '${table}'::regclass AND polname = 'promoshop_service_access'
+        ) THEN
+          EXECUTE format(
+            'CREATE POLICY promoshop_service_access ON ${table} TO %I USING (true) WITH CHECK (true)',
+            current_user
+          );
+        END IF;
+      END
+      $policy$
+    `);
+  }
+}
+
 function entityRows(items) {
   const seen = new Set();
   return (Array.isArray(items) ? items : []).flatMap((item, position) => {
@@ -113,17 +137,44 @@ function entityRows(items) {
   });
 }
 
-async function syncJsonEntityTable(executor, table, items) {
-  const rows = entityRows(items);
+async function syncJsonEntityTable(executor, table, items, beforeItems = null) {
+  const allRows = entityRows(items);
+  if (beforeItems === null) {
+    await executor.query(`
+      WITH incoming AS (
+        SELECT value->>'id' AS id, (ordinality - 1)::BIGINT AS position, value AS data
+        FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY
+        WHERE NULLIF(BTRIM(value->>'id'), '') IS NOT NULL
+      ), upserted AS (
+        INSERT INTO ${table} (id, position, data, synced_at)
+        SELECT id, position, data, NOW() FROM incoming
+        ON CONFLICT (id) DO UPDATE SET position = EXCLUDED.position, data = EXCLUDED.data, synced_at = NOW()
+        WHERE ${table}.position IS DISTINCT FROM EXCLUDED.position OR ${table}.data IS DISTINCT FROM EXCLUDED.data
+        RETURNING id
+      )
+      DELETE FROM ${table} current WHERE NOT EXISTS (SELECT 1 FROM incoming WHERE incoming.id = current.id)
+    `, [serialize(allRows.map((row) => ({ ...row.data, id: row.id })))]);
+    return;
+  }
+  const beforeRows = beforeItems === null ? null : entityRows(beforeItems);
+  const previous = beforeRows === null
+    ? null
+    : new Map(beforeRows.map((row) => [row.id, `${row.position}\0${serialize(row.data)}`]));
+  const rows = previous === null
+    ? allRows
+    : allRows.filter((row) => previous.get(row.id) !== `${row.position}\0${serialize(row.data)}`);
+  const currentIds = new Set(allRows.map((row) => row.id));
+  const removedIds = beforeRows === null ? [] : beforeRows.filter((row) => !currentIds.has(row.id)).map((row) => row.id);
+  if (rows.length) {
   await executor.query(`
     WITH incoming AS (
       SELECT
         value->>'id' AS id,
-        (ordinality - 1)::BIGINT AS position,
-        value AS data
-      FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY
+        (value->>'__position')::BIGINT AS position,
+        value - '__position' AS data
+      FROM jsonb_array_elements($1::jsonb) AS incoming_value(value)
       WHERE NULLIF(BTRIM(value->>'id'), '') IS NOT NULL
-    ), upserted AS (
+    )
       INSERT INTO ${table} (id, position, data, synced_at)
       SELECT id, position, data, NOW() FROM incoming
       ON CONFLICT (id) DO UPDATE SET
@@ -133,10 +184,11 @@ async function syncJsonEntityTable(executor, table, items) {
       WHERE ${table}.position IS DISTINCT FROM EXCLUDED.position
          OR ${table}.data IS DISTINCT FROM EXCLUDED.data
       RETURNING id
-    )
-    DELETE FROM ${table} current
-    WHERE NOT EXISTS (SELECT 1 FROM incoming WHERE incoming.id = current.id)
-  `, [serialize(rows.map((row) => ({ ...row.data, id: row.id })))]);
+  `, [serialize(rows.map((row) => ({ ...row.data, id: row.id, __position: row.position })))]);
+  }
+  if (removedIds.length) {
+    await executor.query(`DELETE FROM ${table} WHERE id = ANY($1::text[])`, [removedIds]);
+  }
 }
 
 async function syncSections(executor, protectedData, changedKeys = SECTION_KEYS) {
@@ -224,7 +276,7 @@ async function readRelationalKeys(executor, keys) {
   return persisted;
 }
 
-async function syncOfferTable(executor, offers) {
+async function syncOfferTable(executor, offers, beforeOffers = null) {
   const normalizedOffers = (Array.isArray(offers) ? offers : [])
     .filter((offer) => offer && String(offer.id || '').trim())
     .map((offer) => ({
@@ -241,8 +293,18 @@ async function syncOfferTable(executor, offers) {
       data: offer
     }));
 
-  for (let offset = 0; offset < normalizedOffers.length; offset += 100) {
-    const batch = normalizedOffers.slice(offset, offset + 100);
+  const previous = beforeOffers === null ? null : new Map(
+    (Array.isArray(beforeOffers) ? beforeOffers : [])
+      .filter((offer) => offer && String(offer.id || '').trim())
+      .map((offer, position) => [String(offer.id).trim().slice(0, 200), `${position}\0${serialize(offer)}`])
+  );
+  const changedOffers = previous === null
+    ? normalizedOffers
+    : normalizedOffers.filter((offer, position) => previous.get(offer.id) !== `${position}\0${serialize(offer.data)}`);
+  const offerPositions = new Map(normalizedOffers.map((offer, position) => [offer.id, position]));
+
+  for (let offset = 0; offset < changedOffers.length; offset += 100) {
+    const batch = changedOffers.slice(offset, offset + 100);
     const values = [];
     const placeholders = batch.map((offer, index) => {
       const base = index * 12;
@@ -257,7 +319,7 @@ async function syncOfferTable(executor, offers) {
         offer.affiliateUrl,
         offer.createdAt,
         offer.updatedAt,
-        offset + index,
+        offerPositions.get(offer.id),
         serialize(offer.data)
       );
       return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}::jsonb)`;
@@ -283,10 +345,13 @@ async function syncOfferTable(executor, offers) {
   }
 
   const ids = normalizedOffers.map((offer) => offer.id);
-  if (ids.length) {
-    await executor.query(`DELETE FROM ${OFFER_TABLE} WHERE NOT (id = ANY($1::text[]))`, [ids]);
+  if (beforeOffers === null) {
+    if (ids.length) await executor.query(`DELETE FROM ${OFFER_TABLE} WHERE NOT (id = ANY($1::text[]))`, [ids]);
+    else await executor.query(`DELETE FROM ${OFFER_TABLE}`);
   } else {
-    await executor.query(`DELETE FROM ${OFFER_TABLE}`);
+    const currentIds = new Set(ids);
+    const removedIds = [...previous.keys()].filter((id) => !currentIds.has(id));
+    if (removedIds.length) await executor.query(`DELETE FROM ${OFFER_TABLE} WHERE id = ANY($1::text[])`, [removedIds]);
   }
 }
 
@@ -420,6 +485,11 @@ export function createPostgresStateBackend({
             if (restored.requiresReencrypt) await retireDataKey();
           }
           relationalReady = true;
+          if (!suppliedPool) {
+            await ensureRowSecurity(pool).catch((securityError) => {
+              console.warn(`PostgreSQL: não foi possível ativar toda a proteção por linhas: ${securityError.message}`);
+            });
+          }
           console.log(`PostgreSQL relacional pronto (schema ${POSTGRES_SCHEMA_VERSION}).`);
         } catch (migrationError) {
           relationalReady = false;
@@ -549,9 +619,9 @@ export function createPostgresStateBackend({
         if (persistedKeys.length) {
           const protectedAfter = await protectData(data);
           if (useRelationalStore) {
-            if (changedKeys.includes('offers')) await syncOfferTable(client, data.offers);
+            if (changedKeys.includes('offers')) await syncOfferTable(client, data.offers, before.offers);
             for (const [key, table] of Object.entries(ENTITY_TABLES)) {
-              if (changedKeys.includes(key)) await syncJsonEntityTable(client, table, data[key]);
+              if (changedKeys.includes(key)) await syncJsonEntityTable(client, table, data[key], before[key]);
             }
             await syncSections(client, protectedAfter, persistedKeys);
           }

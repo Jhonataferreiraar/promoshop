@@ -141,6 +141,9 @@ async function api(path, options = {}) {
   }
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), Math.max(5_000, Number(timeoutMs) || 20_000));
+  const signal = requestOptions.signal && typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([requestOptions.signal, controller.signal])
+    : requestOptions.signal || controller.signal;
   let response;
   try {
     response = await fetch(`/api${path}`, {
@@ -148,10 +151,10 @@ async function api(path, options = {}) {
       method,
       credentials: 'same-origin',
       headers,
-      signal: requestOptions.signal || controller.signal
+      signal
     });
   } catch (error) {
-    if (error?.name === 'AbortError' && !requestOptions.signal) {
+    if (error?.name === 'AbortError' && controller.signal.aborted) {
       const timeoutError = new Error('O servidor demorou para responder. Atualize a página e tente novamente.');
       timeoutError.code = 'REQUEST_TIMEOUT';
       throw timeoutError;
@@ -1538,6 +1541,16 @@ function AdminApp() {
       dashboardLoadCountRef.current = Math.max(0, dashboardLoadCountRef.current - 1);
     }
   }
+
+  async function loadPanelState(section) {
+    if (document.hidden) return;
+    const result = await authApi(`/admin/${section}-state`);
+    setData((current) => ({
+      ...current,
+      ...result,
+      meta: result.meta ? { ...(current.meta || {}), ...result.meta } : current.meta
+    }));
+  }
   async function loadQueuePage(reset = false) {
     const offset = reset ? 0 : queueItems.length;
     try {
@@ -1616,12 +1629,14 @@ function AdminApp() {
   }, [token, tab]);
   useEffect(() => {
     if (!token || tab !== 'instagram') return undefined;
-    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 15000);
+    loadPanelState('instagram').catch(() => {});
+    const interval = window.setInterval(() => loadPanelState('instagram').catch(() => {}), 15000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {
     if (!token || tab !== 'inbox') return undefined;
-    const interval = window.setInterval(() => load({ preserveConfig: true, background: true }), 15000);
+    loadPanelState('inbox').catch(() => {});
+    const interval = window.setInterval(() => loadPanelState('inbox').catch(() => {}), 15000);
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {

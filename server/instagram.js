@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 import { downloadRemoteBuffer } from './safeRemote.js';
+import { readTextLimited } from './httpBody.js';
 
 import { addBufferedLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
@@ -875,7 +876,7 @@ async function metaJson(url, options = {}) {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
-      const text = await response.text();
+      const text = await readTextLimited(response);
       let body = {};
       try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text.slice(0, 400) }; }
       if (!response.ok || body.error) {
@@ -907,9 +908,16 @@ async function metaJson(url, options = {}) {
   throw new Error('A Meta não respondeu à solicitação.');
 }
 
+function metaBearerJson(url, accessToken, options = {}) {
+  return metaJson(url, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${accessToken}` }
+  });
+}
+
 export async function testInstagramConnection(config, secrets) {
   if (!secrets.instagramAccessToken) throw new Error('Conecte a conta do Instagram primeiro.');
-  return metaJson(`${graphUrl(config, '/me')}?fields=user_id,username,name,profile_picture_url&access_token=${encodeURIComponent(secrets.instagramAccessToken)}`);
+  return metaBearerJson(`${graphUrl(config, '/me')}?fields=user_id,username,name,profile_picture_url`, secrets.instagramAccessToken);
 }
 
 export async function beginInstagramAuthorization(config, secrets) {
@@ -937,7 +945,7 @@ export async function finishInstagramAuthorization(config, secrets, query) {
   const shortToken = await metaJson('https://api.instagram.com/oauth/access_token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
   const longToken = await metaJson(`https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(secrets.instagramAppSecret)}&access_token=${encodeURIComponent(shortToken.access_token)}`);
   const accessToken = longToken.access_token || shortToken.access_token;
-  const profile = await metaJson(`${graphUrl(config, '/me')}?fields=user_id,username,name,profile_picture_url&access_token=${encodeURIComponent(accessToken)}`);
+  const profile = await metaBearerJson(`${graphUrl(config, '/me')}?fields=user_id,username,name,profile_picture_url`, accessToken);
   await updateSecrets({
     instagramAccessToken: accessToken,
     instagramUserId: String(profile.user_id || shortToken.user_id || profile.id || ''),
@@ -973,7 +981,7 @@ async function publishAsset(config, secrets, imageUrl) {
   const container = await metaJson(graphUrl(config, `/${encodeURIComponent(secrets.instagramUserId)}/media`), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params, retryAttempts: 1 });
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    const status = await metaJson(`${graphUrl(config, `/${container.id}`)}?fields=status_code&access_token=${encodeURIComponent(secrets.instagramAccessToken)}`);
+    const status = await metaBearerJson(`${graphUrl(config, `/${container.id}`)}?fields=status_code`, secrets.instagramAccessToken);
     if (status.status_code === 'FINISHED') break;
     if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') throw new Error(`A Meta não conseguiu preparar o Story (${status.status_code}).`);
     if (attempt === 11) throw new Error('A Meta demorou demais para preparar o Story.');
@@ -986,7 +994,7 @@ async function publishAsset(config, secrets, imageUrl) {
 async function waitForMediaContainer(config, secrets, containerId) {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    const status = await metaJson(`${graphUrl(config, `/${containerId}`)}?fields=status_code&access_token=${encodeURIComponent(secrets.instagramAccessToken)}`);
+    const status = await metaBearerJson(`${graphUrl(config, `/${containerId}`)}?fields=status_code`, secrets.instagramAccessToken);
     if (!status.status_code || status.status_code === 'FINISHED') return;
     if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') throw new Error(`A Meta não conseguiu preparar a publicação (${status.status_code}).`);
     if (attempt === 11) throw new Error('A Meta demorou demais para preparar a publicação.');

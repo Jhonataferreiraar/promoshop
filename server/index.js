@@ -394,10 +394,25 @@ const contactMaxAttempts = 5;
 const analyticsAttempts = new Map();
 const analyticsWindowMs = 10 * 60 * 1000;
 const analyticsMaxAttempts = 180;
+const consentAttempts = new Map();
+const consentWindowMs = 15 * 60 * 1000;
+const consentMaxAttempts = 12;
+let legacyAdminPasswordDetected = null;
 
 // O Render termina o TLS antes do Node; em desenvolvimento não confiamos em
 // X-Forwarded-* enviado diretamente pelo cliente.
 app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
+
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production' || req.path === '/api/health') return next();
+  let canonical;
+  try { canonical = new URL(process.env.SITE_URL || process.env.PUBLIC_URL || ''); }
+  catch { return next(); }
+  const requestHost = String(req.get('host') || '').split(',')[0].trim().toLowerCase();
+  if (!canonical.hostname || !requestHost || requestHost === canonical.host.toLowerCase() || /^localhost(?::\d+)?$/.test(requestHost) || /^127\.0\.0\.1(?::\d+)?$/.test(requestHost)) return next();
+  if (['GET', 'HEAD'].includes(req.method)) return res.redirect(308, `${canonical.origin}${req.originalUrl}`);
+  return res.status(421).json({ error: 'Use o endereço oficial do PromoShop.' });
+});
 
 /*
  * ==========================================================
@@ -766,6 +781,23 @@ function requestBaseUrl(req) {
   return /^localhost(?::\d+)?$|^127\.0\.0\.1(?::\d+)?$/i.test(host)
     ? `${req.protocol || 'http'}://${host}`
     : `http://localhost:${port}`;
+}
+
+function checkConsentLimit(ip) {
+  const now = Date.now();
+  pruneRateMap(consentAttempts, now);
+  const key = hashSecurityIdentifier(ip);
+  const current = consentAttempts.get(key) || { count: 0, resetAt: now + consentWindowMs };
+  if (current.resetAt <= now) {
+    current.count = 0;
+    current.resetAt = now + consentWindowMs;
+  }
+  if (current.count >= consentMaxAttempts) {
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+  }
+  current.count += 1;
+  consentAttempts.set(key, current);
+  return { allowed: true };
 }
 
 function publicBaseUrl(req) {
@@ -1344,7 +1376,9 @@ const affiliateHostSuffixes = [
   'shopee.com.br',
   'shopee.com',
   's.shopee.com.br',
+  'shope.ee',
   'aliexpress.com',
+  'aliexpress.com.br',
   'a.aliexpress.com',
   'magalu.com',
   'magazinevoce.com.br',
@@ -1831,9 +1865,7 @@ const allowedOrigins =
   [
     process.env.SITE_URL,
     process.env.PUBLIC_URL,
-    process.env.RENDER_EXTERNAL_URL,
-    'https://promoshop.jhonatafaraujo.com.br',
-    'https://promoshop.onrender.com'
+    'https://promoshop.jhonatafaraujo.com.br'
   ].join(',')
     .split(',')
     .map(
@@ -2434,6 +2466,8 @@ function publicHomeAudiences(config) {
 }
 
 function publicOfferPayload(offer, config, analytics) {
+  const affiliate = safeAffiliateDestination(offer.affiliateUrl);
+  const product = safeAffiliateDestination(offer.productUrl);
   return {
     id: String(offer.id || ''),
     title: String(offer.title || '').trim(),
@@ -2442,8 +2476,8 @@ function publicOfferPayload(offer, config, analytics) {
     price: Number(offer.price || 0),
     originalPrice: Number(offer.originalPrice || 0),
     image: String(offer.image || '').trim(),
-    affiliateUrl: String(offer.affiliateUrl || '').trim(),
-    productUrl: String(offer.productUrl || '').trim(),
+    affiliateUrl: affiliate?.toString() || '',
+    productUrl: product?.toString() || '',
     freeShipping: Boolean(offer.freeShipping),
     featured: Boolean(offer.featured),
     createdAt: offer.createdAt || null,
@@ -3066,6 +3100,11 @@ app.post(
 app.post(
   '/api/privacy/consent',
   async (req, res) => {
+    const rate = checkConsentLimit(req.ip || req.socket.remoteAddress || 'unknown');
+    if (!rate.allowed) {
+      res.set('Retry-After', String(rate.retryAfter));
+      return res.status(429).json({ error: 'Muitas atualizações de privacidade. Aguarde alguns minutos.' });
+    }
     const receiptId = normalizeAnalyticsId(req.body?.receiptId);
     const previousVisitorId = normalizeAnalyticsId(req.body?.previousVisitorId);
     const choice = String(req.body?.choice || '').trim();
@@ -3394,13 +3433,10 @@ app.post(
     let secrets =
       await readSecrets();
 
-    if (
-      verifyPassword(
-        'admin123',
-        secrets
-          .adminPasswordHash
-      )
-    ) {
+    if (legacyAdminPasswordDetected === null) {
+      legacyAdminPasswordDetected = await verifyPassword('admin123', secrets.adminPasswordHash);
+    }
+    if (legacyAdminPasswordDetected) {
       const migrationPassword =
         String(
           process.env
@@ -3425,6 +3461,7 @@ app.post(
           adminPassword:
             migrationPassword
         });
+      legacyAdminPasswordDetected = false;
     }
 
     const username = String(req.body?.username || '').trim().slice(0, 100);
@@ -3468,7 +3505,7 @@ app.post(
     const passOk =
       secrets
         .adminPasswordHash
-        ? verifyPassword(
+        ? await verifyPassword(
             password,
             secrets
               .adminPasswordHash
@@ -3576,6 +3613,24 @@ app.get('/api/admin/queue', requireAdmin, async (req, res) => {
   });
 });
 
+app.get('/api/admin/instagram-state', requireAdmin, async (_req, res) => {
+  const data = await readStoreSlice(['instagramQueue', 'instagramFeedQueue', 'logs', 'meta']);
+  res.json({
+    instagramQueue: (data.instagramQueue || []).slice(-200),
+    instagramFeedQueue: (data.instagramFeedQueue || []).slice(-200),
+    logs: (data.logs || []).slice(0, 200),
+    meta: {
+      instagramRateLimitedUntil: data.meta?.instagramRateLimitedUntil || null,
+      instagramFeedRateLimitedUntil: data.meta?.instagramFeedRateLimitedUntil || null
+    }
+  });
+});
+
+app.get('/api/admin/inbox-state', requireAdmin, async (_req, res) => {
+  const data = await readStoreSlice(['inbox', 'logs']);
+  res.json({ inbox: data.inbox || [], logs: (data.logs || []).slice(0, 200) });
+});
+
 app.get(
   '/api/admin/dashboard',
   requireAdmin,
@@ -3602,6 +3657,9 @@ app.get(
     // tempo e, além de sensíveis, tornavam cada abertura do painel maior.
     const {
       privacyConsents: _privacyConsents,
+      inbox: _inbox,
+      instagramQueue: _instagramQueue,
+      instagramFeedQueue: _instagramFeedQueue,
       meta: dashboardMeta,
       ...dashboardPayload
     } = dashboardData;
@@ -3637,8 +3695,9 @@ app.get(
         .slice(0, 5)
         .map(adminQueueItem),
       queueSummary: summarizeQueue(dashboardData.queue, dashboardMeta?.whatsappSentHistoryCount),
-      instagramQueue: (Array.isArray(dashboardData.instagramQueue) ? dashboardData.instagramQueue : []).slice(-200),
-      instagramFeedQueue: (Array.isArray(dashboardData.instagramFeedQueue) ? dashboardData.instagramFeedQueue : []).slice(-200),
+      inbox: [],
+      instagramQueue: [],
+      instagramFeedQueue: [],
       coupons: (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
@@ -3967,9 +4026,9 @@ app.post(
       const fallbackOrigin =
         String(
           process.env
-            .RENDER_EXTERNAL_URL ||
-          process.env
             .SITE_URL ||
+          process.env
+            .PUBLIC_URL ||
           ''
         )
           .split(',')[0]
@@ -4199,12 +4258,13 @@ app.post(
         'manual'
     };
 
-    if (!offer.title || !(offer.price > 0) || !/^https:\/\//i.test(offer.affiliateUrl)) {
+    const safeOfferLink = safeAffiliateDestination(offer.affiliateUrl);
+    if (!offer.title || !(offer.price > 0) || !safeOfferLink) {
       return res
         .status(400)
         .json({
           error:
-            'Produto, preço válido e link HTTPS são obrigatórios.'
+            'Produto, preço válido e link de uma loja autorizada são obrigatórios.'
         });
     }
     await updateStore(
@@ -4441,8 +4501,8 @@ app.put(
         candidate.featured = Boolean(candidate.featured);
         candidate.status = candidate.status === 'paused' ? 'paused' : 'active';
 
-        if (!candidate.title || !(candidate.price > 0) || !/^https:\/\//i.test(candidate.affiliateUrl)) {
-          validationError = 'Produto, preço válido e link HTTPS são obrigatórios.';
+        if (!candidate.title || !(candidate.price > 0) || !safeAffiliateDestination(candidate.affiliateUrl)) {
+          validationError = 'Produto, preço válido e link de uma loja autorizada são obrigatórios.';
           return;
         }
 
@@ -4736,6 +4796,32 @@ app.get(
   }
 );
 
+function sanitizedBackupConfig(candidate, current) {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return {};
+  if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') > 100_000) throw new Error('As configurações do backup excedem o limite seguro.');
+  const restored = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    if (!Object.hasOwn(current, key)) continue;
+    const expected = current[key];
+    if (typeof expected === 'number') {
+      if (!Number.isFinite(Number(value))) continue;
+      restored[key] = Math.max(-1_000_000, Math.min(1_000_000, Number(value)));
+    } else if (typeof expected === 'boolean') {
+      if (typeof value === 'boolean') restored[key] = value;
+    } else if (typeof expected === 'string') {
+      if (typeof value !== 'string' || value.length > 5_000) continue;
+      const normalized = value.trim();
+      if (/url$/i.test(key) && normalized && !/^https:\/\//i.test(normalized)) continue;
+      restored[key] = normalized;
+    } else if (Array.isArray(expected)) {
+      if (Array.isArray(value) && value.length <= 250 && Buffer.byteLength(JSON.stringify(value), 'utf8') <= 50_000) restored[key] = structuredClone(value);
+    } else if (expected && typeof expected === 'object') {
+      if (value && typeof value === 'object' && !Array.isArray(value) && Buffer.byteLength(JSON.stringify(value), 'utf8') <= 50_000) restored[key] = structuredClone(value);
+    }
+  }
+  return restored;
+}
+
 app.post(
   '/api/admin/backup/restore',
   requireAdmin,
@@ -4764,8 +4850,7 @@ app.post(
 
     await updateStore((data) => {
       if (backup.config && typeof backup.config === 'object' && !Array.isArray(backup.config)) {
-        const allowedKeys = new Set(Object.keys(data.config || {}));
-        const restoredConfig = Object.fromEntries(Object.entries(backup.config).filter(([key]) => allowedKeys.has(key)));
+        const restoredConfig = sanitizedBackupConfig(backup.config, data.config || {});
         data.config = { ...data.config, ...restoredConfig };
       }
       if (restoredCoupons) {
@@ -7795,7 +7880,9 @@ app.post(
             new Date()
               .toISOString(),
 
-          qrDataUrl,
+          // O QR é uma credencial temporária e permanece somente no estado
+          // de execução; nunca deve ser gravado no banco.
+          qrDataUrl: null,
 
           pairingCode:
             null,
@@ -7875,7 +7962,9 @@ app.post(
           qrDataUrl:
             null,
 
-          pairingCode,
+          // O código de pareamento é exibido pelo estado em memória e não é
+          // persistido no PostgreSQL.
+          pairingCode: null,
 
           message:
             'Digite este código no WhatsApp do celular.'

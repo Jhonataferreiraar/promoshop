@@ -173,7 +173,7 @@ try {
 
   const createdOfferResponse = await fetch(`${origin}/api/admin/offers`, {
     method: 'POST', headers: authorization,
-    body: JSON.stringify({ title: 'Fone Bluetooth Teste Premium', store: 'Loja Teste', category: 'Tecnologia', price: 99.9, originalPrice: 199.9, image: 'https://example.com/fone.jpg', affiliateUrl: 'https://example.com/produto', freeShipping: true, status: 'active' })
+    body: JSON.stringify({ title: 'Fone Bluetooth Teste Premium', store: 'AliExpress', category: 'Tecnologia', price: 99.9, originalPrice: 199.9, image: 'https://ae-pic-a1.aliexpress-media.com/fone.jpg', affiliateUrl: 'https://www.aliexpress.com/item/1005000000000.html', freeShipping: true, status: 'active' })
   });
   assert.equal(createdOfferResponse.status, 201);
   const createdOffer = await createdOfferResponse.json();

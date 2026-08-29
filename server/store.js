@@ -233,7 +233,7 @@ const initialData = {
       'smartphone, fone bluetooth, notebook, casa e decoração',
 
     mercadoLivreRedirectUri:
-      'https://promoshop.onrender.com/api/mercadolivre/callback',
+      'https://promoshop.jhonatafaraujo.com.br/api/mercadolivre/callback',
 
     shopeeQueries:
       'eletrônicos, casa, beleza, moda, ferramentas',
@@ -500,6 +500,9 @@ function normalizeStoreData(data) {
     ...initialData.config,
     ...(data.config || {})
   };
+  if (/^https:\/\/promoshop\.onrender\.com\/api\/mercadolivre\/callback\/?$/i.test(String(data.config.mercadoLivreRedirectUri || ''))) {
+    data.config.mercadoLivreRedirectUri = initialData.config.mercadoLivreRedirectUri;
+  }
 
   if (data.config.heroText === 'Promoções selecionadas e verificadas para você economizar sem perder tempo.') {
     data.config.heroText = initialData.config.heroText;

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
-import { existsSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
@@ -49,6 +49,12 @@ const authDataPath = process.env.WHATSAPP_AUTH_DIR
   : process.env.DATA_DIR
     ? path.join(path.resolve(process.env.DATA_DIR), 'whatsapp-auth')
     : path.join(root, '.wwebjs_auth');
+try {
+  mkdirSync(authDataPath, { recursive: true, mode: 0o700 });
+  chmodSync(authDataPath, 0o700);
+} catch (error) {
+  console.warn(`Não foi possível restringir as permissões da sessão do WhatsApp: ${error.message}`);
+}
 
 function clearStaleBrowserLocks() {
   const sessionPath = path.join(authDataPath, 'session-promoshop');

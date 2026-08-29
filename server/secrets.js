@@ -26,17 +26,26 @@ const PASSWORD_SCRYPT_R = 8;
 const PASSWORD_SCRYPT_P = 1;
 const PASSWORD_SCRYPT_MAXMEM = 192 * 1024 * 1024;
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto.scryptSync(password, salt, 64, {
+function derivePassword(password, salt, options = {}) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, 64, options, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+}
+
+async function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = (await derivePassword(password, salt, {
     N: PASSWORD_SCRYPT_N,
     r: PASSWORD_SCRYPT_R,
     p: PASSWORD_SCRYPT_P,
     maxmem: PASSWORD_SCRYPT_MAXMEM
-  }).toString('hex');
+  })).toString('hex');
   return `scrypt$v2$${PASSWORD_SCRYPT_N}$${PASSWORD_SCRYPT_R}$${PASSWORD_SCRYPT_P}$${salt}$${hash}`;
 }
 
-export function verifyPassword(password, stored) {
+export async function verifyPassword(password, stored) {
   const value = String(stored || '');
   const versioned = /^scrypt\$v2\$(\d+)\$(\d+)\$(\d+)\$([a-f0-9]{32})\$([a-f0-9]{128})$/i.exec(value);
   if (versioned) {
@@ -45,13 +54,13 @@ export function verifyPassword(password, stored) {
     const r = Number(rawR);
     const p = Number(rawP);
     if (N < 2 ** 14 || N > PASSWORD_SCRYPT_N || r < 1 || r > 16 || p < 1 || p > 4) return false;
-    const calculated = crypto.scryptSync(password, salt, 64, { N, r, p, maxmem: PASSWORD_SCRYPT_MAXMEM }).toString('hex');
+    const calculated = (await derivePassword(password, salt, { N, r, p, maxmem: PASSWORD_SCRYPT_MAXMEM })).toString('hex');
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(calculated, 'hex'));
   }
   if (!value.includes(':')) return false;
   const [salt, expected] = value.split(':');
   if (!/^[a-f0-9]{16,64}$/i.test(salt) || !/^[a-f0-9]{128}$/i.test(expected)) return false;
-  const calculated = crypto.scryptSync(password, salt, 64).toString('hex');
+  const calculated = (await derivePassword(password, salt)).toString('hex');
   return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(calculated, 'hex'));
 }
 
@@ -142,7 +151,7 @@ async function defaults() {
   const bootstrapPassword = String(process.env.ADMIN_PASSWORD || '');
   return {
     adminUser: 'admin',
-    adminPasswordHash: bootstrapPassword.length >= 12 ? hashPassword(bootstrapPassword) : '',
+    adminPasswordHash: bootstrapPassword.length >= 12 ? await hashPassword(bootstrapPassword) : '',
     adminSessionVersion: 0,
     mercadoLivreClientId: '',
     mercadoLivreClientSecret: '',
@@ -233,11 +242,11 @@ async function updateSecretsUnlocked(changes) {
   const next = { ...current };
   if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
   if (changes.adminPassword) {
-    next.adminPasswordHash = hashPassword(String(changes.adminPassword).slice(0, 256));
+    next.adminPasswordHash = await hashPassword(String(changes.adminPassword).slice(0, 256));
     next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
   }
   if (changes.rehashAdminPassword) {
-    next.adminPasswordHash = hashPassword(String(changes.rehashAdminPassword).slice(0, 256));
+    next.adminPasswordHash = await hashPassword(String(changes.rehashAdminPassword).slice(0, 256));
   }
   if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
   if (typeof changes.mercadoLivreClientSecret === 'string' && changes.mercadoLivreClientSecret.trim()) next.mercadoLivreClientSecret = changes.mercadoLivreClientSecret.trim();

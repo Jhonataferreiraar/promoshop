@@ -1,4 +1,5 @@
 import { normalizeApiKey, readSecrets } from './secrets.js';
+import { readTextLimited } from './httpBody.js';
 import {
   calculateOfferDiscount,
   getAudienceCodesForOffer,
@@ -713,7 +714,7 @@ async function callJsonProvider({
       );
 
     const raw =
-      await response.text();
+      await readTextLimited(response);
 
     if (!response.ok) {
       throw providerHttpError('Gemini', response, raw);
@@ -816,7 +817,7 @@ async function callJsonProvider({
       );
 
     const raw =
-      await response.text();
+      await readTextLimited(response);
 
     if (!response.ok) {
       throw providerHttpError('OpenAI', response, raw);
@@ -924,7 +925,7 @@ async function callJsonProvider({
       );
 
     const raw =
-      await response.text();
+      await readTextLimited(response);
 
     if (!response.ok) {
       throw providerHttpError('Groq', response, raw);

@@ -9,6 +9,7 @@ import {
 } from './mercadolivreAffiliate.js';
 import { buildSearchQueryVariants } from './searchRelevance.js';
 import { hasPendingSource, hasSentSource, queueItemSourceMatches } from './whatsappDedup.js';
+import { readTextLimited } from './httpBody.js';
 
 function calculateDiscount(price, originalPrice) {
   if (!originalPrice || originalPrice <= price) return 0;
@@ -68,7 +69,7 @@ function normalizeMercadoLivreCatalog(product) {
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), ...options });
-  const raw = await response.text();
+  const raw = await readTextLimited(response);
   let payload;
   try { payload = raw ? JSON.parse(raw) : {}; }
   catch { payload = {}; }

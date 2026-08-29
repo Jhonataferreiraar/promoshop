@@ -31,3 +31,16 @@ jobs:
       - run: npm run test:security
       - run: npm run test:auth-cookies
       - run: npm run test:postgres
+      - run: npm run test:search
+      - run: npm run test:routing
+      - run: npm run test:messages
+      - run: npm run test:group-directory
+      - run: npm run test:whatsapp-media
+      - run: npm run test:whatsapp-patch
+      - run: npm run test:whatsapp-process
+      - run: npm run test:whatsapp-schedule
+      - run: npm run test:whatsapp-mentions
+      - run: npm run test:whatsapp-dedup
+      - run: npm run test:instagram
+      - run: npm run test:store
+      - run: npm run test:extension

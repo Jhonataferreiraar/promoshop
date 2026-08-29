@@ -1,5 +1,6 @@
 import { addLog } from './store.js';
 import { readSecrets } from './secrets.js';
+import { readTextLimited } from './httpBody.js';
 
 const CREATE_LINK_URL =
     'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
@@ -92,7 +93,7 @@ export async function generateMercadoLivreAffiliateLinks(
             })
         });
 
-        const raw = await response.text();
+        const raw = await readTextLimited(response);
 
         let payload;
 

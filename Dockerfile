@@ -22,7 +22,8 @@ COPY . .
 RUN npm run build
 RUN npm prune --omit=dev
 RUN mkdir -p /var/data \
-    && chown -R node:node /app /var/data \
+    && chown -R root:root /app \
+    && chown -R node:node /var/data \
     && chmod 0755 /app/docker-entrypoint.sh
 
 ENV NODE_ENV=production
