@@ -79,6 +79,7 @@ import {
   generateInstagramShareTemplate,
   generateInstagramStory,
   instagramAssetPath,
+  instagramPublishingState,
   processInstagramQueue,
   processInstagramFeedQueue,
   refreshInstagramToken,
@@ -5209,6 +5210,11 @@ app.post('/api/admin/instagram/feed/queue/:id/publish', requireAdmin, async (req
   const data = await readStore();
   const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'Publicação do Feed não encontrada.' });
+  if (item.status === 'sent') return res.status(409).json({ error: 'Esta publicação já foi enviada.' });
+  if (item.status === 'failed') return res.status(409).json({ error: 'Use “Tentar novamente” antes de publicar este item.' });
+  if (item.status !== 'pending') return res.status(409).json({ error: 'Esta publicação não está aguardando envio.' });
+  const publishing = instagramPublishingState();
+  if (publishing.meta || publishing.feed) return res.status(409).json({ error: 'O Instagram já está processando outra publicação. Aguarde a fila atualizar.' });
   processInstagramFeedQueue({ forceId: item.id }).catch((error) => console.error('Instagram Feed:', error.message));
   res.status(202).json({ ok: true, message: 'Publicação do Feed iniciada.' });
 });

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, formatInstagramRetryAt, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, feedEntryRepeatsPublishedSource, formatInstagramRetryAt, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
@@ -93,6 +93,10 @@ const permanentFailureData = {
 };
 assert.equal(backfillInstagramFeedFromRecentWhatsapp(permanentFailureData), 0, 'uma falha permanente não pode recriar o mesmo carrossel');
 assert.equal(permanentFailureData.instagramFeedQueue.length, 1, 'a fila deve permanecer estável após a falha permanente');
+
+const publishedFeed = { id: 'feed-sent', status: 'sent', sourceIds: ['offer-1', 'offer-2'], publishedAt: new Date().toISOString() };
+assert.equal(feedEntryRepeatsPublishedSource([publishedFeed], { id: 'feed-next', sourceIds: ['offer-2', 'offer-3'] }, 7), true, 'qualquer oferta já publicada deve bloquear o carrossel repetido');
+assert.equal(feedEntryRepeatsPublishedSource([publishedFeed], { id: 'feed-new', sourceIds: ['offer-4'] }, 7), false, 'um carrossel com ofertas novas deve continuar permitido');
 
 const asset = await generateInstagramStory({ title: 'Smartphone com câmera de alta resolução', store: 'Magalu', price: 999.9, originalPrice: 1299.9, discount: 23, image: '', link: 'https://example.com/offer' }, config, 'christmas');
 try {

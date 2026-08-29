@@ -3475,7 +3475,7 @@ function AdminApp() {
     </div>}
     {tab === 'instagram' && <InstagramPanel data={data} setData={setData} secretForm={secretForm} setSecretForm={setSecretForm} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} />}
     {tab === 'groupDirectory' && <React.Suspense fallback={<section className="panel"><p>Carregando divulgação…</p></section>}><GroupDirectoryPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} /></React.Suspense>}
-    {tab === 'instagramFeed' && <InstagramFeedPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} />}
+    {tab === 'instagramFeed' && <InstagramFeedPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} />}
     {tab === 'instagramShare' && <InstagramSharePanel data={data} authApi={authApi} setMessage={setMessage} />}
     {tab === 'instagramHighlights' && <React.Suspense fallback={<section className="panel"><p>Carregando Destaques…</p></section>}><InstagramHighlightsPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} /></React.Suspense>}
     {tab === 'extension' && <ExtensionPanel data={data} setData={setData} authApi={authApi} setMessage={setMessage} load={load} audiences={configuredAudiences} onGoCoupons={() => setTab('coupons')} />}

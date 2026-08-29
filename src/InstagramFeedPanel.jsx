@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 
-const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
+const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou', cancelled: 'Cancelado' };
 const templateText = { classic: 'Original', editorial: 'Seleção PromoShop', spotlight: 'Destaque', split: 'Capa dividida', showcase: 'Vitrine', minimal: 'Essencial', flash: 'Oferta relâmpago' };
 const feedDays = [
   { value: 1, label: 'Segunda' },
@@ -25,7 +25,7 @@ function labelFor(item, kind) {
   return `${item.title || (kind === 'coupon' ? 'Cupom' : 'Oferta')} · ${item.store || 'Loja'} · ${discount}`;
 }
 
-export default function InstagramFeedPanel({ data, setData, authApi, setMessage, load }) {
+export default function InstagramFeedPanel({ data, setData, authApi, setMessage }) {
   const config = data.config || {};
   const [postType, setPostType] = useState('single');
   const [selected, setSelected] = useState([]);
@@ -46,6 +46,14 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
   const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating';
 
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
+  async function refreshFeedState() {
+    const result = await authApi('/admin/instagram-state');
+    setData((current) => ({
+      ...current,
+      ...result,
+      meta: result.meta ? { ...(current.meta || {}), ...result.meta } : current.meta
+    }));
+  }
   const toggle = (item) => {
     const key = keyFor(item.kind, item.id);
     if (selected.includes(key)) return setSelected((current) => current.filter((entry) => entry !== key));
@@ -70,7 +78,6 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
         instagramFeedCarouselSize: config.instagramFeedCarouselSize ?? 4, instagramFeedCaption: caption
       }) });
       setMessage('Configurações do Feed salvas.');
-      await load();
     } catch (error) { setMessage(error.message); }
     finally { setBusy(''); }
   }
@@ -103,7 +110,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       }) });
       setSelected([]); setPreviewUrls([]); setPreviewTemplates([]); setScheduledFor('');
       setMessage('Publicação adicionada à fila do Feed.');
-      await load();
+      await refreshFeedState();
     } catch (error) { setMessage(error.message); }
     finally { setBusy(''); }
   }
@@ -114,7 +121,11 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       const endpoint = `/admin/instagram/feed/queue/${encodeURIComponent(id)}${type === 'delete' ? '' : `/${type}`}`;
       await authApi(endpoint, { method: type === 'delete' ? 'DELETE' : 'POST', body: type === 'delete' ? undefined : '{}' });
       setMessage(type === 'publish' ? 'Publicação do Feed iniciada.' : type === 'retry' ? 'Publicação devolvida para a fila.' : 'Publicação excluída.');
-      window.setTimeout(() => load(), type === 'publish' ? 2500 : 0);
+      await refreshFeedState();
+      if (type === 'publish') {
+        window.setTimeout(() => refreshFeedState().catch(() => {}), 2500);
+        window.setTimeout(() => refreshFeedState().catch(() => {}), 8000);
+      }
     } catch (error) { setMessage(error.message); }
     finally { setBusy(''); }
   }
@@ -166,6 +177,6 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage,
       </div>
       <div className="instagram-preview instagram-feed-preview">{previewUrls.length ? <><div className="instagram-feed-preview-grid">{previewUrls.map((url) => <img key={url} src={url} alt="Prévia do post do Feed" />)}</div>{previewTemplates.length > 0 && <strong>Modelo gerado: {[...new Set(previewTemplates.map((item) => templateText[item] || item))].join(', ')}</strong>}</> : <div><strong>Prévia do Feed</strong><p>Selecione os itens e gere uma prévia antes de colocar na fila.</p></div>}<small>O post usa “Acesse a bio do perfil” e não exibe links diretos na descrição.</small></div>
     </div>
-    <div className="instagram-queue-panel instagram-feed-queue"><div className="panel-heading"><div><span className="section-step">FILA DO FEED</span><h2>Posts recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div></div><div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.assetFileNames?.[0] ? <img src={`/media/instagram/${item.assetFileNames[0]}`} alt="" /> : item.postType === 'carousel' ? '▦' : '◇'}</div><div><strong>{item.title}</strong><span>{item.postType === 'carousel' ? `Carrossel · ${item.items?.length || 0} itens` : 'Post único'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.scheduledFor || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status !== 'sent' && item.status !== 'publishing' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Feed está vazia</strong><p>As publicações automáticas e manuais aparecerão aqui.</p></div>}</div></div>
+    <div className="instagram-queue-panel instagram-feed-queue"><div className="panel-heading"><div><span className="section-step">FILA DO FEED</span><h2>Posts recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div></div><div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.assetFileNames?.[0] ? <img src={`/media/instagram/${item.assetFileNames[0]}`} alt="" /> : item.postType === 'carousel' ? '▦' : '◇'}</div><div><strong>{item.title}</strong><span>{item.postType === 'carousel' ? `Carrossel · ${item.items?.length || 0} itens` : 'Post único'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.scheduledFor || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status === 'pending' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && item.status !== 'sent' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Feed está vazia</strong><p>As publicações automáticas e manuais aparecerão aqui.</p></div>}</div></div>
   </section>;
 }

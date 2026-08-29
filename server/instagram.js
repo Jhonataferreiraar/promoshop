@@ -1114,6 +1114,25 @@ function latestAutomaticCarousel(data, config) {
   return { selected, stories, sourceIds: [...sourceIds], consumedIds };
 }
 
+function feedSourceIds(entry) {
+  return new Set([
+    ...(Array.isArray(entry?.sourceIds) ? entry.sourceIds : []),
+    ...(Array.isArray(entry?.items) ? entry.items.map((item) => item?.sourceId) : [])
+  ].map((value) => String(value || '')).filter(Boolean));
+}
+
+export function feedEntryRepeatsPublishedSource(queue, candidate, duplicateDays = 7, now = Date.now()) {
+  const candidateIds = feedSourceIds(candidate);
+  if (!candidateIds.size) return false;
+  const cooldown = Math.max(1, Number(duplicateDays || 7)) * DAY;
+  return (Array.isArray(queue) ? queue : []).some((entry) => {
+    if (entry?.id === candidate?.id || entry?.status !== 'sent') return false;
+    const publishedAt = new Date(entry.publishedAt || entry.createdAt || 0).getTime();
+    if (!Number.isFinite(publishedAt) || now - publishedAt > cooldown) return false;
+    return [...feedSourceIds(entry)].some((sourceId) => candidateIds.has(sourceId));
+  });
+}
+
 export async function processInstagramQueue({ forceId = '' } = {}) {
   if (processing || metaPublishing) return { busy: true };
   processing = true;
@@ -1155,13 +1174,12 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     const asset = selected.kind === 'highlight'
       ? await generateInstagramHighlightAsset(selected.highlight || selected, config, selected.themeId, 'story')
       : await generateInstagramStory(selected, config);
-    const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
-    if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar Stories.');
+    const mediaOrigin = instagramMediaOrigin(config);
     await updateStore((fresh) => {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (item) item.metaPublishingStartedAt = new Date().toISOString();
     });
-    const published = await publishAsset(config, secrets, `${canonical}/media/instagram/${asset.fileName}`);
+    const published = await publishAsset(config, secrets, `${mediaOrigin}/media/instagram/${asset.fileName}`);
     await updateStore((fresh) => {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
@@ -1206,6 +1224,10 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
 }
 
 let feedProcessing = false;
+
+export function instagramPublishingState() {
+  return { stories: processing, feed: feedProcessing, meta: metaPublishing };
+}
 
 export async function processInstagramFeedQueue({ forceId = '' } = {}) {
   if (feedProcessing || metaPublishing) return { busy: true };
@@ -1279,6 +1301,27 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         .filter((item) => item.status === 'pending' && (!item.scheduledFor || new Date(item.scheduledFor).getTime() <= Date.now()) && (!item.retryAt || new Date(item.retryAt).getTime() <= Date.now()))
         .sort((a, b) => feedEntryFreshness(b) - feedEntryFreshness(a))[0];
     if (!selected) return { empty: true };
+    // Releia a fila antes de publicar. Isso cobre entradas antigas que foram
+    // criadas em duplicidade e também evita que um clique manual publique uma
+    // promoção já confirmada em outro carrossel.
+    data = await readStore();
+    selected = (data.instagramFeedQueue || []).find((item) => item.id === selected.id && item.status !== 'sent');
+    if (!selected) return { empty: true };
+    if (feedEntryRepeatsPublishedSource(data.instagramFeedQueue, selected, config.instagramFeedDuplicateDays)) {
+      await updateStore((fresh) => {
+        const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
+        if (!item || item.status === 'sent') return;
+        Object.assign(item, {
+          status: 'cancelled',
+          publishingAt: null,
+          retryAt: null,
+          permanentFailure: true,
+          error: 'Cancelado para impedir a repetição de uma promoção já publicada no Feed.'
+        });
+        appendActivity(fresh, `Instagram Feed: publicação duplicada bloqueada — ${selected.title}.`, 'warning');
+      });
+      return { duplicate: true, id: selected.id };
+    }
     if (!forceId && selected.postType === 'carousel' && (!Array.isArray(selected.items) || selected.items.length < 2)) {
       return { waitingForCarouselItems: true, currentItems: selected.items?.length || 0 };
     }
@@ -1312,6 +1355,18 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
       Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false, permanentFailure: false });
+      const publishedSourceIds = feedSourceIds(item);
+      for (const entry of fresh.instagramFeedQueue || []) {
+        if (entry.id === item.id || !['pending', 'failed'].includes(entry.status)) continue;
+        if (![...feedSourceIds(entry)].some((sourceId) => publishedSourceIds.has(sourceId))) continue;
+        Object.assign(entry, {
+          status: 'cancelled',
+          publishingAt: null,
+          retryAt: null,
+          permanentFailure: true,
+          error: 'Cancelado porque uma ou mais promoções já foram publicadas em outro post do Feed.'
+        });
+      }
       appendActivity(fresh, `Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
     });
     return { ok: true, id: selected.id, ...published };
