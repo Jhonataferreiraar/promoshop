@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>PromoShop Mercado Livre</title><link rel="stylesheet" href="popup.css" /></head>
+<body>
+  <header><img src="icons/promoshop-48.png" alt="PromoShop" /><div><strong>PromoShop</strong><small>Ofertas do Mercado Livre</small></div></header>
+  <details><summary>Conexão com o painel</summary><label>URL do PromoShop<input id="endpoint" type="url" /></label><label>Token da extensão<input id="token" type="password" placeholder="Token gerado no painel" /></label><button id="save" class="secondary">Salvar conexão</button></details>
+  <div class="steps"><span>1</span><p>Abra uma página individual de produto com a Barra de Afiliados ativa.</p><span>2</span><p>Clique abaixo. A extensão usa o botão oficial “Compartilhar”.</p></div>
+  <button id="capture" class="primary full">Gerar link e capturar oferta</button>
+  <div id="status" role="status">Nenhuma oferta capturada ainda.</div>
+  <article id="preview" hidden><img id="image" alt="" /><div><strong id="title"></strong><small id="prices"></small></div></article>
+  <button id="send" class="primary full" disabled>Enviar ao PromoShop</button>
+  <script src="popup.js"></script>
+</body></html>

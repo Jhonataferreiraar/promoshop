@@ -45,6 +45,12 @@ try {
   assert.equal(coupon.approvalStatus, 'pending');
   const approved = await fetch(`${origin}/api/admin/extension/coupons/${coupon.id}/approve`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(approved.status, 200);
+  const offerIngest = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada com link oficial', price: 79.9, originalPrice: 129.9, discount: 38, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/abc123', freeShipping: true }] }) });
+  assert.equal(offerIngest.status, 202);
+  assert.equal((await offerIngest.clone().json()).imported.length, 1);
+  const offerRefresh = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada atualizada', price: 69.9, originalPrice: 129.9, discount: 46, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/xyz456' }] }) });
+  assert.equal(offerRefresh.status, 202);
+  assert.equal((await offerRefresh.json()).imported[0].updated, true);
   const resend = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ allowDuplicate: true, coupons: [{ title: 'Cupom teste da extensão atualizado', store: 'Mercado Livre', code: 'TESTE10', discountType: 'percent', discountValue: 20, link: 'https://mercadolivre.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
   assert.equal(resend.status, 202);
   assert.equal((await resend.json()).imported[0].reimported, true);
@@ -53,7 +59,7 @@ try {
   const rejected = await fetch(`${origin}/api/admin/extension/coupons/reject-all`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(rejected.status, 200);
   assert.equal((await rejected.json()).rejected, 2);
-  console.log('Extensão: token, recebimento, revisão e aprovação validados.');
+  console.log('Extensões: cupons e ofertas do Mercado Livre validados.');
 } finally {
   child.kill();
   await fs.rm(dataDir, { recursive: true, force: true });

@@ -5393,6 +5393,19 @@ function extensionCouponFingerprint(coupon) {
   return `${store}|${code || link}`;
 }
 
+function extensionOfferFingerprint(offer) {
+  const externalId = String(offer.externalId || '').trim().toUpperCase();
+  if (externalId) return `mercado livre|${externalId.replace('-', '')}`;
+  try {
+    const url = new URL(String(offer.productUrl || ''));
+    const productId = `${url.pathname}${url.searchParams.get('wid') || ''}`.match(/MLB-?\d+/i)?.[0];
+    if (productId) return `mercado livre|${productId.toUpperCase().replace('-', '')}`;
+    return `mercado livre|${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '').toLowerCase()}`;
+  } catch {
+    return `mercado livre|${productFingerprint(offer)}`;
+  }
+}
+
 function extensionAllowedStore(config, store) {
   const allowed = Array.isArray(config.extensionStores) ? config.extensionStores.map((entry) => String(entry).toLowerCase()) : ['mercado livre', 'shopee'];
   return allowed.includes(String(store || '').trim().toLowerCase());
@@ -5495,6 +5508,111 @@ app.post('/api/extension/coupons', async (req, res) => {
 
   if (imported.length) await addLog(`Extensão: ${imported.length} cupom(ns) recebido(s)${config.extensionAutoApprove === true ? ' e aprovado(s)' : ' para revisão'}.`, 'success');
   res.status(imported.length || duplicates.length ? 202 : 400).json({
+    ok: imported.length > 0,
+    imported,
+    duplicates,
+    acceptedFingerprints: [...acceptedFingerprints],
+    errors: errors.slice(0, 10)
+  });
+});
+
+app.post('/api/extension/mercadolivre/offers', async (req, res) => {
+  const body = extensionRequestBody(req);
+  const secrets = await readSecrets();
+  const token = String(body.token || req.headers['x-promoshop-extension-token'] || '').trim();
+  if (!extensionTokenMatches(token, secrets.extensionIngestToken)) return res.status(401).json({ error: 'Token da extensão inválido.' });
+
+  const now = Date.now();
+  pruneRateMap(extensionRateLimit, now, 5000);
+  const rateKey = `${req.ip || 'unknown'}:${token.slice(-8)}:offers`;
+  const recent = extensionRateLimit.get(rateKey) || [];
+  const activeRequests = recent.filter((timestamp) => now - timestamp < 60_000);
+  if (activeRequests.length >= 20) return res.status(429).json({ error: 'Muitas importações em pouco tempo. Aguarde um minuto.' });
+  activeRequests.push(now);
+  extensionRateLimit.set(rateKey, activeRequests);
+
+  const snapshot = await readStore();
+  if (snapshot.config?.extensionEnabled === false) return res.status(403).json({ error: 'A extensão está desativada no painel.' });
+  const incoming = Array.isArray(body.offers) ? body.offers : [body.offer || body];
+  const imported = [];
+  const duplicates = [];
+  const errors = [];
+  const acceptedFingerprints = new Set();
+
+  await updateStore((data) => {
+    data.offers ||= [];
+    for (const raw of incoming.slice(0, 10)) {
+      const title = String(raw?.title || '').trim().slice(0, 300);
+      const price = Number(raw?.price || 0);
+      const originalPrice = Number(raw?.originalPrice || 0);
+      const discount = originalPrice > price && price > 0 ? Math.round((1 - price / originalPrice) * 100) : Number(raw?.discount || 0);
+      const affiliateUrl = String(raw?.affiliateUrl || '').trim().slice(0, 3000);
+      const productUrl = String(raw?.productUrl || '').trim().slice(0, 3000);
+      const image = String(raw?.image || '').trim().slice(0, 2000);
+      const externalId = String(raw?.externalId || '').trim().slice(0, 80);
+      if (!title || !(price > 0)) { errors.push('Título e preço válido são obrigatórios.'); continue; }
+      if (!(originalPrice > price) || discount < 1 || discount > 95) { errors.push(`${title}: a página não apresenta uma promoção válida.`); continue; }
+      try {
+        const imageUrl = new URL(image);
+        const imageHost = imageUrl.hostname.toLowerCase();
+        if (imageUrl.protocol !== 'https:' || imageUrl.username || imageUrl.password || !(imageHost === 'mlstatic.com' || imageHost.endsWith('.mlstatic.com'))) throw new Error();
+      } catch { errors.push(`${title}: imagem oficial válida não encontrada.`); continue; }
+      try {
+        const product = new URL(productUrl);
+        const productHost = product.hostname.toLowerCase();
+        if (product.protocol !== 'https:' || product.username || product.password || !(productHost === 'mercadolivre.com.br' || productHost.endsWith('.mercadolivre.com.br'))) throw new Error();
+      } catch { errors.push(`${title}: página de produto inválida.`); continue; }
+      try {
+        const affiliate = new URL(affiliateUrl);
+        if (affiliate.protocol !== 'https:' || affiliate.username || affiliate.password || affiliate.hostname.toLowerCase() !== 'meli.la') throw new Error();
+      } catch { errors.push(`${title}: gere o link pela barra oficial de Afiliados.`); continue; }
+
+      const candidate = {
+        id: externalId ? `ml_${externalId.replace(/[^a-zA-Z0-9_-]/g, '')}` : createId('offer'),
+        externalId,
+        title,
+        store: 'Mercado Livre',
+        category: String(raw?.category || 'Mercado Livre').trim().slice(0, 100),
+        price,
+        originalPrice,
+        discount,
+        score: discount,
+        image,
+        productUrl,
+        affiliateUrl,
+        freeShipping: raw?.freeShipping === true,
+        featured: discount >= 30,
+        status: 'active',
+        source: 'mercado-livre-extension'
+      };
+      const fingerprint = extensionOfferFingerprint(candidate);
+      const existing = data.offers.find((offer) => extensionOfferFingerprint(offer) === fingerprint);
+      const timestamp = new Date().toISOString();
+      if (existing) {
+        Object.assign(existing, candidate, {
+          id: existing.id,
+          createdAt: existing.createdAt || timestamp,
+          updatedAt: timestamp,
+          targetAudienceCodes: getAudienceCodesForOffer(candidate, data.config.whatsappAudiences)
+        });
+        duplicates.push(title);
+        imported.push({ id: existing.id, title, updated: true });
+      } else {
+        candidate.createdAt = timestamp;
+        candidate.updatedAt = timestamp;
+        candidate.targetAudienceCodes = getAudienceCodesForOffer(candidate, data.config.whatsappAudiences);
+        data.offers.unshift(candidate);
+        imported.push({ id: candidate.id, title, updated: false });
+      }
+      acceptedFingerprints.add(fingerprint);
+    }
+  });
+
+  if (imported.length) {
+    const updated = imported.filter((item) => item.updated).length;
+    await addLog(`Extensão Mercado Livre: ${imported.length - updated} oferta(s) importada(s) e ${updated} atualizada(s) com link de afiliado.`, 'success');
+  }
+  return res.status(imported.length ? 202 : 400).json({
     ok: imported.length > 0,
     imported,
     duplicates,
