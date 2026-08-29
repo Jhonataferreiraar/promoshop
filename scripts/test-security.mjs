@@ -85,6 +85,22 @@ try {
   assert.ok(whatsappState.whatsapp);
   assert.equal(Object.hasOwn(whatsappState, 'offers'), false);
   assert.equal(Object.hasOwn(whatsappState, 'queue'), false);
+  const qrWorkerHeaders = {
+    'content-type': 'application/json',
+    'x-worker-token': 'security-test-worker-token-that-is-long-enough'
+  };
+  const qrUpdate = await fetch(`${origin}/api/worker/qr`, {
+    method: 'POST', headers: qrWorkerHeaders, body: JSON.stringify({ qr: 'temporary-qr-for-security-test' })
+  });
+  assert.equal(qrUpdate.status, 200);
+  const stateWithQr = await fetch(`${origin}/api/admin/whatsapp/state`, { headers: authorization }).then((response) => response.json());
+  assert.match(stateWithQr.whatsapp.qrDataUrl || '', /^data:image\/png;base64,/);
+  const pairingUpdate = await fetch(`${origin}/api/worker/pairing-code`, {
+    method: 'POST', headers: qrWorkerHeaders, body: JSON.stringify({ code: 'ABCD1234' })
+  });
+  assert.equal(pairingUpdate.status, 200);
+  const stateWithPairing = await fetch(`${origin}/api/admin/whatsapp/state`, { headers: authorization }).then((response) => response.json());
+  assert.equal(stateWithPairing.whatsapp.pairingCode, 'ABCD1234');
   assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { cookie: cookieHeader } })).status, 200);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop' }) })).status, 403);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop', __internal: 'blocked' }) })).status, 200);

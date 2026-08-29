@@ -205,7 +205,13 @@ function effectiveWhatsappState(data = {}, now = Date.now()) {
   const persisted = data.meta?.whatsapp || {};
   const persistedAt = new Date(persisted.lastSeenAt || 0).getTime();
   const runtimeAt = new Date(whatsappRuntimeState?.lastSeenAt || 0).getTime();
-  const current = runtimeAt >= persistedAt && whatsappRuntimeState
+  // QR e código de pareamento não são persistidos. Enquanto uma dessas
+  // credenciais temporárias existir na memória, ela precisa prevalecer mesmo
+  // que a gravação do status no banco tenha ocorrido alguns milissegundos depois.
+  const hasRuntimeCredential = Boolean(
+    whatsappRuntimeState?.qrDataUrl || whatsappRuntimeState?.pairingCode
+  );
+  const current = (hasRuntimeCredential || runtimeAt >= persistedAt) && whatsappRuntimeState
     ? { ...persisted, ...whatsappRuntimeState }
     : { ...persisted };
   const lastSeenAt = new Date(current.lastSeenAt || 0).getTime();
