@@ -13,14 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      # O teste de rotas HTML usa o pacote de produção gerado pelo Vite.
+      - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run test:secret-scan
       - run: npm run test:safe-remote
@@ -29,4 +31,3 @@ jobs:
       - run: npm run test:security
       - run: npm run test:auth-cookies
       - run: npm run test:postgres
-      - run: npm run build
