@@ -1298,12 +1298,13 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     if (selected) {
       const rateLimited = Boolean(error?.instagramRateLimited) || isInstagramRateLimitError(error);
       const invalidImage = error?.code === 'INSTAGRAM_IMAGE_UNAVAILABLE';
+      const invalidMedia = /Only photo or video can be accepted as media type/i.test(String(error?.message || ''));
       await updateStore((fresh) => {
         const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
         if (!item) return;
         item.attempts = Number(item.attempts || 0) + 1;
         const uncertain = Boolean(item.metaPublishingStartedAt);
-        item.status = uncertain || invalidImage ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
+        item.status = uncertain || invalidImage || invalidMedia ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
         item.instagramRateLimited = rateLimited;
         item.error = uncertain
           ? 'O envio à Meta foi iniciado, mas não houve confirmação. Confira o Instagram antes de tentar novamente para evitar publicação duplicada.'
@@ -1313,6 +1314,8 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
         appendActivity(fresh, invalidImage
           ? `Instagram Feed: publicação bloqueada porque uma oferta está sem imagem válida — ${selected.title}.`
+          : invalidMedia
+            ? `Instagram Feed: publicação bloqueada porque a Meta não reconheceu a mídia — ${selected.title}. Gere uma nova publicação antes de tentar novamente.`
           : `Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
       });
     }

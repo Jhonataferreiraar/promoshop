@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
+import injectedUtilsPkg from 'whatsapp-web.js/src/util/Injected/Utils.js';
 import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,7 @@ import {
 } from './whatsappDestinations.js';
 
 const { Client, LocalAuth, MessageMedia } = pkg;
+const { LoadUtils } = injectedUtilsPkg;
 
 // whatsapp-web.js pode chamar inject() novamente durante uma navegação da
 // página enquanto a injeção anterior ainda está registrando os bindings. Isso
@@ -337,12 +339,25 @@ async function buildDelivery(destination, message, item) {
   }
 }
 
-async function refreshActivePage() {
+async function refreshActivePage({ requireUtilities = true, injectUtilities = false } = {}) {
   const pages = await client.pupBrowser.pages();
   const activePage = pages.find((page) => page.url().includes('web.whatsapp.com'));
   if (!activePage) throw new Error('A página ativa do WhatsApp Web não foi encontrada.');
   client.pupPage = activePage;
-  await activePage.waitForFunction(() => Boolean(window.WWebJS && window.require), { timeout: 15_000 });
+  await activePage.waitForFunction(() => Boolean(window.require), { timeout: 15_000 });
+  if (requireUtilities) {
+    let utilitiesReady = await activePage.evaluate(() => Boolean(window.WWebJS?.getChat && window.WWebJS?.sendMessage));
+    if (!utilitiesReady && injectUtilities) {
+      // É a mesma injeção oficial usada internamente pelo whatsapp-web.js. Em
+      // algumas reconexões o evento de sincronização chega, mas a biblioteca
+      // não conclui essa etapa nem emite `ready`.
+      await activePage.evaluate(LoadUtils);
+      utilitiesReady = await activePage.evaluate(() => Boolean(window.WWebJS?.getChat && window.WWebJS?.sendMessage));
+    }
+    if (!utilitiesReady) {
+      await activePage.waitForFunction(() => Boolean(window.WWebJS?.getChat && window.WWebJS?.sendMessage), { timeout: 15_000 });
+    }
+  }
   return activePage;
 }
 
@@ -626,7 +641,7 @@ function confirmReadyAfterAuthentication(attempt = 1) {
       if (String(state || '').toUpperCase() === 'CONNECTED') {
         // CONNECTED confirma a rede, mas os módulos de conversas ainda podem
         // estar sendo injetados. Só inicie depois de WWebJS estar utilizável.
-        await refreshActivePage();
+        await refreshActivePage({ requireUtilities: true, injectUtilities: attempt >= 2 });
         readyToStart = true;
       }
     } catch (error) {

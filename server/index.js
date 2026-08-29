@@ -5266,9 +5266,14 @@ app.delete('/api/admin/instagram/queue/:id', requireAdmin, async (req, res) => {
 app.get('/media/instagram/:fileName', async (req, res) => {
   const filePath = instagramAssetPath(req.params.fileName);
   if (!filePath) return res.status(404).end();
+  // A Meta precisa buscar a mídia fora da origem do site para criar o
+  // container. Os demais recursos continuam protegidos por CORP same-origin.
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Content-Disposition', 'inline');
   try {
     await fs.access(filePath);
-    res.set('Cache-Control', 'public, max-age=259200');
+    res.set('Cache-Control', 'public, max-age=259200, no-transform');
     res.type('image/jpeg').sendFile(filePath);
   } catch {
     res.status(404).end();
