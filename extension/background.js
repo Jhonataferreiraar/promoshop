@@ -3,7 +3,8 @@ const DEFAULT_ENDPOINT = 'https://promoshop.jhonatafaraujo.com.br';
 function cleanEndpoint(value) {
   try {
     const url = new URL(String(value || DEFAULT_ENDPOINT).trim());
-    return ['https:', 'http:'].includes(url.protocol) ? url.origin.replace(/\/$/, '') : DEFAULT_ENDPOINT;
+    const localDevelopment = url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    return url.protocol === 'https:' || localDevelopment ? url.origin.replace(/\/$/, '') : DEFAULT_ENDPOINT;
   } catch { return DEFAULT_ENDPOINT; }
 }
 

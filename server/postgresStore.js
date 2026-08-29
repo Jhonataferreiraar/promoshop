@@ -299,12 +299,30 @@ function isLocalDatabase(connectionString) {
   }
 }
 
+function isRenderInternalDatabase(connectionString) {
+  try {
+    const hostname = new URL(connectionString).hostname.toLowerCase();
+    return /^dpg-[a-z0-9-]+-a$/.test(hostname) || hostname.endsWith('.internal');
+  } catch {
+    return false;
+  }
+}
+
+function databaseSsl(connectionString) {
+  const mode = String(process.env.PGSSL || '').trim().toLowerCase();
+  if (mode === 'disable' || isLocalDatabase(connectionString) || isRenderInternalDatabase(connectionString)) return false;
+  const certificate = String(process.env.PGSSL_ROOT_CERT || '').replace(/\\n/g, '\n').trim();
+  if (mode === 'require') return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true, ...(certificate ? { ca: certificate } : {}) };
+}
+
 export function createPostgresStateBackend({
   connectionString,
   loadInitialData,
   normalizeData,
   restoreData,
   protectData,
+  retireDataKey = async () => {},
   compactData,
   pool: suppliedPool = null
 }) {
@@ -330,9 +348,7 @@ export function createPostgresStateBackend({
         query_timeout: 15_000,
         statement_timeout: 15_000,
         keepAlive: true,
-        ssl: process.env.PGSSL === 'disable' || isLocalDatabase(connectionString)
-          ? false
-          : { rejectUnauthorized: false }
+        ssl: databaseSsl(connectionString)
       }));
     }
     return poolPromise;
@@ -376,14 +392,19 @@ export function createPostgresStateBackend({
             values
           );
         }
-        const current = await pool.query('SELECT * FROM promoshop_state WHERE id = 1');
+        const state = await pool.query('SELECT version, schema_version FROM promoshop_state WHERE id = 1');
+        if (!state.rowCount) throw new Error('O estado principal do PromoShop não foi encontrado no PostgreSQL.');
+        const currentSchemaVersion = Number(state.rows[0].schema_version || 1);
+        const current = currentSchemaVersion < POSTGRES_SCHEMA_VERSION
+          ? await pool.query('SELECT * FROM promoshop_state WHERE id = 1')
+          : state;
         if (!current.rowCount) throw new Error('O estado principal do PromoShop não foi encontrado no PostgreSQL.');
         const row = current.rows[0];
-        const wasRelational = Number(row.schema_version || 1) >= POSTGRES_SCHEMA_VERSION;
+        const wasRelational = currentSchemaVersion >= POSTGRES_SCHEMA_VERSION;
         try {
           await ensureOfferTable(pool);
           await ensureRelationalTables(pool);
-          if (Number(row.schema_version || 1) < POSTGRES_SCHEMA_VERSION) {
+          if (currentSchemaVersion < POSTGRES_SCHEMA_VERSION) {
             const restored = await restoreData(rowToPersistedData(row));
             const initial = normalizeData(restored.data);
             const protectedData = await protectData(initial);
@@ -396,6 +417,7 @@ export function createPostgresStateBackend({
               'UPDATE promoshop_state SET schema_version = $1, updated_at = NOW() WHERE id = 1',
               [POSTGRES_SCHEMA_VERSION]
             );
+            if (restored.requiresReencrypt) await retireDataKey();
           }
           relationalReady = true;
           console.log(`PostgreSQL relacional pronto (schema ${POSTGRES_SCHEMA_VERSION}).`);
@@ -434,7 +456,14 @@ export function createPostgresStateBackend({
       : rowToPersistedData(row);
     const restored = await restoreData(persisted);
     const loadedData = normalizeData(restored.data);
-    const loadedVersion = Number(row.version);
+    let loadedVersion = Number(row.version);
+    if (relationalReady && restored.requiresReencrypt) {
+      const protectedData = await protectData(loadedData);
+      await syncSections(pool, protectedData, ['inbox', 'privacyConsents', 'analytics']);
+      const migrated = await pool.query('UPDATE promoshop_state SET version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version');
+      loadedVersion = Number(migrated.rows[0]?.version || loadedVersion + 1);
+      await retireDataKey();
+    }
     // Uma leitura iniciada antes de uma gravação não pode substituir o cache
     // mais novo quando terminar depois dela.
     if (loadedVersion >= cachedVersion) {
@@ -514,14 +543,17 @@ export function createPostgresStateBackend({
         compactData(data);
 
         const changedKeys = STATE_KEYS.filter((key) => serialize(before[key]) !== serialize(data[key]));
-        if (changedKeys.length) {
+        const persistedKeys = restored.requiresReencrypt
+          ? [...new Set([...changedKeys, 'inbox', 'privacyConsents', 'analytics'])]
+          : changedKeys;
+        if (persistedKeys.length) {
           const protectedAfter = await protectData(data);
           if (useRelationalStore) {
             if (changedKeys.includes('offers')) await syncOfferTable(client, data.offers);
             for (const [key, table] of Object.entries(ENTITY_TABLES)) {
               if (changedKeys.includes(key)) await syncJsonEntityTable(client, table, data[key]);
             }
-            await syncSections(client, protectedAfter, changedKeys);
+            await syncSections(client, protectedAfter, persistedKeys);
           }
           let updated;
           if (useRelationalStore) {
@@ -529,8 +561,8 @@ export function createPostgresStateBackend({
               'UPDATE promoshop_state SET version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version'
             );
           } else {
-            const assignments = changedKeys.map((key, index) => `${STATE_COLUMNS[key]} = $${index + 1}::jsonb`);
-            const values = changedKeys.map((key) => serialize(protectedAfter[key]));
+            const assignments = persistedKeys.map((key, index) => `${STATE_COLUMNS[key]} = $${index + 1}::jsonb`);
+            const values = persistedKeys.map((key) => serialize(protectedAfter[key]));
             updated = await client.query(
               `UPDATE promoshop_state SET ${assignments.join(', ')}, version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version`,
               values
@@ -542,6 +574,7 @@ export function createPostgresStateBackend({
         }
 
         await client.query('COMMIT');
+        if (restored.requiresReencrypt) await retireDataKey();
         cachedData = data;
         sliceCache.clear();
         lastVersionCheckAt = Date.now();

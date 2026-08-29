@@ -21,44 +21,105 @@ export function normalizeApiKey(value) {
     .replace(/\s+/g, '');
 }
 
+const PASSWORD_SCRYPT_N = 2 ** 17;
+const PASSWORD_SCRYPT_R = 8;
+const PASSWORD_SCRYPT_P = 1;
+const PASSWORD_SCRYPT_MAXMEM = 192 * 1024 * 1024;
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
+  const hash = crypto.scryptSync(password, salt, 64, {
+    N: PASSWORD_SCRYPT_N,
+    r: PASSWORD_SCRYPT_R,
+    p: PASSWORD_SCRYPT_P,
+    maxmem: PASSWORD_SCRYPT_MAXMEM
+  }).toString('hex');
+  return `scrypt$v2$${PASSWORD_SCRYPT_N}$${PASSWORD_SCRYPT_R}$${PASSWORD_SCRYPT_P}$${salt}$${hash}`;
 }
 
 export function verifyPassword(password, stored) {
-  if (!stored?.includes(':')) return false;
-  const [salt, expected] = stored.split(':');
+  const value = String(stored || '');
+  const versioned = /^scrypt\$v2\$(\d+)\$(\d+)\$(\d+)\$([a-f0-9]{32})\$([a-f0-9]{128})$/i.exec(value);
+  if (versioned) {
+    const [, rawN, rawR, rawP, salt, expected] = versioned;
+    const N = Number(rawN);
+    const r = Number(rawR);
+    const p = Number(rawP);
+    if (N < 2 ** 14 || N > PASSWORD_SCRYPT_N || r < 1 || r > 16 || p < 1 || p > 4) return false;
+    const calculated = crypto.scryptSync(password, salt, 64, { N, r, p, maxmem: PASSWORD_SCRYPT_MAXMEM }).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(calculated, 'hex'));
+  }
+  if (!value.includes(':')) return false;
+  const [salt, expected] = value.split(':');
   if (!/^[a-f0-9]{16,64}$/i.test(salt) || !/^[a-f0-9]{128}$/i.test(expected)) return false;
   const calculated = crypto.scryptSync(password, salt, 64).toString('hex');
-  return expected.length === calculated.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(calculated));
+  return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(calculated, 'hex'));
 }
 
-async function getKey() {
+export function passwordNeedsRehash(stored) {
+  return !String(stored || '').startsWith(`scrypt$v2$${PASSWORD_SCRYPT_N}$${PASSWORD_SCRYPT_R}$${PASSWORD_SCRYPT_P}$`);
+}
+
+function environmentEncryptionKey() {
+  const configured = String(process.env.SECRETS_ENCRYPTION_KEY || '').trim();
+  if (!configured) return null;
+  if (/^[a-f0-9]{64}$/i.test(configured)) return Buffer.from(configured, 'hex');
+  try {
+    const decoded = Buffer.from(configured, 'base64');
+    if (decoded.length === 32 && decoded.toString('base64').replace(/=+$/, '') === configured.replace(/=+$/, '')) return decoded;
+  } catch {}
+  if (configured.length >= 32) return crypto.createHash('sha256').update(configured, 'utf8').digest();
+  throw new Error('SECRETS_ENCRYPTION_KEY precisa ter pelo menos 32 caracteres.');
+}
+
+async function fileEncryptionKey({ create = true } = {}) {
   await fs.mkdir(dataDir, { recursive: true });
-  try { return Buffer.from(await fs.readFile(keyFile, 'utf8'), 'hex'); }
+  try {
+    const key = Buffer.from((await fs.readFile(keyFile, 'utf8')).trim(), 'hex');
+    if (key.length !== 32) throw new Error('A chave local de segredos está corrompida.');
+    return key;
+  }
   catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+    if (error?.code !== 'ENOENT' || !create) throw error;
     const key = crypto.randomBytes(32);
     await fs.writeFile(keyFile, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
     return key;
   }
 }
 
-async function encrypt(value) {
-  const key = await getKey();
+async function activeEncryptionKey() {
+  return environmentEncryptionKey() || fileEncryptionKey();
+}
+
+async function encrypt(value, providedKey = null) {
+  const key = providedKey || await activeEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
   return JSON.stringify({ iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') });
 }
 
-async function decrypt(payload) {
-  const key = await getKey();
+function decryptWithKey(payload, key) {
   const parsed = JSON.parse(payload);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(parsed.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(parsed.tag, 'base64'));
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(parsed.data, 'base64')), decipher.final()]).toString('utf8'));
+}
+
+async function decrypt(payload) {
+  const environmentKey = environmentEncryptionKey();
+  if (environmentKey) {
+    try {
+      return { value: decryptWithKey(payload, environmentKey), source: 'environment' };
+    } catch (environmentError) {
+      try {
+        const fileKey = await fileEncryptionKey({ create: false });
+        return { value: decryptWithKey(payload, fileKey), source: 'file' };
+      } catch {
+        throw new Error(`Não foi possível descriptografar os segredos com a chave configurada: ${environmentError.message}`);
+      }
+    }
+  }
+  return { value: decryptWithKey(payload, await fileEncryptionKey()), source: 'file' };
 }
 
 async function writeSecrets(value) {
@@ -72,6 +133,9 @@ async function writeSecrets(value) {
   }
   cachedSecrets = value;
   cachedSecretsAt = Date.now();
+  if (environmentEncryptionKey()) await fs.unlink(keyFile).catch((error) => {
+    if (error?.code !== 'ENOENT') console.warn('A chave local antiga dos segredos não pôde ser removida.');
+  });
 }
 
 async function defaults() {
@@ -87,6 +151,7 @@ async function defaults() {
     mercadoLivreTokenExpiresAt: 0,
     mercadoLivreUserId: '',
     mercadoLivreOAuthState: '',
+    mercadoLivreOAuthStateExpiresAt: 0,
     mercadoLivreCodeVerifier: '',
     mercadoLivreOAuthRedirectUri: '',
     mercadoLivreAffiliateCookie: '',
@@ -108,6 +173,7 @@ async function defaults() {
     googleSearchConsoleRefreshToken: '',
     googleSearchConsoleTokenExpiresAt: 0,
     googleSearchConsoleOAuthState: '',
+    googleSearchConsoleOAuthStateExpiresAt: 0,
     instagramAppId: '',
     instagramAppSecret: '',
     instagramAccessToken: '',
@@ -116,6 +182,7 @@ async function defaults() {
     instagramProfilePictureUrl: '',
     instagramTokenExpiresAt: 0,
     instagramOAuthState: '',
+    instagramOAuthStateExpiresAt: 0,
     brevoInboundToken: crypto.randomBytes(32).toString('hex'),
     extensionIngestToken: '',
     aiApiKey: '',
@@ -133,7 +200,11 @@ export async function readSecrets() {
   secretsReadPromise = (async () => {
     await fs.mkdir(dataDir, { recursive: true });
     try {
-      const value = await decrypt(await fs.readFile(secretsFile, 'utf8'));
+      const decrypted = await decrypt(await fs.readFile(secretsFile, 'utf8'));
+      const value = decrypted.value;
+      if (decrypted.source === 'file' && environmentEncryptionKey()) {
+        await writeSecrets(value);
+      }
       if (!value.brevoInboundToken) {
         value.brevoInboundToken = crypto.randomBytes(32).toString('hex');
         await writeSecrets(value);
@@ -165,6 +236,9 @@ async function updateSecretsUnlocked(changes) {
     next.adminPasswordHash = hashPassword(String(changes.adminPassword).slice(0, 256));
     next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
   }
+  if (changes.rehashAdminPassword) {
+    next.adminPasswordHash = hashPassword(String(changes.rehashAdminPassword).slice(0, 256));
+  }
   if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
   if (typeof changes.mercadoLivreClientSecret === 'string' && changes.mercadoLivreClientSecret.trim()) next.mercadoLivreClientSecret = changes.mercadoLivreClientSecret.trim();
   if (typeof changes.mercadoLivreAccessToken === 'string' && changes.mercadoLivreAccessToken.trim()) next.mercadoLivreAccessToken = changes.mercadoLivreAccessToken.trim();
@@ -172,6 +246,7 @@ async function updateSecretsUnlocked(changes) {
   if (Number.isFinite(Number(changes.mercadoLivreTokenExpiresAt))) next.mercadoLivreTokenExpiresAt = Number(changes.mercadoLivreTokenExpiresAt);
   if (changes.mercadoLivreUserId !== undefined) next.mercadoLivreUserId = String(changes.mercadoLivreUserId || '').trim();
   if (typeof changes.mercadoLivreOAuthState === 'string') next.mercadoLivreOAuthState = changes.mercadoLivreOAuthState.trim();
+  if (Number.isFinite(Number(changes.mercadoLivreOAuthStateExpiresAt))) next.mercadoLivreOAuthStateExpiresAt = Number(changes.mercadoLivreOAuthStateExpiresAt);
   if (typeof changes.mercadoLivreCodeVerifier === 'string') next.mercadoLivreCodeVerifier = changes.mercadoLivreCodeVerifier.trim();
   if (typeof changes.mercadoLivreOAuthRedirectUri === 'string') next.mercadoLivreOAuthRedirectUri = changes.mercadoLivreOAuthRedirectUri.trim();
   if (changes.clearMercadoLivreAccessToken) next.mercadoLivreAccessToken = '';
@@ -181,6 +256,7 @@ async function updateSecretsUnlocked(changes) {
     next.mercadoLivreTokenExpiresAt = 0;
     next.mercadoLivreUserId = '';
     next.mercadoLivreOAuthState = '';
+    next.mercadoLivreOAuthStateExpiresAt = 0;
     next.mercadoLivreCodeVerifier = '';
     next.mercadoLivreOAuthRedirectUri = '';
   }
@@ -232,7 +308,8 @@ async function updateSecretsUnlocked(changes) {
   if (typeof changes.googleSearchConsoleRefreshToken === 'string' && changes.googleSearchConsoleRefreshToken.trim()) next.googleSearchConsoleRefreshToken = changes.googleSearchConsoleRefreshToken.trim();
   if (Number.isFinite(Number(changes.googleSearchConsoleTokenExpiresAt))) next.googleSearchConsoleTokenExpiresAt = Number(changes.googleSearchConsoleTokenExpiresAt);
   if (typeof changes.googleSearchConsoleOAuthState === 'string') next.googleSearchConsoleOAuthState = changes.googleSearchConsoleOAuthState.trim();
-  if (changes.clearGoogleSearchConsoleConnection) { next.googleSearchConsoleAccessToken = ''; next.googleSearchConsoleRefreshToken = ''; next.googleSearchConsoleTokenExpiresAt = 0; next.googleSearchConsoleOAuthState = ''; }
+  if (Number.isFinite(Number(changes.googleSearchConsoleOAuthStateExpiresAt))) next.googleSearchConsoleOAuthStateExpiresAt = Number(changes.googleSearchConsoleOAuthStateExpiresAt);
+  if (changes.clearGoogleSearchConsoleConnection) { next.googleSearchConsoleAccessToken = ''; next.googleSearchConsoleRefreshToken = ''; next.googleSearchConsoleTokenExpiresAt = 0; next.googleSearchConsoleOAuthState = ''; next.googleSearchConsoleOAuthStateExpiresAt = 0; }
   if (typeof changes.instagramAppId === 'string' && changes.instagramAppId.trim()) next.instagramAppId = changes.instagramAppId.trim();
   if (typeof changes.instagramAppSecret === 'string' && changes.instagramAppSecret.trim()) next.instagramAppSecret = changes.instagramAppSecret.trim();
   if (typeof changes.instagramAccessToken === 'string') next.instagramAccessToken = changes.instagramAccessToken.trim();
@@ -241,6 +318,7 @@ async function updateSecretsUnlocked(changes) {
   if (changes.instagramProfilePictureUrl !== undefined) next.instagramProfilePictureUrl = String(changes.instagramProfilePictureUrl || '').trim();
   if (Number.isFinite(Number(changes.instagramTokenExpiresAt))) next.instagramTokenExpiresAt = Number(changes.instagramTokenExpiresAt);
   if (typeof changes.instagramOAuthState === 'string') next.instagramOAuthState = changes.instagramOAuthState.trim();
+  if (Number.isFinite(Number(changes.instagramOAuthStateExpiresAt))) next.instagramOAuthStateExpiresAt = Number(changes.instagramOAuthStateExpiresAt);
   if (changes.clearInstagramCredentials) { next.instagramAppId = ''; next.instagramAppSecret = ''; }
   if (changes.clearInstagramConnection) {
     next.instagramAccessToken = '';
@@ -249,6 +327,7 @@ async function updateSecretsUnlocked(changes) {
     next.instagramProfilePictureUrl = '';
     next.instagramTokenExpiresAt = 0;
     next.instagramOAuthState = '';
+    next.instagramOAuthStateExpiresAt = 0;
   }
   if (
     typeof changes.aiApiKey === 'string' &&
@@ -315,6 +394,7 @@ export function secretStatus(secrets) {
   return {
     adminUser: secrets.adminUser,
     adminSetupRequired: !secrets.adminPasswordHash && !process.env.ADMIN_PASSWORD,
+    secretsEncryptionKeyExternal: Boolean(environmentEncryptionKey()),
     googleSearchConsoleClientIdConfigured: Boolean(secrets.googleSearchConsoleClientId),
     googleSearchConsoleClientSecretConfigured: Boolean(secrets.googleSearchConsoleClientSecret),
     googleSearchConsoleConnected: Boolean(secrets.googleSearchConsoleAccessToken || secrets.googleSearchConsoleRefreshToken),

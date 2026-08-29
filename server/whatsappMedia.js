@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import sharp from 'sharp';
+import { downloadRemoteBuffer } from './safeRemote.js';
 
 const MAXIMUM_SOURCE_BYTES = 12 * 1024 * 1024;
 
@@ -17,31 +18,16 @@ export async function normalizeWhatsappImage(source) {
 }
 
 export async function downloadWhatsappImage(imageUrl) {
-  const url = new URL(String(imageUrl || ''));
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('O endereço da imagem é inválido.');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20_000);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'user-agent': 'Mozilla/5.0 (compatible; PromoShop/1.0)'
-      }
-    });
-    if (!response.ok) throw new Error(`A loja respondeu ${response.status} ao baixar a imagem.`);
-    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('image/') && !contentType.startsWith('application/octet-stream')) {
-      throw new Error('O endereço não retornou uma imagem válida.');
+  const result = await downloadRemoteBuffer(imageUrl, {
+    maximumBytes: MAXIMUM_SOURCE_BYTES,
+    timeoutMs: 20_000,
+    acceptedContentTypes: ['image/', 'application/octet-stream'],
+    headers: {
+      accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'user-agent': 'Mozilla/5.0 (compatible; PromoShop/1.0)'
     }
-    const declaredSize = Number(response.headers.get('content-length') || 0);
-    if (declaredSize > MAXIMUM_SOURCE_BYTES) throw new Error('A imagem excede o limite de 12 MB.');
-    const source = Buffer.from(await response.arrayBuffer());
-    const data = await normalizeWhatsappImage(source);
-    const originalName = path.basename(url.pathname).replace(/[^a-z0-9._-]+/gi, '-').replace(/\.[^.]+$/, '').slice(0, 60) || 'oferta';
-    return { data, mimetype: 'image/jpeg', filename: `${originalName}.jpg`, filesize: data.length };
-  } finally {
-    clearTimeout(timer);
-  }
+  });
+  const data = await normalizeWhatsappImage(result.buffer);
+  const originalName = path.basename(result.finalUrl.pathname).replace(/[^a-z0-9._-]+/gi, '-').replace(/\.[^.]+$/, '').slice(0, 60) || 'oferta';
+  return { data, mimetype: 'image/jpeg', filename: `${originalName}.jpg`, filesize: data.length };
 }

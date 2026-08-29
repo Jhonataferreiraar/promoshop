@@ -421,9 +421,7 @@ async function syncGroups(attempt = 1) {
     console.log('Grupos encontrados pelo WhatsApp:');
 
     for (const group of groups) {
-      console.log(
-        `- ${group.name || '[SEM NOME]'} | ${group.id}`
-      );
+      console.log(`- ${group.name || '[SEM NOME]'} | ${group.type}`);
     }
     await request('/api/worker/groups', { method: 'POST', body: JSON.stringify({ groups }) });
     const message = selectedGroups.length

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import QRCode from 'qrcode';
 import sharp from 'sharp';
+import { downloadRemoteBuffer } from './safeRemote.js';
 
 import { addBufferedLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
@@ -181,19 +182,13 @@ function appendActivity(data, message, level = 'info') {
 async function fetchBuffer(url, maximumBytes = 12 * 1024 * 1024) {
   const safeUrl = validHttps(url);
   if (!safeUrl) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(safeUrl, { signal: controller.signal, redirect: 'follow' });
-    if (!response.ok) throw new Error(`imagem respondeu ${response.status}`);
-    const length = Number(response.headers.get('content-length') || 0);
-    if (length > maximumBytes) throw new Error('imagem excede o limite permitido');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > maximumBytes) throw new Error('imagem excede o limite permitido');
-    return buffer;
-  } finally {
-    clearTimeout(timer);
-  }
+  const result = await downloadRemoteBuffer(safeUrl, {
+    maximumBytes,
+    timeoutMs: 15_000,
+    acceptedContentTypes: ['image/', 'application/octet-stream'],
+    headers: { accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
+  });
+  return result.buffer;
 }
 
 function decorationSvg(theme) {
@@ -922,7 +917,7 @@ export async function beginInstagramAuthorization(config, secrets) {
   const redirectUri = validHttps(config.instagramRedirectUri);
   if (!redirectUri) throw new Error('Informe uma URL HTTPS válida para o retorno do Instagram.');
   const state = crypto.randomBytes(24).toString('hex');
-  await updateSecrets({ instagramOAuthState: state });
+  await updateSecrets({ instagramOAuthState: state, instagramOAuthStateExpiresAt: Date.now() + 10 * 60 * 1000 });
   const params = new URLSearchParams({
     enable_fb_login: '0',
     force_authentication: '1',
@@ -936,7 +931,7 @@ export async function beginInstagramAuthorization(config, secrets) {
 }
 
 export async function finishInstagramAuthorization(config, secrets, query) {
-  if (!query.code || !query.state || query.state !== secrets.instagramOAuthState) throw new Error('A confirmação do Instagram expirou ou não é válida.');
+  if (!query.code || !query.state || query.state !== secrets.instagramOAuthState || Number(secrets.instagramOAuthStateExpiresAt || 0) < Date.now()) throw new Error('A confirmação do Instagram expirou ou não é válida.');
   const redirectUri = validHttps(config.instagramRedirectUri);
   const form = new URLSearchParams({ client_id: secrets.instagramAppId, client_secret: secrets.instagramAppSecret, grant_type: 'authorization_code', redirect_uri: redirectUri, code: String(query.code).replace(/#_$/, '') });
   const shortToken = await metaJson('https://api.instagram.com/oauth/access_token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
@@ -949,7 +944,8 @@ export async function finishInstagramAuthorization(config, secrets, query) {
     instagramUsername: String(profile.username || ''),
     instagramProfilePictureUrl: String(profile.profile_picture_url || ''),
     instagramTokenExpiresAt: Date.now() + Number(longToken.expires_in || 5184000) * 1000,
-    instagramOAuthState: ''
+    instagramOAuthState: '',
+    instagramOAuthStateExpiresAt: 0
   });
   return profile;
 }

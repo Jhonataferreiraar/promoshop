@@ -26,6 +26,7 @@ import {
 import {
   clearSessionCookies,
   createToken,
+  hashSecurityIdentifier,
   requireAdmin,
   requireWorker,
   setSessionCookies
@@ -45,7 +46,8 @@ import {
   readSecrets,
   secretStatus,
   updateSecrets,
-  verifyPassword
+  verifyPassword,
+  passwordNeedsRehash
 } from './secrets.js';
 
 import {
@@ -445,6 +447,53 @@ function registerFailedLogin(ip) {
   );
 
   return state;
+}
+
+function persistentLoginKey(ip) {
+  return hashSecurityIdentifier(ip);
+}
+
+async function persistentLoginAttemptState(ip) {
+  const { meta } = await readStoreSlice(['meta']);
+  const key = persistentLoginKey(ip);
+  const state = meta?.security?.loginAttempts?.[key];
+  if (!state || Number(state.resetAt || 0) <= Date.now()) return { count: 0, resetAt: Date.now() + loginWindowMs, blockedUntil: 0 };
+  return {
+    count: Number(state.count || 0),
+    resetAt: Number(state.resetAt || 0),
+    blockedUntil: Number(state.blockedUntil || 0)
+  };
+}
+
+async function registerPersistentFailedLogin(ip) {
+  const key = persistentLoginKey(ip);
+  const now = Date.now();
+  await updateStore((data) => {
+    data.meta ||= {};
+    data.meta.security ||= {};
+    const attempts = data.meta.security.loginAttempts ||= {};
+    for (const [storedKey, state] of Object.entries(attempts)) {
+      if (Number(state?.resetAt || 0) <= now) delete attempts[storedKey];
+    }
+    const current = attempts[key]?.resetAt > now
+      ? attempts[key]
+      : { count: 0, resetAt: now + loginWindowMs, blockedUntil: 0 };
+    current.count = Number(current.count || 0) + 1;
+    if (current.count >= loginMaxAttempts) current.blockedUntil = now + loginWindowMs;
+    attempts[key] = current;
+    const keys = Object.keys(attempts);
+    if (keys.length > 500) {
+      keys.sort((left, right) => Number(attempts[left]?.resetAt || 0) - Number(attempts[right]?.resetAt || 0));
+      keys.slice(0, keys.length - 500).forEach((storedKey) => delete attempts[storedKey]);
+    }
+  });
+}
+
+async function clearPersistentLoginAttempts(ip) {
+  const key = persistentLoginKey(ip);
+  await updateStore((data) => {
+    if (data.meta?.security?.loginAttempts) delete data.meta.security.loginAttempts[key];
+  });
 }
 
 function checkAssistantLimit(ip) {
@@ -1297,8 +1346,10 @@ const affiliateHostSuffixes = [
   's.shopee.com.br',
   'aliexpress.com',
   'a.aliexpress.com',
+  'magalu.com',
   'magazinevoce.com.br',
-  'magazineluiza.com.br'
+  'magazineluiza.com.br',
+  'netshoes.com.br'
 ];
 
 function safeAffiliateDestination(value) {
@@ -2352,10 +2403,24 @@ function publicHomeCoupons(coupons, req) {
     .filter((coupon) => publicCouponAllowed(coupon, now))
     .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 6)
-    .map(({ targetAudienceCodes, ...coupon }) => ({
-      ...coupon,
-      shortUrl: couponShortUrl(coupon, req)
-    }));
+    .map((coupon) => publicCouponPayload(coupon, req));
+}
+
+function publicCouponPayload(coupon, req) {
+  return {
+    id: String(coupon.id || ''),
+    title: String(coupon.title || '').trim(),
+    store: String(coupon.store || '').trim(),
+    code: String(coupon.code || '').trim(),
+    description: String(coupon.description || '').trim(),
+    discountType: String(coupon.discountType || 'percent'),
+    discountValue: Number(coupon.discountValue || 0),
+    minPurchase: Number(coupon.minPurchase || 0),
+    expiresAt: coupon.expiresAt || null,
+    image: String(coupon.image || '').trim(),
+    featured: Boolean(coupon.featured),
+    shortUrl: couponShortUrl(coupon, req)
+  };
 }
 
 function publicHomeAudiences(config) {
@@ -2529,10 +2594,7 @@ app.get(
         .filter((coupon) => publicCouponAllowed(coupon, now))
         .sort((a, b) => Number(b.featured) - Number(a.featured) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
         .slice(0, 300)
-        .map(({ targetAudienceCodes, ...coupon }) => ({
-          ...coupon,
-          shortUrl: couponShortUrl(coupon, req)
-        }))
+        .map((coupon) => publicCouponPayload(coupon, req))
     );
   }
 );
@@ -2552,13 +2614,8 @@ app.get(
       if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return res.status(410).send('Este cupom expirou.');
     }
 
-    let destination;
-    try {
-      destination = new URL(String(coupon.link || '').trim());
-    } catch {
-      destination = null;
-    }
-    if (!destination || !['http:', 'https:'].includes(destination.protocol)) return res.status(404).send('Link do cupom indisponível.');
+    const destination = safeAffiliateDestination(coupon.link);
+    if (!destination) return res.status(404).send('Link do cupom indisponível.');
 
     return res.redirect(302, destination.toString());
   }
@@ -3293,10 +3350,13 @@ app.post(
         .remoteAddress ||
       'unknown';
 
-    const attemptState =
-      loginAttemptState(
-        clientIp
-      );
+    const memoryAttemptState = loginAttemptState(clientIp);
+    const storedAttemptState = await persistentLoginAttemptState(clientIp);
+    const attemptState = {
+      count: Math.max(memoryAttemptState.count, storedAttemptState.count),
+      resetAt: Math.max(memoryAttemptState.resetAt, storedAttemptState.resetAt),
+      blockedUntil: Math.max(memoryAttemptState.blockedUntil, storedAttemptState.blockedUntil)
+    };
 
     if (
       attemptState
@@ -3434,6 +3494,7 @@ app.post(
       registerFailedLogin(
         clientIp
       );
+      await registerPersistentFailedLogin(clientIp);
 
       return res
         .status(401)
@@ -3446,6 +3507,11 @@ app.post(
     loginAttempts.delete(
       clientIp
     );
+    await clearPersistentLoginAttempts(clientIp);
+
+    if (secrets.adminPasswordHash && passwordNeedsRehash(secrets.adminPasswordHash)) {
+      secrets = await updateSecrets({ rehashAdminPassword: password });
+    }
 
     const token = createToken(expectedUser, secrets.adminSessionVersion);
     setSessionCookies(res, token);
@@ -3457,7 +3523,7 @@ app.get('/api/auth/session', requireAdmin, (_req, res) => {
   res.json({ authenticated: true });
 });
 
-app.post('/api/auth/logout', (_req, res) => {
+app.post('/api/auth/logout', requireAdmin, (_req, res) => {
   clearSessionCookies(res);
   res.json({ ok: true });
 });
@@ -4612,7 +4678,7 @@ app.post('/api/admin/search-console/connect', requireAdmin, async (req, res) => 
   const redirectUri = String(config.searchConsoleRedirectUri || '').trim();
   if (!/^https:\/\//i.test(redirectUri)) return res.status(400).json({ error: 'Configure uma URL de retorno HTTPS para o Search Console.' });
   const state = crypto.randomBytes(24).toString('hex');
-  await updateSecrets({ googleSearchConsoleOAuthState: state });
+  await updateSecrets({ googleSearchConsoleOAuthState: state, googleSearchConsoleOAuthStateExpiresAt: Date.now() + 10 * 60 * 1000 });
   const params = new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, redirect_uri: redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/webmasters.readonly', access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state });
   res.json({ authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
 });
@@ -4620,12 +4686,12 @@ app.post('/api/admin/search-console/connect', requireAdmin, async (req, res) => 
 app.get('/api/search-console/callback', async (req, res) => {
   const [{ config }, secrets] = await Promise.all([readStore(), readSecrets()]);
   const adminUrl = `${String(config.canonicalUrl || '').replace(/\/+$/, '')}/admin`;
-  if (!req.query.code || !req.query.state || req.query.state !== secrets.googleSearchConsoleOAuthState) return res.redirect(`${adminUrl}?searchconsole=error`);
+  if (!req.query.code || !req.query.state || req.query.state !== secrets.googleSearchConsoleOAuthState || Number(secrets.googleSearchConsoleOAuthStateExpiresAt || 0) < Date.now()) return res.redirect(`${adminUrl}?searchconsole=error`);
   try {
     const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: secrets.googleSearchConsoleClientId, client_secret: secrets.googleSearchConsoleClientSecret, code: String(req.query.code), redirect_uri: String(config.searchConsoleRedirectUri), grant_type: 'authorization_code' }) }, 15_000);
     const body = await response.json();
     if (!response.ok || !body.access_token) throw new Error(body.error_description || 'Falha ao autorizar.');
-    await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleRefreshToken: body.refresh_token || secrets.googleSearchConsoleRefreshToken, googleSearchConsoleTokenExpiresAt: Date.now() + Number(body.expires_in || 3600) * 1000, googleSearchConsoleOAuthState: '' });
+    await updateSecrets({ googleSearchConsoleAccessToken: body.access_token, googleSearchConsoleRefreshToken: body.refresh_token || secrets.googleSearchConsoleRefreshToken, googleSearchConsoleTokenExpiresAt: Date.now() + Number(body.expires_in || 3600) * 1000, googleSearchConsoleOAuthState: '', googleSearchConsoleOAuthStateExpiresAt: 0 });
     await addLog('Google Search Console conectado.', 'success');
     res.redirect(`${adminUrl}?searchconsole=connected`);
   } catch (error) {
@@ -5120,11 +5186,10 @@ function parseCouponInput(body = {}, existing = {}) {
   const expiresAtRaw = pick('expiresAt', '');
   const expiresAtDate = expiresAtRaw ? new Date(expiresAtRaw) : null;
 
-  let parsedLink;
-  try { parsedLink = new URL(link); } catch { parsedLink = null; }
+  const parsedLink = safeAffiliateDestination(link);
 
-  if (!title || !parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
-    return { error: 'Informe o título e um link HTTPS válido para o cupom.' };
+  if (!title || !parsedLink) {
+    return { error: 'Informe o título e um link HTTPS válido de uma loja permitida.' };
   }
   if (rawLink.length > 10000) {
     return { error: 'O link do cupom é muito longo. Use um endereço com até 10.000 caracteres.' };

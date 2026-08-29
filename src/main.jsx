@@ -132,7 +132,11 @@ async function api(path, options = {}) {
   if (requestOptions.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const method = String(requestOptions.method || 'GET').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    const csrf = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('promoshop_csrf='))?.slice('promoshop_csrf='.length) || '';
+    const cookies = document.cookie.split(';').map((part) => part.trim());
+    const secureCsrf = cookies.find((part) => part.startsWith('__Host-promoshop_csrf='));
+    const legacyCsrf = cookies.find((part) => part.startsWith('promoshop_csrf='));
+    const csrfEntry = secureCsrf || legacyCsrf || '';
+    const csrf = csrfEntry ? csrfEntry.slice(csrfEntry.indexOf('=') + 1) : '';
     if (csrf && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = decodeURIComponent(csrf);
   }
   const controller = new AbortController();

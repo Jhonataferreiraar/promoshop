@@ -21,12 +21,21 @@ function loadSessionSecret() {
 }
 
 const sessionSecret = loadSessionSecret();
-const sessionCookieName = 'promoshop_session';
-const csrfCookieName = 'promoshop_csrf';
+const legacySessionCookieName = 'promoshop_session';
+const legacyCsrfCookieName = 'promoshop_csrf';
+const sessionCookieName = process.env.NODE_ENV === 'production' ? '__Host-promoshop_session' : legacySessionCookieName;
+const csrfCookieName = process.env.NODE_ENV === 'production' ? '__Host-promoshop_csrf' : legacyCsrfCookieName;
 const sessionMaxAgeSeconds = 12 * 60 * 60;
 
 function base64url(value) { return Buffer.from(value).toString('base64url'); }
 function signature(payload) { return crypto.createHmac('sha256', sessionSecret).update(payload).digest('base64url'); }
+
+export function hashSecurityIdentifier(value) {
+  return crypto.createHmac('sha256', sessionSecret)
+    .update('security-identifier\0')
+    .update(String(value || 'unknown'))
+    .digest('hex');
+}
 
 function parseCookies(header = '') {
   return String(header || '').split(';').reduce((cookies, part) => {
@@ -61,6 +70,10 @@ export function setSessionCookies(res, token) {
   const secure = secureCookies();
   res.append('Set-Cookie', cookieHeader(sessionCookieName, token, { httpOnly: true, secure }));
   res.append('Set-Cookie', cookieHeader(csrfCookieName, csrfToken, { secure }));
+  if (secure) {
+    res.append('Set-Cookie', cookieHeader(legacySessionCookieName, '', { httpOnly: true, secure, maxAge: 0 }));
+    res.append('Set-Cookie', cookieHeader(legacyCsrfCookieName, '', { secure, maxAge: 0 }));
+  }
   return csrfToken;
 }
 
@@ -68,17 +81,22 @@ export function clearSessionCookies(res) {
   const secure = secureCookies();
   res.append('Set-Cookie', cookieHeader(sessionCookieName, '', { httpOnly: true, secure, maxAge: 0 }));
   res.append('Set-Cookie', cookieHeader(csrfCookieName, '', { secure, maxAge: 0 }));
+  if (secure) {
+    res.append('Set-Cookie', cookieHeader(legacySessionCookieName, '', { httpOnly: true, secure, maxAge: 0 }));
+    res.append('Set-Cookie', cookieHeader(legacyCsrfCookieName, '', { secure, maxAge: 0 }));
+  }
 }
 
 function sessionTokenFromRequest(req) {
   const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
   if (bearer) return { token: bearer, fromCookie: false };
   const cookies = parseCookies(req.headers.cookie);
-  return { token: cookies[sessionCookieName] || '', fromCookie: Boolean(cookies[sessionCookieName]), cookies };
+  const token = cookies[sessionCookieName] || cookies[legacySessionCookieName] || '';
+  return { token, fromCookie: Boolean(token), cookies };
 }
 
 function csrfValid(req, cookies = parseCookies(req.headers.cookie)) {
-  const cookieToken = String(cookies[csrfCookieName] || '');
+  const cookieToken = String(cookies[csrfCookieName] || cookies[legacyCsrfCookieName] || '');
   const headerToken = String(req.headers['x-csrf-token'] || '');
   return Boolean(cookieToken) && cookieToken.length === headerToken.length && crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
 }

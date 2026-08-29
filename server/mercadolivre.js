@@ -32,6 +32,7 @@ async function saveToken(payload) {
     mercadoLivreTokenExpiresAt: Date.now() + Math.max(60, Number(payload.expires_in || 21600)) * 1000,
     mercadoLivreUserId: payload.user_id || '',
     mercadoLivreOAuthState: '',
+    mercadoLivreOAuthStateExpiresAt: 0,
     mercadoLivreCodeVerifier: '',
     mercadoLivreOAuthRedirectUri: ''
   });
@@ -47,6 +48,7 @@ export async function beginMercadoLivreAuthorization(redirectUri) {
   const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest());
   await updateSecrets({
     mercadoLivreOAuthState: state,
+    mercadoLivreOAuthStateExpiresAt: Date.now() + 10 * 60 * 1000,
     mercadoLivreCodeVerifier: codeVerifier,
     mercadoLivreOAuthRedirectUri: redirectUri
   });
@@ -63,7 +65,7 @@ export async function beginMercadoLivreAuthorization(redirectUri) {
 
 export async function finishMercadoLivreAuthorization({ code, state }) {
   const secrets = await readSecrets();
-  if (!code || !state || !secrets.mercadoLivreOAuthState || state !== secrets.mercadoLivreOAuthState) {
+  if (!code || !state || !secrets.mercadoLivreOAuthState || state !== secrets.mercadoLivreOAuthState || Number(secrets.mercadoLivreOAuthStateExpiresAt || 0) < Date.now()) {
     throw new Error('A autorização retornou com um código de segurança inválido ou expirado.');
   }
   const payload = await requestToken({

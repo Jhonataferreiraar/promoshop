@@ -1,0 +1,32 @@
+name: Security checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run test:secret-scan
+      - run: npm run test:safe-remote
+      - run: npm run test:secrets
+      - run: npm run test:data-encryption
+      - run: npm run test:security
+      - run: npm run test:auth-cookies
+      - run: npm run test:postgres
+      - run: npm run build

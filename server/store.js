@@ -15,29 +15,62 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const dataFile = path.join(dataDir, 'db.json');
 const dataKeyFile = path.join(dataDir, '.data-key');
 let dataMigrationPromise = null;
-let cachedDataKey = null;
+let cachedEnvironmentDataKey = null;
+let cachedFileDataKey = null;
 
-async function getDataKey() {
-  if (cachedDataKey) return cachedDataKey;
+function environmentDataKey() {
+  if (cachedEnvironmentDataKey) return cachedEnvironmentDataKey;
   const configured = String(process.env.DATA_ENCRYPTION_KEY || '').trim();
   if (/^[a-f0-9]{64}$/i.test(configured)) {
-    cachedDataKey = Buffer.from(configured, 'hex');
-    return cachedDataKey;
+    cachedEnvironmentDataKey = Buffer.from(configured, 'hex');
+    return cachedEnvironmentDataKey;
   }
+  if (configured) {
+    try {
+      const decoded = Buffer.from(configured, 'base64');
+      if (decoded.length === 32 && decoded.toString('base64').replace(/=+$/, '') === configured.replace(/=+$/, '')) {
+        cachedEnvironmentDataKey = decoded;
+        return cachedEnvironmentDataKey;
+      }
+    } catch {}
+    if (configured.length >= 32) {
+      cachedEnvironmentDataKey = crypto.createHash('sha256').update(configured, 'utf8').digest();
+      return cachedEnvironmentDataKey;
+    }
+    throw new Error('DATA_ENCRYPTION_KEY precisa ter pelo menos 32 caracteres.');
+  }
+  return null;
+}
+
+async function fileDataKey({ create = true } = {}) {
+  if (cachedFileDataKey) return cachedFileDataKey;
   await fs.mkdir(dataDir, { recursive: true });
   try {
     const saved = (await fs.readFile(dataKeyFile, 'utf8')).trim();
     if (/^[a-f0-9]{64}$/i.test(saved)) {
-      cachedDataKey = Buffer.from(saved, 'hex');
-      return cachedDataKey;
+      cachedFileDataKey = Buffer.from(saved, 'hex');
+      return cachedFileDataKey;
     }
+    throw new Error('A chave local dos dados pessoais está corrompida.');
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+    if (error?.code !== 'ENOENT' || !create) throw error;
   }
   const key = crypto.randomBytes(32);
   await fs.writeFile(dataKeyFile, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
-  cachedDataKey = key;
-  return cachedDataKey;
+  cachedFileDataKey = key;
+  return cachedFileDataKey;
+}
+
+async function getDataKey() {
+  return environmentDataKey() || fileDataKey();
+}
+
+async function retireLocalDataKey() {
+  if (!environmentDataKey()) return;
+  await fs.unlink(dataKeyFile).catch((error) => {
+    if (error?.code !== 'ENOENT') console.warn('A chave local antiga dos dados pessoais não pôde ser removida.');
+  });
+  cachedFileDataKey = null;
 }
 
 async function encryptSensitive(value) {
@@ -55,26 +88,43 @@ async function encryptSensitive(value) {
 
 async function decryptSensitive(value) {
   if (!value || value.__encrypted !== 'aes-256-gcm-v1') return { value, encrypted: false };
-  const key = await getDataKey();
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'));
-  decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
-  const plain = Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]);
-  return { value: JSON.parse(plain.toString('utf8')), encrypted: true };
+  const decryptWithKey = (key) => {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'));
+    decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
+    const plain = Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]);
+    return JSON.parse(plain.toString('utf8'));
+  };
+  const configuredKey = environmentDataKey();
+  if (configuredKey) {
+    try {
+      return { value: decryptWithKey(configuredKey), encrypted: true, legacyKey: false };
+    } catch (environmentError) {
+      try {
+        return { value: decryptWithKey(await fileDataKey({ create: false })), encrypted: true, legacyKey: true };
+      } catch {
+        throw new Error(`Não foi possível descriptografar os dados pessoais com a chave configurada: ${environmentError.message}`);
+      }
+    }
+  }
+  return { value: decryptWithKey(await fileDataKey()), encrypted: true, legacyKey: false };
 }
 
 async function restoreSensitiveData(data) {
   let encrypted = true;
+  let legacyKey = false;
   for (const key of ['inbox', 'privacyConsents']) {
     const restored = await decryptSensitive(data[key]);
     data[key] = restored.value;
     encrypted &&= restored.encrypted;
+    legacyKey ||= restored.legacyKey === true;
   }
   if (data.analytics && typeof data.analytics === 'object') {
     const restored = await decryptSensitive(data.analytics.visitors);
     data.analytics.visitors = restored.value;
     encrypted &&= restored.encrypted;
+    legacyKey ||= restored.legacyKey === true;
   }
-  return { data, encrypted };
+  return { data, encrypted, requiresReencrypt: legacyKey };
 }
 
 async function protectSensitiveData(data) {
@@ -412,6 +462,7 @@ async function readFileStore() {
 
   let data;
   let wasEncrypted = false;
+  let requiresReencrypt = false;
   let lastError;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -419,6 +470,7 @@ async function readFileStore() {
       const restored = await restoreSensitiveData(persisted);
       data = restored.data;
       wasEncrypted = restored.encrypted;
+      requiresReencrypt = restored.requiresReencrypt === true;
       break;
     } catch (error) {
       lastError = error;
@@ -432,6 +484,10 @@ async function readFileStore() {
       dataMigrationPromise = writeProtectedSnapshot(data).finally(() => { dataMigrationPromise = null; });
     }
     await dataMigrationPromise;
+  }
+  if (requiresReencrypt) {
+    await writeProtectedSnapshot(data);
+    await retireLocalDataKey();
   }
   data = normalizeStoreData(data);
   cachedData = data;
@@ -672,6 +728,7 @@ function getPostgresBackend() {
     normalizeData: normalizeStoreData,
     restoreData: restoreSensitiveData,
     protectData: protectSensitiveData,
+    retireDataKey: retireLocalDataKey,
     compactData: compactStoreHistory
   });
   return postgresBackend;

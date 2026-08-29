@@ -2,7 +2,7 @@ services:
   - type: web
     name: promoshop
     runtime: docker
-    plan: starter
+    plan: pro
     region: virginia
     healthCheckPath: /api/health
     autoDeployTrigger: commit
@@ -10,7 +10,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: SITE_URL
-        value: https://promoshop.onrender.com
+        value: https://promoshop.jhonatafaraujo.com.br
+      - key: PUBLIC_URL
+        value: https://promoshop.jhonatafaraujo.com.br
       - key: ADMIN_PASSWORD
         sync: false
       # Formulário de contato enviado pelo Brevo.
@@ -24,6 +26,10 @@ services:
         value: contatopromoshop.site@gmail.com
       - key: DATA_DIR
         value: /var/data
+      - key: STORE_BACKEND
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
       - key: CHROME_PATH
         value: /usr/bin/chromium
       - key: PUPPETEER_SKIP_DOWNLOAD
@@ -38,7 +44,11 @@ services:
         value: --max-old-space-size=768
       - key: AUTH_SECRET
         generateValue: true
+      - key: SECRETS_ENCRYPTION_KEY
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
     disk:
       name: promoshop-data
       mountPath: /var/data
-      sizeGB: 1
+      sizeGB: 5
