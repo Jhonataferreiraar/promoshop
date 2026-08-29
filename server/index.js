@@ -406,7 +406,7 @@ app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 app.use((req, res, next) => {
   if (process.env.NODE_ENV !== 'production' || req.path === '/api/health') return next();
   let canonical;
-  try { canonical = new URL(process.env.SITE_URL || process.env.PUBLIC_URL || ''); }
+  try { canonical = new URL(process.env.SITE_URL || process.env.PUBLIC_URL || 'https://promoshop.jhonatafaraujo.com.br'); }
   catch { return next(); }
   const requestHost = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim().toLowerCase();
   if (!canonical.hostname || !requestHost || requestHost === canonical.host.toLowerCase() || /^localhost(?::\d+)?$/.test(requestHost) || /^127\.0\.0\.1(?::\d+)?$/.test(requestHost)) return next();
