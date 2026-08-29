@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, formatInstagramRetryAt, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
@@ -42,6 +42,9 @@ assert.equal(instagramRateLimitUntil({
   instagramQueue: [{ status: 'sent', instagramRateLimited: true, retryAt: new Date(Date.now() + 120_000).toISOString() }],
   instagramFeedQueue: [{ status: 'pending', instagramRateLimited: true, retryAt: futureRetry }]
 }), new Date(futureRetry).getTime(), 'a pausa deve considerar apenas publicações pendentes');
+assert.equal(formatInstagramRetryAt(null), '', 'uma pausa sem data não pode virar dezembro de 1969');
+assert.equal(formatInstagramRetryAt('1970-01-01T00:00:00.000Z'), '', 'uma pausa vencida não deve ser exibida');
+assert.match(formatInstagramRetryAt(futureRetry), /\d{2}\/\d{2}\/\d{4}/, 'uma pausa futura válida deve ser exibida');
 
 const data = {
   config,

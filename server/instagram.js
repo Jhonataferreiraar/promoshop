@@ -164,6 +164,14 @@ export function instagramRateLimitUntil(data = {}) {
   );
 }
 
+export function formatInstagramRetryAt(value, now = Date.now()) {
+  const timestamp = value ? new Date(value).getTime() : Number.NaN;
+  if (!Number.isFinite(timestamp) || timestamp <= now) return '';
+  return new Date(timestamp).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo'
+  });
+}
+
 function appendActivity(data, message, level = 'info') {
   data.logs ||= [];
   data.logs.unshift({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
@@ -1150,9 +1158,12 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
           ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000
           : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
         item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
-        const message = rateLimited
-          ? `Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${new Date(item.retryAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`
-          : `Instagram: falha ao publicar ${selected.title}: ${error.message}`;
+        const retryLabel = formatInstagramRetryAt(item.retryAt);
+        const message = rateLimited && retryLabel
+          ? `Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${retryLabel}.`
+          : uncertain
+            ? `Instagram: o envio de ${selected.title} foi iniciado, mas não houve confirmação da Meta. Confira o perfil antes de tentar novamente para evitar publicação duplicada.`
+            : `Instagram: falha ao publicar ${selected.title}: ${error.message}`;
         appendActivity(fresh, message, rateLimited ? 'warning' : 'error');
       });
     }
