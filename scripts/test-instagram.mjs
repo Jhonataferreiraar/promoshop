@@ -81,6 +81,19 @@ assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 2, 'deve rec
 assert.equal(backfillData.instagramFeedQueue[0].items.length, 2, 'deve montar o carrossel com as ofertas recentes');
 assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 0, 'não deve duplicar o preenchimento automático');
 
+const permanentFailureData = {
+  config: { ...feedData.config, instagramFeedCarouselSize: 2 },
+  offers: backfillData.offers,
+  queue: backfillData.queue,
+  instagramFeedQueue: [{
+    id: 'feed-failed', origin: 'whatsapp', postType: 'carousel', status: 'failed',
+    sourceIds: ['offer-1', 'offer-2'], items: [], createdAt: new Date().toISOString(),
+    permanentFailure: true, error: 'A Meta não reconheceu a mídia.'
+  }]
+};
+assert.equal(backfillInstagramFeedFromRecentWhatsapp(permanentFailureData), 0, 'uma falha permanente não pode recriar o mesmo carrossel');
+assert.equal(permanentFailureData.instagramFeedQueue.length, 1, 'a fila deve permanecer estável após a falha permanente');
+
 const asset = await generateInstagramStory({ title: 'Smartphone com câmera de alta resolução', store: 'Magalu', price: 999.9, originalPrice: 1299.9, discount: 23, image: '', link: 'https://example.com/offer' }, config, 'christmas');
 try {
   const metadata = await sharp(asset.filePath).metadata();

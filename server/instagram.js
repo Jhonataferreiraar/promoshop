@@ -51,6 +51,23 @@ function graphUrl(config, pathname) {
   return `https://graph.instagram.com/${cleanVersion(config.instagramApiVersion)}${pathname}`;
 }
 
+function instagramMediaOrigin(config) {
+  const serviceName = String(process.env.RENDER_SERVICE_NAME || '').trim().toLowerCase();
+  const candidates = [
+    process.env.INSTAGRAM_MEDIA_BASE_URL,
+    process.env.RENDER_EXTERNAL_URL,
+    /^[a-z0-9-]{2,63}$/.test(serviceName) ? `https://${serviceName}.onrender.com` : '',
+    config.canonicalUrl
+  ];
+  for (const value of candidates) {
+    try {
+      const parsed = new URL(String(value || '').trim());
+      if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) return parsed.origin;
+    } catch { /* tenta a próxima origem */ }
+  }
+  throw new Error('Não foi possível definir uma URL pública HTTPS para as imagens do Instagram.');
+}
+
 function escapeXml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -815,7 +832,11 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
   if (audiences.length && !story.audienceCodes.some((code) => audiences.includes(code))) return null;
   if (story.kind === 'offer' && Number(story.discount || 0) < Number(config.instagramFeedMinimumDiscount || 0)) return null;
   const cooldown = Math.max(1, Number(config.instagramFeedDuplicateDays || 7)) * DAY;
-  const duplicate = data.instagramFeedQueue.some((entry) => (entry.sourceIds || []).includes(story.sourceId) && Date.now() - new Date(entry.createdAt || 0).getTime() < cooldown && !['cancelled', 'failed'].includes(entry.status));
+  const duplicate = data.instagramFeedQueue.some((entry) => {
+    const permanentFailure = entry.permanentFailure === true || /sem imagem válida|não reconheceu a mídia|Only photo or video/i.test(String(entry.error || ''));
+    const eligibleStatus = !['cancelled', 'failed'].includes(entry.status) || permanentFailure;
+    return (entry.sourceIds || []).includes(story.sourceId) && Date.now() - new Date(entry.createdAt || 0).getTime() < cooldown && eligibleStatus;
+  });
   if (duplicate) return null;
   if (config.instagramFeedPostType === 'carousel') {
     const batch = data.instagramFeedQueue.find((entry) => entry.status === 'pending' && entry.postType === 'carousel' && (entry.items || []).length < Math.max(2, Math.min(10, Number(config.instagramFeedCarouselSize || 4))));
@@ -836,7 +857,7 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
     origin: 'whatsapp', latestSourceAt: story.sourcePublishedAt || new Date().toISOString(),
     templateMode: String(config.instagramFeedTemplateMode || 'rotating'),
     createdAt: new Date().toISOString(), scheduledFor: null, publishedAt: null, retryAt: null, error: null,
-    mediaIds: [], assetFileNames: [], themeId: ''
+    mediaIds: [], assetFileNames: [], themeId: '', permanentFailure: false
   };
   data.instagramFeedQueue.push(item);
   return item;
@@ -1280,17 +1301,17 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     });
     const assetConfig = { ...config, instagramFeedTemplateMode: selected.templateMode || config.instagramFeedTemplateMode || 'rotating' };
     for (const story of selected.items.slice(0, 10)) generatedAssets.push(await generateInstagramFeedAsset(story, assetConfig, selected.themeId, selected.format));
-    const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
-    if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar no Feed.');
+    const mediaOrigin = instagramMediaOrigin(config);
+    console.log(`Instagram Feed: disponibilizando ${generatedAssets.length} imagem(ns) em ${mediaOrigin}.`);
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (item) item.metaPublishingStartedAt = new Date().toISOString();
     });
-    const published = await publishFeedPost(config, secrets, generatedAssets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));
+    const published = await publishFeedPost(config, secrets, generatedAssets.map((asset) => `${mediaOrigin}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
-      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false });
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false, permanentFailure: false });
       appendActivity(fresh, `Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
     });
     return { ok: true, id: selected.id, ...published };
@@ -1306,6 +1327,7 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         const uncertain = Boolean(item.metaPublishingStartedAt);
         item.status = uncertain || invalidImage || invalidMedia ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
         item.instagramRateLimited = rateLimited;
+        item.permanentFailure = invalidImage || invalidMedia;
         item.error = uncertain
           ? 'O envio à Meta foi iniciado, mas não houve confirmação. Confira o Instagram antes de tentar novamente para evitar publicação duplicada.'
           : rateLimited ? 'A Meta limitou temporariamente as publicações do Feed. A fila tentará novamente mais tarde.' : String(error.message || error).slice(0, 500);

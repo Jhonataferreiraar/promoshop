@@ -411,6 +411,10 @@ app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 
 app.use((req, res, next) => {
   if (process.env.NODE_ENV !== 'production' || req.path === '/api/health') return next();
+  // A Meta busca essas imagens pelo domínio nativo do Render. Não redirecione
+  // o arquivo para o domínio público/CDN, pois o crawler precisa receber o JPEG
+  // diretamente na mesma URL informada ao criar o container.
+  if (req.path.startsWith('/media/instagram/')) return next();
   let canonical;
   try { canonical = new URL(process.env.SITE_URL || process.env.PUBLIC_URL || 'https://promoshop.jhonatafaraujo.com.br'); }
   catch { return next(); }
@@ -5215,7 +5219,7 @@ app.post('/api/admin/instagram/feed/queue/:id/retry', requireAdmin, async (req, 
     const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null, permanentFailure: false });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });
