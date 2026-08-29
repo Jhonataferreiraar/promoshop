@@ -116,6 +116,10 @@ body {
 .sort-filter { display: grid; align-content: center; gap: 3px; padding: 8px 13px; }
 .sort-filter select { width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: #344054; font-weight: 700; }
 .clear-filters { min-height: 42px; padding: 0 12px; border: 0; color: #b42318; background: #fef3f2; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.advanced-filter-disclosure { grid-column: 1 / -1; min-width: 0; border-top: 1px solid #e8edf4; }
+.advanced-filter-disclosure summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 2px 2px; color: #344054; font-size: 13px; font-weight: 800; cursor: pointer; list-style-position: inside; }
+.advanced-filter-disclosure summary span { margin-left: auto; padding: 4px 8px; border-radius: 999px; color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, white); font-size: 10px; }
+.advanced-filter-disclosure .advanced-filters { padding-top: 12px; border-top: 0; }
 
 /* Public offers */
 .site-shell .offers-section { padding-top: 82px; padding-bottom: 100px; }
@@ -134,8 +138,9 @@ body {
 .site-shell .store-badge.shopee { color: #c4320a; background: #fff4ed; border-color: #ffdfc7; }
 .site-shell .store-badge.aliexpress { color: #c01048; background: #fff1f3; border-color: #fecdd6; }
 .site-shell .store-badge.mercado { color: #854a0e; background: #fffaeb; border-color: #fedf89; }
-.site-shell .offer-content { min-height: 265px; padding: 18px; display: flex; flex-direction: column; }
+.site-shell .offer-content { min-height: 245px; padding: 18px; display: flex; flex-direction: column; }
 .offer-meta { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.offer-meta:has(.shipping:only-child) { justify-content: flex-end; }
 .offer-meta > small { max-width: 68%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #667085; font-size: 11px; text-transform: none; }
 .site-shell .shipping { padding: 4px 7px; border-radius: 6px; font-size: 10px; }
 .site-shell .offer-content h3 { min-height: 60px; margin: 10px 0 16px; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: 15px; line-height: 1.35; }

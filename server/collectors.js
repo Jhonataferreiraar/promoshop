@@ -664,14 +664,18 @@ export async function collectShopee(config, secrets) {
   const items = [];
   for (const keyword of keywords) {
     const query = `{ productOfferV2(keyword: "${escapeGraphQL(keyword)}", page: 1, limit: 20) { nodes { itemId productName productLink offerLink imageUrl priceMin priceMax priceDiscountRate sales ratingStar commissionRate shopId shopName periodEndTime } pageInfo { page limit hasNextPage } } }`;
-    items.push(...await shopeeGraphQL(appId, appSecret, query));
+    const results = await shopeeGraphQL(appId, appSecret, query);
+    items.push(...results.map((item) => ({ ...item, collectionCategory: keyword })));
   }
   return items.map((item) => ({
     id: item.itemId ? `shopee_${item.itemId}` : createId('shopee'),
     externalId: item.itemId || null,
     title: item.productName,
     store: 'Shopee',
-    category: item.shopName || 'Shopee',
+    // shopName identifica o vendedor dentro da Shopee, não a categoria do
+    // produto. Usar a busca de origem evita poluir filtros públicos e SEO com
+    // nomes de lojas individuais.
+    category: item.collectionCategory || 'Ofertas',
     price: Number(item.priceMin || item.priceMax || 0),
     originalPrice: Number(item.priceDiscountRate || 0) > 0 ? Number(item.priceMin || item.priceMax || 0) / (1 - Number(item.priceDiscountRate) / 100) : Number(item.priceMax || 0),
     image: item.imageUrl || '',
@@ -796,7 +800,7 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
       externalId: item.itemId || null,
       title: item.productName,
       store: 'Shopee',
-      category: item.shopName || 'Shopee',
+      category: cleanQuery,
       price,
       originalPrice,
       image: item.imageUrl || '',
