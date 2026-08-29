@@ -92,7 +92,14 @@ try {
   await fs.unlink(asset.filePath).catch(() => {});
 }
 
-const feedAsset = await generateInstagramFeedAsset({ title: 'Notebook PromoShop', store: 'Magalu', price: 1999.9, originalPrice: 2499.9, discount: 20, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: 'editorial' }, 'independence', 'portrait');
+const feedFixtureImage = await sharp({ create: { width: 640, height: 480, channels: 3, background: '#ffffff' } }).jpeg().toBuffer();
+await assert.rejects(
+  generateInstagramFeedAsset({ title: 'Oferta sem imagem', store: 'Magalu', price: 99.9, image: '' }, config),
+  (error) => error?.code === 'INSTAGRAM_IMAGE_UNAVAILABLE',
+  'o Feed deve bloquear uma oferta sem imagem válida'
+);
+
+const feedAsset = await generateInstagramFeedAsset({ title: 'Notebook PromoShop', store: 'Magalu', price: 1999.9, originalPrice: 2499.9, discount: 20, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: 'editorial' }, 'independence', 'portrait', feedFixtureImage);
 try {
   const metadata = await sharp(feedAsset.filePath).metadata();
   assert.equal(metadata.format, 'jpeg');
@@ -118,7 +125,7 @@ for (const variant of ['cover', 'story']) {
 }
 
 for (const templateMode of ['classic', 'spotlight', 'split', 'showcase', 'minimal', 'flash']) {
-  const variant = await generateInstagramFeedAsset({ title: 'Oferta PromoShop para validar o layout', store: 'Shopee', price: 129.9, originalPrice: 199.9, discount: 35, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: templateMode }, 'default', 'portrait');
+  const variant = await generateInstagramFeedAsset({ title: 'Oferta PromoShop para validar o layout', store: 'Shopee', price: 129.9, originalPrice: 199.9, discount: 35, image: '', link: 'https://example.com/offer' }, { ...config, instagramFeedTemplateMode: templateMode }, 'default', 'portrait', feedFixtureImage);
   try {
     const metadata = await sharp(variant.filePath).metadata();
     assert.equal(variant.template, templateMode);

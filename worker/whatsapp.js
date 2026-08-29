@@ -151,6 +151,7 @@ let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
 let authenticationReadyProbe = null;
+let authenticationReadyProbeRunning = false;
 let shuttingDown = false;
 let shutdownPromise = null;
 const groupParticipantCache = new Map();
@@ -612,26 +613,34 @@ function confirmReadyAfterAuthentication(attempt = 1) {
   if (shuttingDown || whatsappReady || connectedServicesStarted) return;
   // O evento `authenticated` pode chegar mais de uma vez. Preserve a sonda já
   // agendada para que eventos repetidos não adiem indefinidamente a confirmação.
-  if (authenticationReadyProbe) return;
+  if (authenticationReadyProbe || authenticationReadyProbeRunning) return;
   authenticationReadyProbe = setTimeout(async () => {
     authenticationReadyProbe = null;
+    authenticationReadyProbeRunning = true;
+    let readyToStart = false;
     try {
       const state = await Promise.race([
         client.getState(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('tempo de confirmação excedido')), 8_000))
       ]);
       if (String(state || '').toUpperCase() === 'CONNECTED') {
-        console.log('WhatsApp conectado confirmado pelo estado interno. Iniciando o publicador.');
-        whatsappReady = true;
-        await startConnectedServices();
-        return;
+        // CONNECTED confirma a rede, mas os módulos de conversas ainda podem
+        // estar sendo injetados. Só inicie depois de WWebJS estar utilizável.
+        await refreshActivePage();
+        readyToStart = true;
       }
     } catch (error) {
       if (attempt === 1 || attempt % 6 === 0) {
         console.warn(`WhatsApp autenticado, mas a confirmação interna ainda não chegou: ${error.message}`);
       }
     }
-    if (attempt < 36) confirmReadyAfterAuthentication(attempt + 1);
+    authenticationReadyProbeRunning = false;
+    if (shuttingDown || whatsappReady || connectedServicesStarted) return;
+    if (readyToStart) {
+      console.log('WhatsApp e módulos de conversas confirmados. Iniciando o publicador.');
+      whatsappReady = true;
+      await startConnectedServices();
+    } else if (attempt < 36) confirmReadyAfterAuthentication(attempt + 1);
     else {
       await request('/api/worker/heartbeat', {
         method: 'POST',
@@ -851,11 +860,7 @@ client.on('ready', async () => {
 });
 client.on('change_state', async (state) => {
   if (String(state || '').toUpperCase() !== 'CONNECTED' || shuttingDown || whatsappReady) return;
-  console.log('WhatsApp conectado confirmado pela mudança de estado. Iniciando o publicador.');
-  whatsappReady = true;
-  if (authenticationReadyProbe) clearTimeout(authenticationReadyProbe);
-  authenticationReadyProbe = null;
-  await startConnectedServices();
+  confirmReadyAfterAuthentication();
 });
 client.on('auth_failure', async (message) => {
   whatsappReady = false;

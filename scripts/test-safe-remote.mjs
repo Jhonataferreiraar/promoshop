@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { isPublicRemoteAddress, validateRemoteHttpsUrl } from '../server/safeRemote.js';
+import { createPinnedLookup, isPublicRemoteAddress, validateRemoteHttpsUrl } from '../server/safeRemote.js';
 
 for (const address of [
   '127.0.0.1',
@@ -25,5 +25,18 @@ assert.throws(() => validateRemoteHttpsUrl('http://images.example.com/oferta.jpg
 assert.throws(() => validateRemoteHttpsUrl('https://localhost/oferta.jpg'), /não é público/);
 assert.throws(() => validateRemoteHttpsUrl('https://usuario:senha@example.com/oferta.jpg'), /HTTPS/);
 assert.throws(() => validateRemoteHttpsUrl('https://example.com:8443/oferta.jpg'), /porta/);
+
+const pinnedLookup = createPinnedLookup({ address: '1.1.1.1', family: 4 });
+await new Promise((resolve, reject) => pinnedLookup('example.com', { all: true }, (error, addresses) => {
+  if (error) return reject(error);
+  assert.deepEqual(addresses, [{ address: '1.1.1.1', family: 4 }]);
+  resolve();
+}));
+await new Promise((resolve, reject) => pinnedLookup('example.com', {}, (error, address, family) => {
+  if (error) return reject(error);
+  assert.equal(address, '1.1.1.1');
+  assert.equal(family, 4);
+  resolve();
+}));
 
 console.log('Downloads externos: protocolo, portas e redes privadas validados.');

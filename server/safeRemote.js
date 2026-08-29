@@ -84,6 +84,12 @@ async function resolvePublicAddress(hostname) {
   return publicAddresses[0];
 }
 
+export function createPinnedLookup(resolved) {
+  return (_hostname, options, callback) => options?.all
+    ? callback(null, [{ address: resolved.address, family: resolved.family }])
+    : callback(null, resolved.address, resolved.family);
+}
+
 function requestBuffer(url, { maximumBytes, timeoutMs, headers }) {
   return new Promise(async (resolve, reject) => {
     let settled = false;
@@ -99,7 +105,10 @@ function requestBuffer(url, { maximumBytes, timeoutMs, headers }) {
         method: 'GET',
         headers,
         servername: net.isIP(target.hostname) ? undefined : target.hostname,
-        lookup: (_hostname, _options, callback) => callback(null, resolved.address, resolved.family)
+        // Node 22+ pode pedir todos os endereços para o autoSelectFamily. Nesse
+        // modo, a callback precisa receber uma lista; devolver o formato antigo
+        // faz o HTTPS tentar usar `undefined` como IP.
+        lookup: createPinnedLookup(resolved)
       }, (response) => {
         const chunks = [];
         let received = 0;

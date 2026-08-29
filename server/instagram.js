@@ -478,7 +478,7 @@ function selectFeedTemplate(story = {}, mode = 'rotating') {
   return templates[Math.abs(hash) % templates.length];
 }
 
-export async function generateInstagramFeedAsset(story, config, requestedThemeId = '', format = 'portrait') {
+export async function generateInstagramFeedAsset(story, config, requestedThemeId = '', format = 'portrait', preparedImage = null) {
   await fs.mkdir(mediaDir, { recursive: true });
   const theme = selectInstagramTheme(config, new Date(), requestedThemeId || story.themeId);
   const square = format === 'square';
@@ -736,22 +736,17 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
   const svg = Buffer.from(svgMarkup);
   let product;
   try {
-    const source = await fetchBuffer(story.image);
+    const source = Buffer.isBuffer(preparedImage) ? preparedImage : await fetchBuffer(story.image);
     if (source) product = await sharp(source).rotate().resize(productWidth, productHeight, { fit: 'contain', background: '#ffffff' }).jpeg({ quality: 88 }).toBuffer();
   } catch (error) {
-    console.warn(`Instagram Feed: imagem indisponível para ${story.title}: ${error.message}`);
+    const imageError = new Error(`A imagem de “${String(story.title || 'oferta').slice(0, 120)}” não pôde ser carregada: ${error.message}`);
+    imageError.code = 'INSTAGRAM_IMAGE_UNAVAILABLE';
+    throw imageError;
   }
   if (!product) {
-    // Uma imagem remota expirada não deve bloquear nem repetir toda a fila.
-    // O cartão alternativo mantém o carrossel válido e visualmente consistente.
-    const placeholder = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${productWidth}" height="${productHeight}">
-      <rect width="${productWidth}" height="${productHeight}" rx="32" fill="#f2f4f7"/>
-      <circle cx="${Math.round(productWidth / 2)}" cy="${Math.round(productHeight / 2) - 34}" r="66" fill="${theme.background2}"/>
-      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) - 9}" text-anchor="middle" font-family="Arial,sans-serif" font-size="72" font-weight="900" fill="${theme.text}">%</text>
-      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) + 76}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="900" fill="#101828">OFERTA SELECIONADA</text>
-      <text x="${Math.round(productWidth / 2)}" y="${Math.round(productHeight / 2) + 116}" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#667085">${escapeXml(store)}</text>
-    </svg>`);
-    product = await sharp(placeholder).jpeg({ quality: 88 }).toBuffer();
+    const imageError = new Error(`A oferta “${String(story.title || 'Oferta').slice(0, 120)}” não possui uma imagem válida. A publicação foi bloqueada.`);
+    imageError.code = 'INSTAGRAM_IMAGE_UNAVAILABLE';
+    throw imageError;
   }
   const logo = await logoBuffer(106);
   const composites = [];
@@ -1196,6 +1191,7 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
   feedProcessing = true;
   metaPublishing = true;
   let selected = null;
+  const generatedAssets = [];
   try {
     let [data, secrets] = await Promise.all([readStore(), readSecrets()]);
     const stalePublishing = (data.instagramFeedQueue || []).some((item) => item.status === 'publishing' && Date.now() - new Date(item.publishingAt || item.createdAt || 0).getTime() > STALE_PUBLICATION_MS);
@@ -1282,32 +1278,32 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (item) { item.status = 'publishing'; item.publishingAt = new Date().toISOString(); item.error = null; }
     });
-    const assets = [];
     const assetConfig = { ...config, instagramFeedTemplateMode: selected.templateMode || config.instagramFeedTemplateMode || 'rotating' };
-    for (const story of selected.items.slice(0, 10)) assets.push(await generateInstagramFeedAsset(story, assetConfig, selected.themeId, selected.format));
+    for (const story of selected.items.slice(0, 10)) generatedAssets.push(await generateInstagramFeedAsset(story, assetConfig, selected.themeId, selected.format));
     const canonical = String(config.canonicalUrl || '').replace(/\/$/, '');
     if (!/^https:\/\//i.test(canonical)) throw new Error('Configure o domínio HTTPS do site antes de publicar no Feed.');
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (item) item.metaPublishingStartedAt = new Date().toISOString();
     });
-    const published = await publishFeedPost(config, secrets, assets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));
+    const published = await publishFeedPost(config, secrets, generatedAssets.map((asset) => `${canonical}/media/instagram/${asset.fileName}`), sanitizeFeedCaption(selected.caption, selected.items));
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
-      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: assets.map((asset) => asset.fileName), themeId: assets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false });
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false });
       appendActivity(fresh, `Instagram Feed: ${selected.postType === 'carousel' ? 'carrossel' : 'post'} publicado — ${selected.title}.`, 'success');
     });
     return { ok: true, id: selected.id, ...published };
   } catch (error) {
     if (selected) {
       const rateLimited = Boolean(error?.instagramRateLimited) || isInstagramRateLimitError(error);
+      const invalidImage = error?.code === 'INSTAGRAM_IMAGE_UNAVAILABLE';
       await updateStore((fresh) => {
         const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
         if (!item) return;
         item.attempts = Number(item.attempts || 0) + 1;
         const uncertain = Boolean(item.metaPublishingStartedAt);
-        item.status = uncertain ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
+        item.status = uncertain || invalidImage ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
         item.instagramRateLimited = rateLimited;
         item.error = uncertain
           ? 'O envio à Meta foi iniciado, mas não houve confirmação. Confira o Instagram antes de tentar novamente para evitar publicação duplicada.'
@@ -1315,9 +1311,12 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         item.publishingAt = null;
         const retryDelay = rateLimited ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000 : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
         item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
-        appendActivity(fresh, `Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
+        appendActivity(fresh, invalidImage
+          ? `Instagram Feed: publicação bloqueada porque uma oferta está sem imagem válida — ${selected.title}.`
+          : `Instagram Feed: falha ao publicar ${selected.title}: ${error.message}`, rateLimited ? 'warning' : 'error');
       });
     }
+    await Promise.all(generatedAssets.map((asset) => fs.unlink(asset.filePath).catch(() => {})));
     throw error;
   } finally {
     feedProcessing = false;
