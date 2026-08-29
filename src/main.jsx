@@ -1493,7 +1493,14 @@ function AdminApp() {
     dashboardLoadCountRef.current += 1;
     try {
       const result = await authApi('/admin/dashboard');
-      setData((current) => preserveConfig ? { ...result, config: current.config } : result);
+      // O dashboard principal devolve as filas do Instagram vazias para manter
+      // a resposta leve. Preserve o estado já visível até a consulta específica
+      // da aba chegar, evitando que a lista pisque ou desapareça.
+      setData((current) => ({
+        ...(preserveConfig ? { ...result, config: current.config } : result),
+        instagramQueue: current.instagramQueue || [],
+        instagramFeedQueue: current.instagramFeedQueue || []
+      }));
       if (!preserveConfig) {
         setSecretForm((current) => ({
           ...current,

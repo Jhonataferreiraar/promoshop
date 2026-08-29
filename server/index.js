@@ -5246,8 +5246,26 @@ app.post('/api/admin/instagram/queue/:id/publish', requireAdmin, async (req, res
   const data = await readStore();
   const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'Publicação do Instagram não encontrada.' });
+  if (item.status === 'sent') return res.status(409).json({ error: 'Este Story já foi publicado.' });
+  if (item.status === 'failed') return res.status(409).json({ error: 'Use “Tentar novamente” antes de publicar este Story.' });
+  if (item.status !== 'pending') return res.status(409).json({ error: 'Este Story não está aguardando publicação.' });
+  const publishing = instagramPublishingState();
+  if (publishing.meta || publishing.stories) return res.status(409).json({ error: 'O Instagram já está processando outra publicação. Aguarde a fila atualizar.' });
   processInstagramQueue({ forceId: item.id }).catch((error) => console.error('Instagram:', error.message));
   res.status(202).json({ ok: true, message: 'Publicação iniciada. O estado será atualizado no painel.' });
+});
+
+app.post('/api/admin/instagram/queue/retry-failed', requireAdmin, async (_req, res) => {
+  let retried = 0;
+  await updateStore((data) => {
+    for (const item of data.instagramQueue || []) {
+      if (item.status !== 'failed') continue;
+      Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
+      retried += 1;
+    }
+    if (retried > 0) appendActivity(data, `Instagram: ${retried} Story(s) com falha retornaram para a fila.`, 'success');
+  });
+  res.json({ ok: true, retried });
 });
 
 app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) => {

@@ -33,6 +33,15 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
   const updateTheme = (index, changes) => setConfig({ instagramThemes: themes.map((theme, themeIndex) => themeIndex === index ? { ...theme, ...changes } : theme) });
 
+  async function refreshInstagramState() {
+    const result = await authApi('/admin/instagram-state');
+    setData((current) => ({
+      ...current,
+      ...result,
+      meta: result.meta ? { ...(current.meta || {}), ...result.meta } : current.meta
+    }));
+  }
+
   async function save(showMessage = true) {
     await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(config) });
     await authApi('/admin/secrets', {
@@ -83,8 +92,32 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
 
   const queueAction = (id, type) => action(`${type}-${id}`, async () => {
     await authApi(`/admin/instagram/queue/${encodeURIComponent(id)}${type === 'delete' ? '' : `/${type}`}`, { method: type === 'delete' ? 'DELETE' : 'POST', body: type === 'delete' ? undefined : '{}' });
+    setData((current) => ({
+      ...current,
+      instagramQueue: type === 'delete'
+        ? (current.instagramQueue || []).filter((item) => item.id !== id)
+        : (current.instagramQueue || []).map((item) => item.id === id
+          ? { ...item, status: type === 'publish' ? 'publishing' : 'pending', error: type === 'retry' ? null : item.error, retryAt: type === 'retry' ? null : item.retryAt }
+          : item)
+    }));
     setMessage(type === 'publish' ? 'Publicação iniciada.' : type === 'retry' ? 'Item devolvido para a fila.' : 'Item excluído da fila.');
-    window.setTimeout(() => load(), type === 'publish' ? 2500 : 0);
+    await refreshInstagramState();
+    if (type === 'publish') {
+      window.setTimeout(() => refreshInstagramState().catch(() => {}), 2500);
+      window.setTimeout(() => refreshInstagramState().catch(() => {}), 8000);
+    }
+  });
+
+  const retryAllFailed = () => action('retry-all', async () => {
+    const result = await authApi('/admin/instagram/queue/retry-failed', { method: 'POST', body: '{}' });
+    setData((current) => ({
+      ...current,
+      instagramQueue: (current.instagramQueue || []).map((item) => item.status === 'failed'
+        ? { ...item, status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null }
+        : item)
+    }));
+    setMessage(`${result.retried || 0} Story(s) devolvido(s) para a fila.`);
+    await refreshInstagramState();
   });
 
   return <div className="instagram-admin-layout">
@@ -142,8 +175,8 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
     </section>
 
     <section className="panel instagram-queue-panel">
-      <div className="panel-heading"><div><span className="section-step">FILA DO INSTAGRAM</span><h2>Stories recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div></div>
-      <div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.image ? <img src={item.image} alt="" /> : '◇'}</div><div><strong>{item.title}</strong><span>{item.store} · {item.discount ? `${Math.round(item.discount)}% OFF` : 'oferta'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status !== 'sent' && item.status !== 'publishing' && <button type="button" onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && <button className="danger" type="button" onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Instagram está vazia</strong><p>Depois da conexão, as promoções enviadas no WhatsApp entrarão aqui automaticamente.</p></div>}</div>
+      <div className="panel-heading"><div><span className="section-step">FILA DO INSTAGRAM</span><h2>Stories recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div>{queue.some((item) => item.status === 'failed') && <button className="button subtle" type="button" disabled={Boolean(busy)} onClick={retryAllFailed}>{busy === 'retry-all' ? 'Recolocando…' : 'Tentar novamente todos'}</button>}</div>
+      <div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.image ? <img src={item.image} alt="" /> : '◇'}</div><div><strong>{item.title}</strong><span>{item.store} · {item.discount ? `${Math.round(item.discount)}% OFF` : 'oferta'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status === 'pending' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && item.status !== 'sent' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Instagram está vazia</strong><p>Depois da conexão, as promoções enviadas no WhatsApp entrarão aqui automaticamente.</p></div>}</div>
     </section>
 
     <div className="instagram-save-bar"><div><strong>Importante</strong><span>Salve antes de conectar ou sair desta aba.</span></div><button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => action('save', () => save())}>{busy === 'save' ? 'Salvando…' : 'Salvar configurações do Instagram'}</button></div>
