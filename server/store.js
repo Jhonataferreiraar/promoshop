@@ -699,6 +699,13 @@ export async function readStore() {
   return readFileStore();
 }
 
+export async function readStoreSlice(keys = []) {
+  const selected = [...new Set(keys)].filter((key) => Object.hasOwn(initialData, key));
+  if (configuredStoreBackend === 'postgres') return getPostgresBackend().readKeys(selected);
+  const data = await readFileStore();
+  return Object.fromEntries(selected.map((key) => [key, data[key]]));
+}
+
 export async function updateStore(mutator) {
   if (configuredStoreBackend === 'postgres') return getPostgresBackend().update(mutator);
   return updateFileStore(mutator);

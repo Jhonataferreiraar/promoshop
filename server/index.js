@@ -19,6 +19,7 @@ import {
   checkStoreHealth,
   createId,
   readStore,
+  readStoreSlice,
   updateStore
 } from './store.js';
 
@@ -2389,7 +2390,7 @@ function publicOfferPayload(offer, config, analytics) {
 }
 
 app.get('/api/home', async (req, res) => {
-  const data = await readStore();
+  const data = await readStoreSlice(['config', 'coupons']);
   const activeCoupons = (Array.isArray(data.coupons) ? data.coupons : []).filter((coupon) => publicCouponAllowed(coupon));
   res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
   res.json({
@@ -2406,7 +2407,7 @@ app.get(
     req,
     res
   ) => {
-    const { offers, config, analytics } = await readStore();
+    const { offers, config, analytics } = await readStoreSlice(['offers', 'config', 'analytics']);
     const nowMs = Date.now();
     const eligible = (Array.isArray(offers) ? offers : [])
       .filter((offer) => publicOfferAllowed(offer, config, nowMs));
@@ -2478,7 +2479,7 @@ app.get(
 );
 
 app.get('/api/catalog/meta', async (_req, res) => {
-  const { offers, config } = await readStore();
+  const { offers, config } = await readStoreSlice(['offers', 'config']);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
   const countBy = (key) => Object.values(eligible.reduce((map, offer) => {
     const name = String(offer[key] || '').trim();
@@ -2494,7 +2495,7 @@ app.get('/api/catalog/meta', async (_req, res) => {
 app.get('/api/search/suggestions', async (req, res) => {
   const query = String(req.query?.q || '').trim().toLocaleLowerCase('pt-BR').slice(0, 80);
   if (query.length < 2) return res.json([]);
-  const { offers, config } = await readStore();
+  const { offers, config } = await readStoreSlice(['offers', 'config']);
   const suggestions = (offers || []).filter((offer) => publicOfferAllowed(offer, config) && `${offer.title} ${offer.store} ${offer.category}`.toLocaleLowerCase('pt-BR').includes(query))
     .slice(0, 8).map((offer) => ({ title: offer.title, store: offer.store, slug: offerPublicSlug(offer) }));
   res.set('Cache-Control', 'public, max-age=60');
@@ -2502,7 +2503,7 @@ app.get('/api/search/suggestions', async (req, res) => {
 });
 
 app.get('/api/offer/:slug', async (req, res) => {
-  const { offers, config, analytics } = await readStore();
+  const { offers, config, analytics } = await readStoreSlice(['offers', 'config', 'analytics']);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
   const offer = eligible.find((entry) => offerPublicSlug(entry) === req.params.slug);
   if (!offer) return res.status(404).json({ error: 'Oferta não encontrada ou não está mais disponível.' });
@@ -2518,7 +2519,7 @@ app.get('/api/offer/:slug', async (req, res) => {
 app.get(
   '/api/coupons',
   async (req, res) => {
-    const { coupons } = await readStore();
+    const { coupons } = await readStoreSlice(['coupons']);
     const now = Date.now();
 
     res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
@@ -2542,7 +2543,7 @@ app.get(
     const code = String(req.params.code || '').trim().toLowerCase();
     if (!/^[a-z0-9_-]{4,80}$/.test(code)) return res.status(404).send('Cupom não encontrado.');
 
-    const { coupons } = await readStore();
+    const { coupons } = await readStoreSlice(['coupons']);
     const coupon = (Array.isArray(coupons) ? coupons : []).find((entry) => couponShortCode(entry) === code);
     if (!coupon || coupon.active === false) return res.status(404).send('Cupom não encontrado ou inativo.');
 
