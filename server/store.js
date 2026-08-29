@@ -151,6 +151,7 @@ const initialData = {
     heroText: 'Promoções selecionadas e organizadas para você economizar sem perder tempo.',
     primaryColor: '#1269f3',
     whatsappUrl: '#',
+    instagramUrl: '',
     whatsappAudiences: DEFAULT_WHATSAPP_AUDIENCES,
     disclosure: 'Podemos receber comissão pelas compras, sem custo adicional para você.',
     contactEmail: 'contatopromoshop.site@gmail.com',

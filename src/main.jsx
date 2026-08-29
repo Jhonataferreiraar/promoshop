@@ -17,6 +17,7 @@ const fallbackConfig = {
   heroText: 'Promoções selecionadas e organizadas para você economizar sem perder tempo.',
   primaryColor: '#1269f3',
   whatsappUrl: '#',
+  instagramUrl: '',
   whatsappAudiences: [],
   assistantAvailable: false,
   assistantEnabled: true,
@@ -634,6 +635,7 @@ function PublicSite() {
           {coupons.length > 0 && <a href="#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a>}
           <a href="#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a>
           <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a>
+          {config.instagramUrl && <a href={config.instagramUrl} target="_blank" rel="noreferrer" onClick={() => { setMobileMenuOpen(false); if (config.clickAnalyticsEnabled !== false) trackPublicEvent('instagram', { id: 'header', label: 'Instagram PromoShop', store: 'Instagram' }); }}>Instagram</a>}
           {config.favoritesEnabled !== false && <a href="/favoritos" onClick={() => setMobileMenuOpen(false)}>Favoritos ({favorites.length})</a>}
         </nav>
         <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'header', label: 'Grupo no WhatsApp' })}>Grupo no WhatsApp</a></div>
@@ -904,6 +906,7 @@ function PublicSite() {
         </section>
 
       )}
+      {config.instagramUrl && <section className="instagram-public-section" id="instagram"><div className="container instagram-public-card"><div><span className="instagram-public-icon" aria-hidden="true">◎</span><span><small>ACOMPANHE A PROMOSHOP</small><h2>Ofertas também no Instagram</h2><p>Veja achados, cupons, Stories e seleções no feed.</p></span></div><a className="button instagram-public-button" href={config.instagramUrl} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('instagram', { id: 'homepage', label: 'Seguir no Instagram', store: 'Instagram' })}>Seguir no Instagram ↗</a></div></section>}
       <section className="whatsapp-section" id="grupo"><div className="container whatsapp-card"><div><span className="whatsapp-icon">◉</span><span><small>OFERTAS EM PRIMEIRA MÃO</small><h2>As melhores promoções chegam até você</h2><p>Entre no grupo do WhatsApp e receba os alertas sem precisar ficar procurando.</p></span></div><a className="button whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'footer-cta', label: 'Quero receber ofertas' })}>Quero receber ofertas</a></div></section>
     </main>
 
@@ -1025,6 +1028,7 @@ function SiteFooter({ config = fallbackConfig }) {
       <div className="footer-column footer-contact">
         <h3>Contato</h3>
         <a href="/contato">Fale conosco ↗</a>
+        {config.instagramUrl && <a href={config.instagramUrl} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('instagram', { id: 'footer', label: 'Instagram PromoShop', store: 'Instagram' })}>Instagram ↗</a>}
       </div>
     </div>
     <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
@@ -3503,6 +3507,7 @@ function AdminApp() {
           <label className="wide-field">Aviso geral de afiliado<textarea value={data.config.disclosure ?? ''} onChange={(event) => setConfigField('disclosure', event.target.value)} /></label>
           <label>Identificação nas ofertas<input value={data.config.affiliateDisclosureLabel ?? ''} onChange={(event) => setConfigField('affiliateDisclosureLabel', event.target.value)} /></label>
           <label>E-mail público<input type="email" value={data.config.contactEmail ?? ''} onChange={(event) => setConfigField('contactEmail', event.target.value)} /></label>
+          <label className="wide-field">Instagram público<input value={data.config.instagramUrl ?? ''} onChange={(event) => setConfigField('instagramUrl', event.target.value)} placeholder="@promoshop ou https://www.instagram.com/promoshop/" /><small>Aceita @usuário ou o link completo. O perfil aparecerá no menu, na página inicial e no rodapé.</small></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.mobileCompactMenu !== false} onChange={(event) => setConfigField('mobileCompactMenu', event.target.checked)} /><span><strong>Menu compacto no celular</strong><small>Evita links amontoados em telas menores.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.showOfferUpdatedAt !== false} onChange={(event) => setConfigField('showOfferUpdatedAt', event.target.checked)} /><span><strong>Mostrar atualização</strong><small>Exibe quando a oferta foi revisada.</small></span></label>
         </div>

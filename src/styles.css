@@ -5364,6 +5364,15 @@ button {
 }
 
 /* Rodapé institucional e páginas públicas */
+.site-shell .instagram-public-section { padding: 0 0 64px; background: #fff; }
+.site-shell .instagram-public-card { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 30px 34px; border-radius: 24px; color: #fff; background: linear-gradient(120deg, #4f2da8 0%, #c13584 48%, #f77737 100%); box-shadow: 0 22px 48px rgba(131, 58, 180, .2); }
+.site-shell .instagram-public-card > div { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.site-shell .instagram-public-icon { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; border: 2px solid rgba(255,255,255,.72); border-radius: 18px; font-size: 36px; font-weight: 800; line-height: 1; }
+.site-shell .instagram-public-card small { display: block; margin-bottom: 5px; color: rgba(255,255,255,.78); font-size: 11px; font-weight: 900; letter-spacing: .12em; }
+.site-shell .instagram-public-card h2 { margin: 0; color: #fff; font-size: clamp(23px, 3vw, 32px); line-height: 1.12; }
+.site-shell .instagram-public-card p { margin: 7px 0 0; color: rgba(255,255,255,.84); font-size: 14px; line-height: 1.5; }
+.site-shell .instagram-public-button { flex: 0 0 auto; min-width: 210px; color: #7b2e85; background: #fff; box-shadow: none; }
+.site-shell .instagram-public-button:hover { color: #5b2064; background: #fff7fc; transform: translateY(-1px); }
 .site-shell .site-footer { padding: 50px 0 22px; color: #d7e1f0; border-top: 0; background: #101a2e; }
 .site-shell .site-footer .footer-grid-rich { display: grid; grid-template-columns: minmax(220px, 1.55fr) repeat(3, minmax(130px, 1fr)); align-items: start; gap: 34px; }
 .site-shell .site-footer .footer-brand { display: grid; gap: 11px; }
@@ -5441,6 +5450,11 @@ button {
 }
 
 @media (max-width: 600px) {
+  .site-shell .instagram-public-section { padding-bottom: 38px; }
+  .site-shell .instagram-public-card { align-items: stretch; flex-direction: column; gap: 22px; padding: 24px; border-radius: 20px; }
+  .site-shell .instagram-public-card > div { align-items: flex-start; }
+  .site-shell .instagram-public-icon { flex-basis: 48px; width: 48px; height: 48px; border-radius: 15px; font-size: 30px; }
+  .site-shell .instagram-public-button { width: 100%; min-width: 0; }
   .site-shell .site-footer { padding-top: 38px; }
   .site-shell .site-footer .footer-grid-rich { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; text-align: left; }
   .site-shell .site-footer .footer-brand { grid-column: 1 / -1; }

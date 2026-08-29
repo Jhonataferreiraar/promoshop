@@ -1650,6 +1650,31 @@ function getLocalCodesForQueueItem(
   ];
 }
 
+function normalizeInstagramProfileUrl(value, fallback = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let username = raw.replace(/^@/, '');
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      const hostname = parsed.hostname.toLowerCase();
+      if (
+        parsed.protocol !== 'https:' || parsed.username || parsed.password ||
+        !['instagram.com', 'www.instagram.com'].includes(hostname)
+      ) return fallback;
+      username = parsed.pathname.split('/').filter(Boolean)[0] || '';
+    } catch {
+      return fallback;
+    }
+  }
+
+  username = username.replace(/^@/, '');
+  if (!/^[a-z0-9._]{1,30}$/i.test(username)) return fallback;
+  if (['accounts', 'direct', 'explore', 'p', 'reel', 'reels', 'stories'].includes(username.toLowerCase())) return fallback;
+  return `https://www.instagram.com/${username}/`;
+}
+
 function hasSentSourceInStore(data, candidate, sourceIndex = null) {
   return hasSentSource(data?.queue, candidate, sourceIndex) || hasSentSourceInLedger(data, candidate);
 }
@@ -2420,7 +2445,7 @@ app.get(
 );
 
 const publicHomeConfigKeys = [
-  'brandName', 'heroTitle', 'heroText', 'primaryColor', 'whatsappUrl',
+  'brandName', 'heroTitle', 'heroText', 'primaryColor', 'whatsappUrl', 'instagramUrl',
   'disclosure', 'contactEmail', 'canonicalUrl', 'seoSiteName', 'seoTitle',
   'seoDescription', 'seoKeywords', 'seoImageUrl', 'seoIndexingEnabled',
   'seoStructuredDataEnabled', 'publicOfferPageSize', 'smartRankingEnabled',
@@ -3295,7 +3320,7 @@ app.post(
     const targetId = String(req.body?.targetId || '').trim().slice(0, 120);
     const label = String(req.body?.label || '').trim().slice(0, 180);
     const store = String(req.body?.store || '').trim().slice(0, 80);
-    const allowedTypes = ['offer', 'coupon', 'whatsapp', 'group', 'favorite'];
+    const allowedTypes = ['offer', 'coupon', 'whatsapp', 'instagram', 'group', 'favorite'];
 
     if (!receiptId || !visitorId || !sessionId || !allowedTypes.includes(type) || !targetId) {
       return res.status(400).json({ error: 'Evento anônimo inválido.' });
@@ -3884,6 +3909,10 @@ app.put(
         } catch {
           data.config.canonicalUrl = previousConfig.canonicalUrl || '';
         }
+        data.config.instagramUrl = normalizeInstagramProfileUrl(
+          data.config.instagramUrl,
+          previousConfig.instagramUrl || ''
+        );
         for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri', 'whatsappDirectoryTitle', 'whatsappDirectoryIntro', 'whatsappDirectoryFooter']) {
           const maximum = key.endsWith('CustomText') ? 3000 : ['heroText', 'disclosure', 'seoDescription'].includes(key) ? 1000 : ['whatsappDirectoryIntro', 'whatsappDirectoryFooter'].includes(key) ? 500 : 300;
           data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);

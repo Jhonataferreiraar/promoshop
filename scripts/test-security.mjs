@@ -131,6 +131,21 @@ try {
   const dashboardAfterInvalidClock = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   assert.equal(dashboardAfterInvalidClock.config.publishingStart, originalPublishingStart);
 
+  const instagramSave = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT', headers: authorization,
+    body: JSON.stringify({ instagramUrl: '@promoshopoficial' })
+  });
+  assert.equal(instagramSave.status, 200);
+  const publicHomeWithInstagram = await fetch(`${origin}/api/home`).then((response) => response.json());
+  assert.equal(publicHomeWithInstagram.config.instagramUrl, 'https://www.instagram.com/promoshopoficial/');
+  const invalidInstagramSave = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT', headers: authorization,
+    body: JSON.stringify({ instagramUrl: 'https://malicioso.example/promoshop' })
+  });
+  assert.equal(invalidInstagramSave.status, 200);
+  const dashboardAfterInvalidInstagram = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
+  assert.equal(dashboardAfterInvalidInstagram.config.instagramUrl, 'https://www.instagram.com/promoshopoficial/');
+
   const receiptId = 'privacyreceipt1234567890';
   const currentPolicyVersion = (await fetch(`${origin}/api/config/public`).then((response) => response.json())).legalPolicyVersion;
   const privacyReceipt = await fetch(`${origin}/api/privacy/consent`, {
@@ -165,9 +180,15 @@ try {
     body: JSON.stringify({ receiptId, visitorId, sessionId, type: 'offer', targetId: 'offer-test-123456', label: 'Oferta de teste', store: 'Loja de teste' })
   });
   assert.equal(clickEvent.status, 200);
+  const instagramEvent = await fetch(`${origin}/api/analytics/event`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ receiptId, visitorId, sessionId, type: 'instagram', targetId: 'homepage', label: 'Instagram PromoShop', store: 'Instagram' })
+  });
+  assert.equal(instagramEvent.status, 200);
   const analyticsDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
-  assert.equal(analyticsDashboard.analytics.totalClicks, 1);
-  assert.equal(analyticsDashboard.analytics.topTargets[0].label, 'Oferta de teste');
+  assert.equal(analyticsDashboard.analytics.totalClicks, 2);
+  assert.ok(analyticsDashboard.analytics.topTargets.some((target) => target.label === 'Oferta de teste'));
   const persistedStore = JSON.parse(await fs.readFile(path.join(testDataDir, 'db.json'), 'utf8'));
   assert.equal(persistedStore.privacyConsents.__encrypted, 'aes-256-gcm-v1');
   assert.equal(persistedStore.inbox.__encrypted, 'aes-256-gcm-v1');
