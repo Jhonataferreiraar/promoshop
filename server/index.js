@@ -9045,17 +9045,28 @@ function pageSeo(config, pathname, origin, offers = []) {
   const storeMatch = pathname.match(/^\/loja\/([^/]+)$/);
   const categoryName = categoryMatch ? offers.find((entry) => catalogSlug(entry.category) === categoryMatch[1])?.category : '';
   const storeName = storeMatch ? offers.find((entry) => catalogSlug(entry.store) === storeMatch[1])?.store : '';
+  const isStaticPage = pathname === '/' || pathname === '/favoritos' || pathname.startsWith('/admin') || Boolean(pages[pathname]);
+  const isCatalogRoute = Boolean(offerMatch || categoryMatch || storeMatch);
+  const exists = isStaticPage || Boolean(offer || categoryName || storeName);
   const page = offer
     ? [`${offer.title} — oferta no ${offer.store}`, `Confira preço, desconto e condições de ${offer.title}. A compra é concluída diretamente no ${offer.store}.`]
     : categoryName ? [`Ofertas de ${categoryName} — PromoShop`, `Compare ofertas selecionadas de ${categoryName} em lojas parceiras.`]
       : storeName ? [`Ofertas do ${storeName} — PromoShop`, `Veja ofertas e cupons selecionados do ${storeName}. Confirme as condições diretamente na loja.`]
         : pages[pathname];
+  const fallbackTitle = exists
+    ? String(config.seoTitle || `${config.brandName || 'PromoShop'} — Ofertas e cupons`)
+    : 'Página não encontrada — PromoShop';
+  const fallbackDescription = exists
+    ? String(config.seoDescription || '')
+    : 'Esta página não existe ou não está mais disponível.';
   return {
-    title: page?.[0] || String(config.seoTitle || `${config.brandName || 'PromoShop'} — Ofertas e cupons`),
-    description: page?.[1] || String(config.seoDescription || ''),
+    title: page?.[0] || fallbackTitle,
+    description: page?.[1] || fallbackDescription,
     canonical: `${origin}${pathname === '/' ? '' : pathname}`,
     image: String(offer?.image || config.seoImageUrl || '').trim(),
-    offer
+    offer,
+    exists,
+    isCatalogRoute
   };
 }
 
@@ -9065,18 +9076,22 @@ function injectSeo(html, data, req) {
   const origin = publicSiteOrigin(config, req);
   const seo = pageSeo(config, pathname, origin, data.offers || []);
   const siteName = String(config.seoSiteName || config.brandName || 'PromoShop').trim();
-  const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || config.seoIndexingEnabled === false;
+  const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || seo.exists === false || config.seoIndexingEnabled === false;
   const schema = seo.offer ? {
     '@context': 'https://schema.org', '@type': 'Product', name: seo.offer.title,
     image: seo.offer.image ? [seo.offer.image] : undefined,
     description: seo.description,
     category: seo.offer.category || undefined,
     offers: { '@type': 'Offer', url: seo.canonical, priceCurrency: 'BRL', price: Number(seo.offer.price || 0).toFixed(2), availability: 'https://schema.org/InStock', seller: { '@type': 'Organization', name: seo.offer.store || 'Loja parceira' } }
-  } : {
+  } : pathname === '/' ? {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: siteName,
-    alternateName: config.brandName || 'PromoShop',
+    alternateName: [...new Set([
+      config.brandName || 'PromoShop',
+      config.seoTitle || '',
+      new URL(origin).hostname.toLowerCase()
+    ].map((value) => String(value || '').trim()).filter((value) => value && value !== siteName))],
     url: origin,
     description: seo.description,
     publisher: {
@@ -9086,18 +9101,18 @@ function injectSeo(html, data, req) {
       logo: `${origin}/favicon-512.png`,
       email: config.contactEmail || undefined
     }
-  };
-  const structuredData = config.seoStructuredDataEnabled === false || noIndex ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`;
+  } : null;
+  const structuredData = config.seoStructuredDataEnabled === false || noIndex || !schema ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`;
   const tags = [
     `<meta name="description" content="${escapeHtml(seo.description)}">`,
     `<meta name="keywords" content="${escapeHtml(config.seoKeywords || '')}">`,
     `<meta name="robots" content="${noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}">`,
-    `<link rel="canonical" href="${escapeHtml(seo.canonical)}">`,
+    seo.exists ? `<link rel="canonical" href="${escapeHtml(seo.canonical)}">` : '',
     '<meta property="og:type" content="website">',
     `<meta property="og:site_name" content="${escapeHtml(siteName)}">`,
     `<meta property="og:title" content="${escapeHtml(seo.title)}">`,
     `<meta property="og:description" content="${escapeHtml(seo.description)}">`,
-    `<meta property="og:url" content="${escapeHtml(seo.canonical)}">`,
+    seo.exists ? `<meta property="og:url" content="${escapeHtml(seo.canonical)}">` : '',
     seo.image ? `<meta property="og:image" content="${escapeHtml(seo.image)}">` : '',
     '<meta name="twitter:card" content="summary_large_image">',
     `<meta name="twitter:title" content="${escapeHtml(seo.title)}">`,
@@ -9155,6 +9170,13 @@ app.get('/manifest.webmanifest', async (req, res) => {
   });
 });
 
+app.get('/favicon.ico', (_req, res, next) => {
+  res.set('Cache-Control', 'public, max-age=604800');
+  res.type('png').sendFile(path.join(root, 'dist', 'favicon-48.png'), (error) => {
+    if (error) next(error);
+  });
+});
+
 app.use(
   express.static(
     path.join(
@@ -9197,13 +9219,19 @@ app.use(
         return res.type('html').send(injectSeo(html, { config: {} }, req));
       }
 
+      const seoFallback = { config: {}, offers: [], seoUnavailable: true };
       const [html, data] = await Promise.all([
         readIndexHtml(),
         // SEO é um aprimoramento, não um motivo para prender o navegador.
         // Se o banco estiver ocupado, entregue o site imediatamente e deixe
         // o React buscar os dados pela API depois.
-        resolveWithin(readStore(), 2_000, { config: {}, offers: [] })
+        resolveWithin(readStore(), 2_000, seoFallback)
       ]);
+      const pathname = req.path.replace(/\/+$/, '') || '/';
+      const seo = pageSeo(data.config || {}, pathname, publicSiteOrigin(data.config || {}, req), data.offers || []);
+      const routeIsDefinitelyMissing = seo.exists === false
+        && (data.seoUnavailable !== true || seo.isCatalogRoute === false);
+      if (routeIsDefinitelyMissing) res.status(404);
       res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
       res.type('html').send(injectSeo(html, data, req));
     } catch (error) {

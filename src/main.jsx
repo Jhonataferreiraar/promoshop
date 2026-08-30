@@ -26,7 +26,7 @@ const fallbackConfig = {
   inboxInboundEnabled: false,
   inboxInboundDomain: 'reply.jhonatafaraujo.com.br',
   canonicalUrl: 'https://promoshop.jhonatafaraujo.com.br',
-  seoSiteName: 'PromoShop - Ofertas Diárias',
+  seoSiteName: 'PromoShop',
   seoTitle: 'PromoShop - Ofertas Diárias',
   seoDescription: 'Encontre ofertas diárias e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Confirme as condições diretamente na loja.',
   seoKeywords: 'ofertas, promoções, cupons, Mercado Livre, Shopee, AliExpress, Magalu',
