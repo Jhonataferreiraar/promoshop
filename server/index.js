@@ -4954,6 +4954,52 @@ app.delete('/api/admin/extension/token', requireAdmin, async (_req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/admin/extension/coupons/token', requireAdmin, async (_req, res) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const current = await readSecrets();
+  await updateSecrets({
+    extensionCouponIngestToken: token,
+    ...(current.extensionIngestToken && !current.extensionOfferIngestToken ? { extensionOfferIngestToken: current.extensionIngestToken } : {}),
+    ...(current.extensionIngestToken ? { clearExtensionIngestToken: true } : {})
+  });
+  await addLog('Token exclusivo da extensão de cupons gerado.', 'success');
+  res.json({ ok: true, token });
+});
+
+app.delete('/api/admin/extension/coupons/token', requireAdmin, async (_req, res) => {
+  const current = await readSecrets();
+  await updateSecrets({
+    clearExtensionCouponIngestToken: true,
+    ...(current.extensionIngestToken && !current.extensionOfferIngestToken ? { extensionOfferIngestToken: current.extensionIngestToken } : {}),
+    ...(current.extensionIngestToken ? { clearExtensionIngestToken: true } : {})
+  });
+  await addLog('Token exclusivo da extensão de cupons revogado.', 'warning');
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/extension/mercadolivre/token', requireAdmin, async (_req, res) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const current = await readSecrets();
+  await updateSecrets({
+    extensionOfferIngestToken: token,
+    ...(current.extensionIngestToken && !current.extensionCouponIngestToken ? { extensionCouponIngestToken: current.extensionIngestToken } : {}),
+    ...(current.extensionIngestToken ? { clearExtensionIngestToken: true } : {})
+  });
+  await addLog('Token exclusivo da extensão Mercado Livre gerado.', 'success');
+  res.json({ ok: true, token });
+});
+
+app.delete('/api/admin/extension/mercadolivre/token', requireAdmin, async (_req, res) => {
+  const current = await readSecrets();
+  await updateSecrets({
+    clearExtensionOfferIngestToken: true,
+    ...(current.extensionIngestToken && !current.extensionCouponIngestToken ? { extensionCouponIngestToken: current.extensionIngestToken } : {}),
+    ...(current.extensionIngestToken ? { clearExtensionIngestToken: true } : {})
+  });
+  await addLog('Token exclusivo da extensão Mercado Livre revogado.', 'warning');
+  res.json({ ok: true });
+});
+
 /*
  * ==========================================================
  * INSTAGRAM STORIES
@@ -5462,7 +5508,8 @@ app.post('/api/extension/coupons', async (req, res) => {
   const body = extensionRequestBody(req);
   const secrets = await readSecrets();
   const token = String(body.token || req.headers['x-promoshop-extension-token'] || '').trim();
-  if (!extensionTokenMatches(token, secrets.extensionIngestToken)) return res.status(401).json({ error: 'Token da extensão inválido.' });
+  const couponToken = secrets.extensionCouponIngestToken || secrets.extensionIngestToken;
+  if (!extensionTokenMatches(token, couponToken)) return res.status(401).json({ error: 'Token da extensão de cupons inválido.' });
 
   const now = Date.now();
   pruneRateMap(extensionRateLimit, now, 5000);
@@ -5549,7 +5596,8 @@ app.post('/api/extension/mercadolivre/offers', async (req, res) => {
   const body = extensionRequestBody(req);
   const secrets = await readSecrets();
   const token = String(body.token || req.headers['x-promoshop-extension-token'] || '').trim();
-  if (!extensionTokenMatches(token, secrets.extensionIngestToken)) return res.status(401).json({ error: 'Token da extensão inválido.' });
+  const offerToken = secrets.extensionOfferIngestToken || secrets.extensionIngestToken;
+  if (!extensionTokenMatches(token, offerToken)) return res.status(401).json({ error: 'Token da extensão Mercado Livre inválido.' });
 
   const now = Date.now();
   pruneRateMap(extensionRateLimit, now, 5000);

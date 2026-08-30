@@ -194,6 +194,8 @@ async function defaults() {
     instagramOAuthStateExpiresAt: 0,
     brevoInboundToken: crypto.randomBytes(32).toString('hex'),
     extensionIngestToken: '',
+    extensionCouponIngestToken: '',
+    extensionOfferIngestToken: '',
     aiApiKey: '',
     geminiApiKey: '',
     openaiApiKey: '',
@@ -378,6 +380,10 @@ async function updateSecretsUnlocked(changes) {
   }
   if (typeof changes.extensionIngestToken === 'string' && changes.extensionIngestToken.trim()) next.extensionIngestToken = changes.extensionIngestToken.trim();
   if (changes.clearExtensionIngestToken) next.extensionIngestToken = '';
+  if (typeof changes.extensionCouponIngestToken === 'string' && changes.extensionCouponIngestToken.trim()) next.extensionCouponIngestToken = changes.extensionCouponIngestToken.trim();
+  if (changes.clearExtensionCouponIngestToken) next.extensionCouponIngestToken = '';
+  if (typeof changes.extensionOfferIngestToken === 'string' && changes.extensionOfferIngestToken.trim()) next.extensionOfferIngestToken = changes.extensionOfferIngestToken.trim();
+  if (changes.clearExtensionOfferIngestToken) next.extensionOfferIngestToken = '';
   await writeSecrets(next);
   return next;
 }
@@ -479,6 +485,10 @@ export function secretStatus(secrets) {
         ? openaiApiKey.slice(-4)
         : '',
     extensionTokenConfigured: Boolean(secrets.extensionIngestToken),
-    extensionTokenEnding: secrets.extensionIngestToken ? String(secrets.extensionIngestToken).slice(-4) : ''
+    extensionTokenEnding: secrets.extensionIngestToken ? String(secrets.extensionIngestToken).slice(-4) : '',
+    extensionCouponTokenConfigured: Boolean(secrets.extensionCouponIngestToken || secrets.extensionIngestToken),
+    extensionCouponTokenEnding: String(secrets.extensionCouponIngestToken || secrets.extensionIngestToken || '').slice(-4),
+    extensionOfferTokenConfigured: Boolean(secrets.extensionOfferIngestToken || secrets.extensionIngestToken),
+    extensionOfferTokenEnding: String(secrets.extensionOfferIngestToken || secrets.extensionIngestToken || '').slice(-4)
   };
 }

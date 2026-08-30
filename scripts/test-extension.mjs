@@ -32,12 +32,22 @@ try {
   const cookieHeader = setCookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
   const csrfToken = decodeURIComponent(cookieHeader.match(/(?:^|; )promoshop_csrf=([^;]+)/)?.[1] || '');
   const adminHeaders = { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' };
-  const tokenResponse = await fetch(`${origin}/api/admin/extension/token`, { method: 'POST', headers: adminHeaders, body: '{}' });
-  assert.equal(tokenResponse.status, 200);
-  const { token } = await tokenResponse.json();
-  assert.ok(token.length >= 40);
+  const couponTokenResponse = await fetch(`${origin}/api/admin/extension/coupons/token`, { method: 'POST', headers: adminHeaders, body: '{}' });
+  assert.equal(couponTokenResponse.status, 200);
+  const { token: couponToken } = await couponTokenResponse.json();
+  const offerTokenResponse = await fetch(`${origin}/api/admin/extension/mercadolivre/token`, { method: 'POST', headers: adminHeaders, body: '{}' });
+  assert.equal(offerTokenResponse.status, 200);
+  const { token: offerToken } = await offerTokenResponse.json();
+  assert.ok(couponToken.length >= 40);
+  assert.ok(offerToken.length >= 40);
+  assert.notEqual(couponToken, offerToken);
 
-  const ingest = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ coupons: [{ title: 'Cupom teste da extensão', store: 'Mercado Livre', code: 'TESTE10', discountType: 'percent', discountValue: 10, link: 'https://mercadolivre.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
+  const wrongCouponToken = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ coupons: [] }) });
+  assert.equal(wrongCouponToken.status, 401);
+  const wrongOfferToken = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': couponToken }, body: JSON.stringify({ offers: [] }) });
+  assert.equal(wrongOfferToken.status, 401);
+
+  const ingest = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': couponToken }, body: JSON.stringify({ coupons: [{ title: 'Cupom teste da extensão', store: 'Mercado Livre', code: 'TESTE10', discountType: 'percent', discountValue: 10, link: 'https://mercadolivre.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
   assert.equal(ingest.status, 202);
   assert.equal((await ingest.clone().json()).acceptedFingerprints.length, 1);
   const dashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: adminHeaders }).then((response) => response.json());
@@ -45,16 +55,16 @@ try {
   assert.equal(coupon.approvalStatus, 'pending');
   const approved = await fetch(`${origin}/api/admin/extension/coupons/${coupon.id}/approve`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(approved.status, 200);
-  const offerIngest = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada com link oficial', price: 79.9, originalPrice: 129.9, discount: 38, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/abc123', freeShipping: true }] }) });
+  const offerIngest = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada com link oficial', price: 79.9, originalPrice: 129.9, discount: 38, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/abc123', freeShipping: true }] }) });
   assert.equal(offerIngest.status, 202);
   assert.equal((await offerIngest.clone().json()).imported.length, 1);
-  const offerRefresh = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada atualizada', price: 69.9, originalPrice: 129.9, discount: 46, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/xyz456' }] }) });
+  const offerRefresh = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada atualizada', price: 69.9, originalPrice: 129.9, discount: 46, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/xyz456' }] }) });
   assert.equal(offerRefresh.status, 202);
   assert.equal((await offerRefresh.json()).imported[0].updated, true);
-  const resend = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ allowDuplicate: true, coupons: [{ title: 'Cupom teste da extensão atualizado', store: 'Mercado Livre', code: 'TESTE10', discountType: 'percent', discountValue: 20, link: 'https://mercadolivre.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
+  const resend = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': couponToken }, body: JSON.stringify({ allowDuplicate: true, coupons: [{ title: 'Cupom teste da extensão atualizado', store: 'Mercado Livre', code: 'TESTE10', discountType: 'percent', discountValue: 20, link: 'https://mercadolivre.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
   assert.equal(resend.status, 202);
   assert.equal((await resend.json()).imported[0].reimported, true);
-  const secondIngest = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': token }, body: JSON.stringify({ coupons: [{ title: 'Cupom para recusa em lote', store: 'Shopee', code: 'RECUSAR10', discountType: 'percent', discountValue: 10, link: 'https://shopee.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
+  const secondIngest = await fetch(`${origin}/api/extension/coupons`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': couponToken }, body: JSON.stringify({ coupons: [{ title: 'Cupom para recusa em lote', store: 'Shopee', code: 'RECUSAR10', discountType: 'percent', discountValue: 10, link: 'https://shopee.com.br/oferta/teste', targetAudienceCodes: ['G01'] }] }) });
   assert.equal(secondIngest.status, 202);
   const rejected = await fetch(`${origin}/api/admin/extension/coupons/reject-all`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(rejected.status, 200);

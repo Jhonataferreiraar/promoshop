@@ -5260,6 +5260,10 @@ button {
 .extension-audience-list label { align-items: flex-start; }
 .extension-choice label span { display: grid; gap: 2px; }
 .extension-choice label span small { color: #667085; font-size: 11px; font-weight: 600; }
+.extension-flow-note { display: grid; gap: 7px; padding: 15px; border: 1px solid #b2ccff; border-radius: 11px; color: #344054; background: #f5f8ff; }
+.extension-flow-note strong { color: #1849a9; font-size: 13px; }
+.extension-flow-note p { margin: 0; color: #667085; font-size: 12px; line-height: 1.55; }
+.extension-flow-note code { color: #1849a9; font-weight: 800; }
 .extension-token-empty { padding: 17px; border: 1px dashed #b2ccff; border-radius: 11px; color: #475467; background: #f5f8ff; font-size: 12px; line-height: 1.5; }
 .extension-token-result { display: grid; gap: 8px; }
 .extension-token-result textarea { min-height: 92px; resize: vertical; padding: 11px; border: 1px solid #b2ccff; border-radius: 10px; color: #1849a9; background: #f5f8ff; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
