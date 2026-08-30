@@ -81,6 +81,7 @@ import {
   generateInstagramStory,
   instagramAssetPath,
   instagramPublishingState,
+  instagramRateLimitUntil,
   processInstagramQueue,
   processInstagramFeedQueue,
   refreshInstagramToken,
@@ -3756,13 +3757,17 @@ app.get('/api/admin/queue', requireAdmin, async (req, res) => {
 
 app.get('/api/admin/instagram-state', requireAdmin, async (_req, res) => {
   const data = await readStoreSlice(['instagramQueue', 'instagramFeedQueue', 'logs', 'meta']);
+  const rateLimitedTimestamp = instagramRateLimitUntil(data);
+  const rateLimitedUntil = rateLimitedTimestamp > Date.now()
+    ? new Date(rateLimitedTimestamp).toISOString()
+    : null;
   res.json({
     instagramQueue: (data.instagramQueue || []).slice(-200),
     instagramFeedQueue: (data.instagramFeedQueue || []).slice(-200),
     logs: (data.logs || []).slice(0, 200),
     meta: {
-      instagramRateLimitedUntil: data.meta?.instagramRateLimitedUntil || null,
-      instagramFeedRateLimitedUntil: data.meta?.instagramFeedRateLimitedUntil || null
+      instagramRateLimitedUntil: rateLimitedUntil,
+      instagramFeedRateLimitedUntil: rateLimitedUntil
     }
   });
 });
@@ -5381,7 +5386,7 @@ app.post('/api/admin/instagram/feed/queue/:id/retry', requireAdmin, async (req, 
     const item = (data.instagramFeedQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null, permanentFailure: false });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, rateLimitedAt: null, metaPublishingStartedAt: null, permanentFailure: false });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });
@@ -5416,7 +5421,7 @@ app.post('/api/admin/instagram/queue/retry-failed', requireAdmin, async (_req, r
   await updateStore((data) => {
     for (const item of data.instagramQueue || []) {
       if (item.status !== 'failed') continue;
-      Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
+      Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, rateLimitedAt: null, metaPublishingStartedAt: null });
       retried += 1;
     }
     if (retried > 0) appendActivity(data, `Instagram: ${retried} Story(s) com falha retornaram para a fila.`, 'success');
@@ -5430,7 +5435,7 @@ app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) 
     const item = (data.instagramQueue || []).find((entry) => entry.id === req.params.id);
     if (!item || item.status === 'sent') return;
     found = true;
-    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, metaPublishingStartedAt: null });
+    Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, rateLimitedAt: null, metaPublishingStartedAt: null });
   });
   if (!found) return res.status(404).json({ error: 'Publicação não encontrada ou já enviada.' });
   res.json({ ok: true });

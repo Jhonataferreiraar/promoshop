@@ -44,6 +44,8 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
   ], [data.offers, data.coupons]);
   const selectedSources = selected.map((key) => sources.find((item) => keyFor(item.kind, item.id) === key)).filter(Boolean);
   const templateMode = ['rotating', 'classic', 'editorial', 'spotlight', 'split', 'showcase', 'minimal', 'flash'].includes(config.instagramFeedTemplateMode) ? config.instagramFeedTemplateMode : 'rotating';
+  const rateLimitedUntil = data.meta?.instagramFeedRateLimitedUntil;
+  const rateLimited = rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
 
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
   async function refreshFeedState() {
@@ -139,6 +141,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
 
   return <section className="panel instagram-feed-panel">
     <div className="panel-heading"><div><span className="section-step">FEED DO INSTAGRAM</span><h2>Posts e carrosséis automáticos</h2><p>O Feed fica separado dos Stories e, na automação, usa as promoções mais recentes que foram publicadas nos grupos.</p></div></div>
+    {rateLimited && <div className="instagram-feed-auto-summary"><span>!</span><div><strong>Publicações pausadas pela Meta</strong><p>A Meta detectou excesso de ações. A automação não fará novas tentativas até aproximadamente {formatDate(rateLimitedUntil)}, evitando repetição e novos bloqueios.</p></div></div>}
     <div className="instagram-toggle-grid">
       <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramFeedEnabled)} onChange={(event) => setConfig({ instagramFeedEnabled: event.target.checked })} /><span><strong>Ativar Feed</strong><small>Liga ou pausa a publicação automática.</small></span></label>
       <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramFeedAutoFromWhatsapp)} onChange={(event) => setConfig({ instagramFeedAutoFromWhatsapp: event.target.checked })} /><span><strong>Após o WhatsApp</strong><small>Escolhe as promoções mais recentes após o envio confirmado nos grupos.</small></span></label>

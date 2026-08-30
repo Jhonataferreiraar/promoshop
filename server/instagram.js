@@ -173,13 +173,19 @@ function isTransientMetaError(error) {
   return error?.name === 'AbortError' || error instanceof TypeError || status >= 500;
 }
 
-export function instagramRateLimitUntil(data = {}) {
+export function instagramRateLimitUntil(data = {}, now = Date.now()) {
+  const fallbackCooldown = 6 * 60 * 60_000;
   return Math.max(
     0,
     ...[...(data.instagramQueue || []), ...(data.instagramFeedQueue || [])]
-      .filter((item) => ['pending', 'publishing'].includes(item.status) && (item.instagramRateLimited === true || isInstagramRateLimitError({ message: item.error })))
-      .map((item) => new Date(item.retryAt || 0).getTime())
-      .filter((timestamp) => Number.isFinite(timestamp) && timestamp > Date.now())
+      .filter((item) => ['pending', 'publishing', 'failed'].includes(item.status) && (item.instagramRateLimited === true || isInstagramRateLimitError({ message: item.error })))
+      .map((item) => {
+        const retryAt = new Date(item.retryAt || 0).getTime();
+        if (Number.isFinite(retryAt) && retryAt > now) return retryAt;
+        const limitedAt = new Date(item.rateLimitedAt || item.createdAt || 0).getTime();
+        return Number.isFinite(limitedAt) ? limitedAt + fallbackCooldown : 0;
+      })
+      .filter((timestamp) => Number.isFinite(timestamp) && timestamp > now)
   );
 }
 
@@ -836,7 +842,10 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
   const cooldown = Math.max(1, Number(config.instagramFeedDuplicateDays || 7)) * DAY;
   const duplicate = data.instagramFeedQueue.some((entry) => {
     const permanentFailure = entry.permanentFailure === true || /sem imagem válida|não reconheceu a mídia|Only photo or video/i.test(String(entry.error || ''));
-    const eligibleStatus = !['cancelled', 'failed'].includes(entry.status) || permanentFailure;
+    // Uma falha por limite da Meta não libera as mesmas ofertas para um novo
+    // carrossel. O item original fica disponível para revisão depois da pausa.
+    const rateLimitedFailure = entry.status === 'failed' && entry.instagramRateLimited === true;
+    const eligibleStatus = !['cancelled', 'failed'].includes(entry.status) || permanentFailure || rateLimitedFailure;
     return (entry.sourceIds || []).includes(story.sourceId) && Date.now() - new Date(entry.createdAt || 0).getTime() < cooldown && eligibleStatus;
   });
   if (duplicate) return null;
@@ -1239,7 +1248,7 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     await updateStore((fresh) => {
       const item = (fresh.instagramQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
-      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileName: asset.fileName, themeId: asset.themeId, containerId: published.containerId, mediaId: published.mediaId, error: null, retryAt: null, instagramRateLimited: false });
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileName: asset.fileName, themeId: asset.themeId, containerId: published.containerId, mediaId: published.mediaId, error: null, retryAt: null, instagramRateLimited: false, rateLimitedAt: null });
       appendActivity(fresh, `Instagram: Story publicado — ${selected.title}.`, 'success');
     });
     return { ok: true, id: selected.id, ...published };
@@ -1253,16 +1262,19 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
         const uncertain = Boolean(item.metaPublishingStartedAt);
         item.status = uncertain ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
         item.instagramRateLimited = rateLimited;
-        item.error = uncertain
+        item.rateLimitedAt = rateLimited ? new Date().toISOString() : null;
+        item.error = rateLimited
+          ? uncertain
+            ? 'A Meta limitou temporariamente as ações durante o envio. Confira o perfil antes de tentar novamente; a automação ficará pausada.'
+            : 'A Meta limitou temporariamente as publicações por excesso de ações. A fila ficará pausada e tentará novamente mais tarde.'
+          : uncertain
           ? 'O envio à Meta foi iniciado, mas não houve confirmação. Confira o Instagram antes de tentar novamente para evitar publicação duplicada.'
-          : rateLimited
-          ? 'A Meta limitou temporariamente as publicações por excesso de ações. A fila ficará pausada e tentará novamente mais tarde.'
           : String(error.message || error).slice(0, 500);
         item.publishingAt = null;
         const retryDelay = rateLimited
           ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000
           : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
-        item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
+        item.retryAt = rateLimited || item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
         const retryLabel = formatInstagramRetryAt(item.retryAt);
         const message = rateLimited && retryLabel
           ? `Instagram: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${retryLabel}.`
@@ -1411,7 +1423,7 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     await updateStore((fresh) => {
       const item = (fresh.instagramFeedQueue || []).find((entry) => entry.id === selected.id);
       if (!item) return;
-      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false, permanentFailure: false });
+      Object.assign(item, { status: 'sent', publishedAt: new Date().toISOString(), publishingAt: null, metaPublishingStartedAt: null, assetFileNames: generatedAssets.map((asset) => asset.fileName), themeId: generatedAssets[0]?.themeId || '', containerId: published.containerId, mediaId: published.mediaId, childIds: published.childIds || [], error: null, retryAt: null, instagramRateLimited: false, rateLimitedAt: null, permanentFailure: false });
       const publishedSourceIds = feedSourceIds(item);
       for (const entry of fresh.instagramFeedQueue || []) {
         if (entry.id === item.id || !['pending', 'failed'].includes(entry.status)) continue;
@@ -1439,14 +1451,22 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
         const uncertain = Boolean(item.metaPublishingStartedAt);
         item.status = uncertain || invalidImage || invalidMedia ? 'failed' : rateLimited ? 'pending' : item.attempts >= 3 ? 'failed' : 'pending';
         item.instagramRateLimited = rateLimited;
+        item.rateLimitedAt = rateLimited ? new Date().toISOString() : null;
         item.permanentFailure = invalidImage || invalidMedia;
-        item.error = uncertain
+        item.error = rateLimited
+          ? uncertain
+            ? 'A Meta limitou temporariamente as ações durante o envio do Feed. Confira o perfil antes de tentar novamente; a automação ficará pausada.'
+            : 'A Meta limitou temporariamente as publicações do Feed. A fila tentará novamente mais tarde.'
+          : uncertain
           ? 'O envio à Meta foi iniciado, mas não houve confirmação. Confira o Instagram antes de tentar novamente para evitar publicação duplicada.'
-          : rateLimited ? 'A Meta limitou temporariamente as publicações do Feed. A fila tentará novamente mais tarde.' : String(error.message || error).slice(0, 500);
+          : String(error.message || error).slice(0, 500);
         item.publishingAt = null;
         const retryDelay = rateLimited ? Math.min(24, 6 * 2 ** Math.min(Math.max(0, item.attempts - 1), 2)) * 60 * 60_000 : Math.min(60, 5 * 2 ** item.attempts) * 60_000;
-        item.retryAt = item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
-        appendActivity(fresh, invalidImage
+        item.retryAt = rateLimited || item.status === 'pending' ? new Date(Date.now() + retryDelay).toISOString() : null;
+        const retryLabel = formatInstagramRetryAt(item.retryAt);
+        appendActivity(fresh, rateLimited && retryLabel
+          ? `Instagram Feed: a Meta limitou temporariamente as ações. A fila foi pausada até aproximadamente ${retryLabel}.`
+          : invalidImage
           ? `Instagram Feed: publicação bloqueada porque uma oferta está sem imagem válida — ${selected.title}.`
           : invalidMedia
             ? `Instagram Feed: publicação bloqueada porque a Meta não reconheceu a mídia — ${selected.title}. Gere uma nova publicação antes de tentar novamente.`

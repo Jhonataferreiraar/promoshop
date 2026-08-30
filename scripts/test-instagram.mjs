@@ -37,11 +37,16 @@ const signedSignature = crypto.createHmac('sha256', signingKey).update(signedPay
 assert.equal(verifyInstagramSignedRequest(`${signedSignature}.${signedPayload}`, signingKey).user_id, '123');
 assert.throws(() => verifyInstagramSignedRequest(`invalid.${signedPayload}`, signingKey));
 assert.equal(isInstagramRateLimitError({ metaCode: 429, message: 'Too many requests' }), true);
+assert.equal(isInstagramRateLimitError({ message: 'User is performing too many actions' }), true, 'a mensagem usada pela Meta deve ativar a pausa');
 const futureRetry = new Date(Date.now() + 60_000).toISOString();
 assert.equal(instagramRateLimitUntil({
   instagramQueue: [{ status: 'sent', instagramRateLimited: true, retryAt: new Date(Date.now() + 120_000).toISOString() }],
   instagramFeedQueue: [{ status: 'pending', instagramRateLimited: true, retryAt: futureRetry }]
 }), new Date(futureRetry).getTime(), 'a pausa deve considerar apenas publicações pendentes');
+const rateLimitNow = Date.parse('2026-08-30T22:10:00.000Z');
+assert.equal(instagramRateLimitUntil({
+  instagramFeedQueue: [{ status: 'failed', instagramRateLimited: true, createdAt: new Date(rateLimitNow).toISOString(), retryAt: null }]
+}, rateLimitNow), rateLimitNow + 6 * 60 * 60_000, 'uma falha ambígua limitada deve manter a pausa global por seis horas');
 assert.equal(formatInstagramRetryAt(null), '', 'uma pausa sem data não pode virar dezembro de 1969');
 assert.equal(formatInstagramRetryAt('1970-01-01T00:00:00.000Z'), '', 'uma pausa vencida não deve ser exibida');
 assert.match(formatInstagramRetryAt(futureRetry), /\d{2}\/\d{2}\/\d{4}/, 'uma pausa futura válida deve ser exibida');
@@ -66,6 +71,19 @@ const feedData = {
 };
 assert.ok(enqueueInstagramFeedFromWhatsapp(feedData, { id: 'feed-1', offerId: 'offer-1', targetAudienceCodes: ['G01'] }));
 assert.equal(feedData.instagramFeedQueue[0].postType, 'carousel');
+
+const rateLimitedFeedData = {
+  ...feedData,
+  instagramFeedQueue: [{
+    id: 'feed-limited', status: 'failed', instagramRateLimited: true,
+    sourceIds: ['offer-1'], createdAt: new Date().toISOString()
+  }]
+};
+assert.equal(
+  enqueueInstagramFeedFromWhatsapp(rateLimitedFeedData, { id: 'feed-recreated', offerId: 'offer-1', targetAudienceCodes: ['G01'] }),
+  null,
+  'o preenchimento automático não pode recriar um carrossel recusado por limite da Meta'
+);
 
 const backfillData = {
   config: { ...feedData.config, instagramFeedCarouselSize: 2, instagramFeedMinimumDiscount: 20 },

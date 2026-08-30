@@ -29,6 +29,8 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
   const queue = useMemo(() => [...(data.instagramQueue || [])].reverse(), [data.instagramQueue]);
   const themes = Array.isArray(config.instagramThemes) ? config.instagramThemes : [];
   const connected = Boolean(secrets.instagramConnected);
+  const rateLimitedUntil = data.meta?.instagramRateLimitedUntil;
+  const rateLimited = rateLimitedUntil && new Date(rateLimitedUntil).getTime() > Date.now();
 
   const setConfig = (changes) => setData((current) => ({ ...current, config: { ...current.config, ...changes } }));
   const updateTheme = (index, changes) => setConfig({ instagramThemes: themes.map((theme, themeIndex) => themeIndex === index ? { ...theme, ...changes } : theme) });
@@ -133,6 +135,7 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
 
     <section className="panel instagram-settings">
       <div className="panel-heading"><div><span className="section-step">PUBLICAÇÃO AUTOMÁTICA</span><h2>Quando e o que publicar</h2><p>O Story entra na fila somente depois que a mesma promoção for enviada com sucesso no WhatsApp.</p></div></div>
+      {rateLimited && <div className="instagram-feed-auto-summary"><span>!</span><div><strong>Publicações pausadas pela Meta</strong><p>A Meta detectou excesso de ações. A automação aguardará até aproximadamente {formatDate(rateLimitedUntil)} antes de tentar novamente.</p></div></div>}
       <div className="instagram-toggle-grid">
         <label className="toggle-card"><input type="checkbox" checked={Boolean(config.instagramEnabled)} onChange={(event) => setConfig({ instagramEnabled: event.target.checked })} /><span><strong>Ativar Stories</strong><small>Liga ou pausa toda a automação.</small></span></label>
         <label className="toggle-card"><input type="checkbox" checked={config.instagramAutoFromWhatsapp !== false} onChange={(event) => setConfig({ instagramAutoFromWhatsapp: event.target.checked })} /><span><strong>Após o WhatsApp</strong><small>Cria o Story depois de um envio confirmado.</small></span></label>
