@@ -647,7 +647,10 @@ function safeErrorMessage(error, fallback = 'Erro interno.') {
   const raw = String(error?.message || '').replace(/[\r\n\t]+/g, ' ').trim();
   if (!raw) return fallback;
   return raw
-    .replace(/(api[-_ ]?key|client[-_ ]?secret|access[-_ ]?token|refresh[-_ ]?token|password|cookie|csrf)[^,; ]*/gi, '$1=[redacted]')
+    .replace(
+      /(api[-_ ]?key|client[-_ ]?secret|access[-_ ]?token|refresh[-_ ]?token|password|cookie|csrf)[^,; ]*/gi,
+      (_matchedValue, sensitiveLabel) => `${sensitiveLabel}=[redacted]`
+    )
     .slice(0, 300);
 }
 
