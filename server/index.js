@@ -1033,6 +1033,52 @@ function catalogSlug(value) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100);
 }
 
+// Somente categorias amplas e reconhecíveis viram filtros e páginas de SEO.
+// Algumas APIs de afiliados já devolveram o nome do vendedor ou da coleção
+// no campo de categoria; indexar esses valores cria páginas fracas e duplicadas.
+const publicCategorySlugs = new Set([
+  'acessorios-para-veiculos',
+  'agro',
+  'alimentos-e-bebidas',
+  'antiguidades-e-colecoes',
+  'arte-papelaria-e-armarinho',
+  'bebes',
+  'beleza-e-cuidado-pessoal',
+  'brinquedos-e-hobbies',
+  'calcados-roupas-e-bolsas',
+  'cameras-e-acessorios',
+  'casa-e-cozinha',
+  'casa-moveis-e-decoracao',
+  'celulares-e-telefones',
+  'construcao',
+  'eletrodomesticos',
+  'eletronicos-audio-e-video',
+  'esporte-e-fitness',
+  'esportes-e-fitness',
+  'ferramentas',
+  'ferramentas-e-automotivo',
+  'festas-e-lembrancinhas',
+  'games',
+  'industria-e-comercio',
+  'informatica',
+  'instrumentos-musicais',
+  'joias-e-relogios',
+  'livros-revistas-e-comics',
+  'musica-filmes-e-seriados',
+  'pet-shop',
+  'saude',
+  'supermercado',
+  'tecnologia',
+  'tecnologia-e-games',
+  'beleza-e-cabelo',
+  'moda-e-acessorios',
+  'bebes-e-criancas'
+]);
+
+function publicCategoryAllowed(value) {
+  return publicCategorySlugs.has(catalogSlug(value));
+}
+
 function offerPublicSlug(offer) {
   return `${catalogSlug(offer?.title) || 'oferta'}-${String(offer?.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-10).toLowerCase()}`;
 }
@@ -2603,11 +2649,13 @@ app.get(
     const freeShipping = String(req.query?.freeShipping || '') === '1';
     const requestedIds = new Set(String(req.query?.ids || '').split(',').map((id) => id.trim()).filter(Boolean).slice(0, 100));
     const stores = [...new Set(eligible.map((offer) => String(offer.store || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    const categories = [...new Set(eligible.map((offer) => String(offer.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const categories = [...new Set(eligible.map((offer) => String(offer.category || '').trim()).filter(publicCategoryAllowed))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const requestedCategoryAllowed = !category || publicCategoryAllowed(category);
     let filtered = eligible.filter((offer) => {
       const searchable = `${offer.title || ''} ${offer.store || ''} ${offer.category || ''}`.toLocaleLowerCase('pt-BR');
       const price = Number(offer.price || 0);
-      return (!query || searchable.includes(query))
+      return requestedCategoryAllowed
+        && (!query || searchable.includes(query))
         && (!requestedIds.size || requestedIds.has(offer.id))
         && (!store || store === 'Todas' || offer.store === store || catalogSlug(offer.store) === store)
         && (!category || offer.category === category || catalogSlug(offer.category) === category)
@@ -2648,15 +2696,15 @@ app.get(
 app.get('/api/catalog/meta', async (_req, res) => {
   const { offers, config } = await readStoreSlice(['offers', 'config']);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
-  const countBy = (key) => Object.values(eligible.reduce((map, offer) => {
+  const countBy = (key, predicate = () => true) => Object.values(eligible.reduce((map, offer) => {
     const name = String(offer[key] || '').trim();
-    if (!name) return map;
+    if (!name || !predicate(name)) return map;
     map[name] ||= { name, slug: catalogSlug(name), count: 0 };
     map[name].count += 1;
     return map;
   }, {})).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pt-BR'));
   res.set('Cache-Control', 'public, max-age=120');
-  res.json({ stores: countBy('store'), categories: countBy('category') });
+  res.json({ stores: countBy('store'), categories: countBy('category', publicCategoryAllowed) });
 });
 
 app.get('/api/search/suggestions', async (req, res) => {
@@ -9043,7 +9091,9 @@ function pageSeo(config, pathname, origin, offers = []) {
   const offer = offerMatch ? offers.find((entry) => offerPublicSlug(entry) === offerMatch[1]) : null;
   const categoryMatch = pathname.match(/^\/ofertas\/([^/]+)$/);
   const storeMatch = pathname.match(/^\/loja\/([^/]+)$/);
-  const categoryName = categoryMatch ? offers.find((entry) => catalogSlug(entry.category) === categoryMatch[1])?.category : '';
+  const categoryName = categoryMatch && publicCategoryAllowed(categoryMatch[1])
+    ? offers.find((entry) => catalogSlug(entry.category) === categoryMatch[1])?.category
+    : '';
   const storeName = storeMatch ? offers.find((entry) => catalogSlug(entry.store) === storeMatch[1])?.store : '';
   const isStaticPage = pathname === '/' || pathname === '/favoritos' || pathname.startsWith('/admin') || Boolean(pages[pathname]);
   const isCatalogRoute = Boolean(offerMatch || categoryMatch || storeMatch);
@@ -9144,7 +9194,7 @@ app.get('/sitemap.xml', async (req, res) => {
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
   const paths = ['/', '/cupons', '/sobre', '/contato', '/termos-de-uso', '/privacidade', '/exclusao-de-dados'];
   const catalogPaths = [
-    ...new Set(eligible.map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
+    ...new Set(eligible.filter((offer) => publicCategoryAllowed(offer.category)).map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
     ...new Set(eligible.map((offer) => `/loja/${catalogSlug(offer.store)}`).filter((path) => !path.endsWith('/'))),
     ...eligible.slice(0, 450).map((offer) => `/oferta/${offerPublicSlug(offer)}`)
   ];
