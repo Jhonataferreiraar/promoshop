@@ -25,6 +25,28 @@
     return {};
   }
 
+  function productIdFromUrl(value) {
+    try {
+      const url = new URL(String(value || ''), location.origin);
+      for (const key of ['wid', 'item_id', 'itemId']) {
+        const candidate = clean(url.searchParams.get(key), 80).match(/MLB(?:U)?-?\d+/i)?.[0];
+        if (candidate) return candidate.replace('-', '').toUpperCase();
+      }
+      return `${url.pathname}${url.search}`.match(/MLB(?:U)?-?\d+/i)?.[0]?.replace('-', '').toUpperCase() || '';
+    } catch { return ''; }
+  }
+
+  function individualProductPage(data) {
+    if (!/(^|\.)mercadolivre\.com\.br$/i.test(location.hostname)) return false;
+    const canonical = document.querySelector('link[rel="canonical"]')?.href || '';
+    if (productIdFromUrl(location.href) || productIdFromUrl(canonical)) return true;
+    const productType = [data?.['@type']].flat().includes('Product');
+    const hasTitle = Boolean(document.querySelector('main h1, h1.ui-pdp-title, [itemprop="name"]'));
+    const hasPrice = Boolean(document.querySelector('meta[property="product:price:amount"], [itemprop="price"], .ui-pdp-price__main-container'));
+    const hasProductShell = Boolean(document.querySelector('.ui-pdp-container, [class*="ui-pdp"], main [data-testid*="product"]'));
+    return hasTitle && hasPrice && (productType || hasProductShell);
+  }
+
   function affiliateLink() {
     return [...document.querySelectorAll('input, textarea')]
       .map((input) => clean(input.value, 1000))
@@ -69,10 +91,10 @@
   }
 
   async function captureOffer() {
-    if (!/mercadolivre\.com\.br$/i.test(location.hostname) || !/(\/p\/MLB\d+|MLB-\d+)/i.test(`${location.pathname}${location.search}`)) {
+    const data = structuredProduct();
+    if (!individualProductPage(data)) {
       throw new Error('Abra uma oferta individual do Mercado Livre. Páginas de busca ou “Ofertas” não geram comissão.');
     }
-    const data = structuredProduct();
     const title = clean(document.querySelector('h1')?.textContent || data.name || document.title, 300);
     const metaPrice = document.querySelector('meta[property="product:price:amount"]')?.content;
     const itemPrice = document.querySelector('[itemprop="price"][content]')?.getAttribute('content');
@@ -84,9 +106,10 @@
     const structuredImage = Array.isArray(data.image) ? data.image[0] : data.image;
     const image = clean(document.querySelector('meta[property="og:image"]')?.content || structuredImage || document.querySelector('main img[src]')?.src, 2000);
     const current = new URL(location.href);
+    const canonical = document.querySelector('link[rel="canonical"]')?.href || '';
     const itemLink = [...document.querySelectorAll('a[href*="itemId=MLB"], a[href*="item_id=MLB"]')]
-      .map((anchor) => anchor.href.match(/(?:itemId|item_id)=(MLB\d+)/i)?.[1]).find(Boolean);
-    const externalId = current.searchParams.get('wid') || current.searchParams.get('item_id') || itemLink || `${current.pathname}${current.search}`.match(/MLB-?\d+/i)?.[0]?.replace('-', '') || '';
+      .map((anchor) => anchor.href.match(/(?:itemId|item_id)=(MLB(?:U)?-?\d+)/i)?.[1]?.replace('-', '').toUpperCase()).find(Boolean);
+    const externalId = productIdFromUrl(current.href) || productIdFromUrl(canonical) || itemLink || '';
     current.hash = '';
     ['polycard_client', 'deal_print_id', 'position', 'tracking_id', 'sid'].forEach((key) => current.searchParams.delete(key));
     if (!title || !(price > 0) || !(originalPrice > price) || !discount) throw new Error('Esta página não apresenta preço e desconto válidos para importar como promoção.');

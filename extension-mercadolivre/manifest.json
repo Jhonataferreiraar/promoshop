@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PromoShop — Ofertas Mercado Livre",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Captura uma promoção do Mercado Livre com o link oficial de afiliado e envia ao PromoShop.",
   "icons": { "48": "icons/promoshop-48.png", "128": "icons/promoshop-192.png" },
   "permissions": ["storage", "activeTab"],
