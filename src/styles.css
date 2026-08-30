@@ -5578,3 +5578,257 @@ button {
     margin-left: auto;
   }
 }
+
+/* =========================================================
+   UX público — ajustes consolidados da auditoria responsiva
+   ========================================================= */
+
+@media (min-width: 901px) {
+  .site-shell .hero,
+  .site-shell .hero-grid {
+    min-height: 560px;
+  }
+}
+
+.site-shell .topbar nav a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+.site-shell {
+  overflow-x: clip;
+}
+
+.site-shell .store-filter button,
+.privacy-consent-actions button {
+  min-height: 44px;
+}
+
+.site-shell .store-badge {
+  right: 62px;
+  max-width: 112px;
+}
+
+.site-shell .offer-card:not(:has(.favorite-button)) .store-badge {
+  right: 13px;
+}
+
+.site-shell .offer-content h3 {
+  min-height: 41px;
+  margin-bottom: 13px;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.site-shell .prices s,
+.site-shell .prices small,
+.site-shell .offer-updated,
+.site-shell .affiliate-label,
+.site-shell .load-more small {
+  color: #667085;
+}
+
+.site-shell .prices small,
+.site-shell .offer-updated,
+.site-shell .affiliate-label {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.site-shell:has(.privacy-consent) .assistant-floating-button,
+.site-shell:has(.privacy-consent) .assistant-chat {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .site-shell .topbar.compact-mobile-nav .nav-wrap {
+    position: relative;
+  }
+
+  .site-shell .topbar.compact-mobile-nav .mobile-menu-button {
+    display: block;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+  }
+
+  .site-shell .topbar.compact-mobile-nav nav {
+    position: absolute;
+    top: calc(100% - 2px);
+    right: 0;
+    left: 0;
+    display: none;
+    gap: 4px;
+    max-width: none;
+    padding: 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 0 0 14px 14px;
+    background: #fff;
+    box-shadow: 0 18px 32px rgba(16,24,40,.14);
+  }
+
+  .site-shell .topbar.compact-mobile-nav nav.mobile-open {
+    display: grid;
+  }
+
+  .site-shell .topbar.compact-mobile-nav nav a {
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  .site-shell .topbar.compact-mobile-nav nav a:hover {
+    background: #f2f4f7;
+  }
+}
+
+@media (max-width: 640px) {
+  .site-shell .topbar.compact-mobile-nav .nav-actions {
+    display: none;
+  }
+
+  .site-shell .hero-grid {
+    padding-block: 48px 82px;
+  }
+
+  .hero-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .hero-metrics span:last-child {
+    display: grid;
+  }
+
+  .hero-metrics strong {
+    font-size: 16px;
+  }
+
+  .hero-metrics small {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .site-shell .offers-section {
+    padding-bottom: 58px;
+  }
+
+  .site-shell .offer-image {
+    height: 210px;
+    padding: 16px;
+  }
+
+  .site-shell .offer-content {
+    padding: 16px;
+  }
+
+  .site-shell .offer-content h3 {
+    min-height: 41px;
+    margin: 8px 0 12px;
+  }
+
+  .site-shell .prices strong {
+    font-size: 22px;
+  }
+
+  .coupons-section {
+    padding-bottom: 62px;
+  }
+
+  .coupon-card {
+    gap: 11px;
+    padding: 18px;
+  }
+
+  .coupon-card h3 {
+    font-size: 18px;
+  }
+
+  .how-section {
+    padding: 52px 0;
+  }
+
+  .how-grid {
+    gap: 10px;
+  }
+
+  .how-grid article {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    column-gap: 14px;
+    padding: 18px;
+  }
+
+  .how-grid article > span {
+    grid-row: 1 / 3;
+    margin: 0;
+  }
+
+  .how-grid h3,
+  .how-grid p {
+    grid-column: 2;
+  }
+
+  .how-grid h3 {
+    align-self: end;
+    margin-bottom: 4px;
+    font-size: 18px;
+  }
+
+  .how-grid p {
+    line-height: 1.45;
+  }
+
+  .audience-public-section {
+    padding: 58px 0;
+  }
+
+  .audience-public-grid {
+    gap: 10px;
+    margin-top: 26px;
+  }
+
+  .audience-public-card {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .audience-public-card > span,
+  .audience-public-card h3 {
+    margin: 0;
+  }
+
+  .audience-public-card h3 {
+    font-size: 16px;
+  }
+
+  .audience-public-card .button {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+
+  .privacy-consent-actions button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 360px) {
+  .store-filter > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .store-filter button {
+    width: 100%;
+    min-width: 0;
+  }
+}

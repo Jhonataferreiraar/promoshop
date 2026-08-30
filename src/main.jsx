@@ -316,11 +316,14 @@ function PrivacyConsent({ policyVersion = privacyPolicyVersion }) {
   const [open, setOpen] = useState(() => !readAnalyticsConsent());
 
   useEffect(() => {
-    if (!choice) clearAnalyticsIdentifiers();
-    if (choice) {
+    const currentChoice = readAnalyticsConsent();
+    if (!currentChoice) clearAnalyticsIdentifiers();
+    if (currentChoice) {
       let synced = '';
       try { synced = window.localStorage.getItem(privacyReceiptSyncKey) || ''; } catch { }
-      if (synced !== `${policyVersion}:${choice}`) setOpen(true);
+      // A escolha local deve fechar o aviso imediatamente. Se o comprovante ainda
+      // não chegou ao servidor, sincronize em segundo plano sem bloquear a página.
+      if (synced !== `${policyVersion}:${currentChoice}`) recordAnalyticsConsent(currentChoice, '', policyVersion);
     }
 
     const showPreferences = () => setOpen(true);
@@ -336,7 +339,7 @@ function PrivacyConsent({ policyVersion = privacyPolicyVersion }) {
       window.removeEventListener(privacyOpenEvent, showPreferences);
       window.removeEventListener('storage', syncChoice);
     };
-  }, [choice, policyVersion]);
+  }, [policyVersion]);
 
   function choose(value) {
     saveAnalyticsConsent(value, policyVersion);
@@ -382,14 +385,20 @@ function OfferCard({ offer, config, favorite = false, onFavorite }) {
 }
 
 function CouponCard({ coupon, config, copied = false, onCopy }) {
-  const description = String(coupon.description || '').replace(/\s+/g, ' ').trim();
-  const shortDescription = description.length > 130 ? `${description.slice(0, 127).trimEnd()}…` : description;
+  const rawTitle = String(coupon.title || '').replace(/\s+/g, ' ').trim();
+  const genericTitle = /affordable chinese|free shipping|online shopping|customer service|press office/i.test(rawTitle);
+  const title = genericTitle ? `Cupom ${coupon.store || 'selecionado'}` : (rawTitle || `Cupom ${coupon.store || 'selecionado'}`);
+  const description = String(coupon.description || '')
+    .replace(/\s+/g, ' ')
+    .replace(/R\$\s*([\d.,]+)\s*OFF\s*orders?\s*R\$\s*([\d.,]+)\+?(?:\s*-\s*Code:\s*\S+)?/i, 'R$ $1 de desconto em compras acima de R$ $2.')
+    .trim();
+  const shortDescription = description.length > 96 ? `${description.slice(0, 93).trimEnd()}…` : description;
   return <article className="coupon-card">
     <div className="coupon-card-top">
       <span className="coupon-store">{coupon.store || 'Magalu'}</span>
       <small>{coupon.expiresAt ? `Até ${new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}` : 'Validade não informada'}</small>
     </div>
-    <h3>{coupon.title}</h3>
+    <h3 title={rawTitle || title}>{title}</h3>
     {shortDescription && <p className="coupon-description" title={description}>{shortDescription}</p>}
     <div className="coupon-card-actions">
       {(coupon.discountValue > 0 || coupon.discountType === 'free-shipping') && <strong className="coupon-discount">{coupon.discountType === 'fixed' ? `R$ ${Number(coupon.discountValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} OFF` : coupon.discountType === 'free-shipping' ? 'FRETE GRÁTIS' : `${coupon.discountValue}% OFF`}</strong>}
@@ -422,6 +431,7 @@ function PublicSite() {
   const [minDiscount, setMinDiscount] = useState(initialParams.get('desconto') || '');
   const [freeShipping, setFreeShipping] = useState(initialParams.get('frete') === '1');
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(Boolean(initialParams.get('min') || initialParams.get('max') || initialParams.get('desconto') || initialParams.get('frete')));
+  const [homeOfferLimit, setHomeOfferLimit] = useState(8);
   const [favorites, setFavorites] = useState(readFavorites);
   const [suggestions, setSuggestions] = useState([]);
   const favoritesOnly = window.location.pathname === '/favoritos';
@@ -480,11 +490,13 @@ function PublicSite() {
       setOfferStores(Array.isArray(result.stores) ? result.stores : []);
       setOfferCategories(Array.isArray(result.categories) ? result.categories : []);
       setTopDiscount(Number(result.topDiscount || 0));
+      return nextOffers;
     } catch {
       if (!append) {
         setOffers([]);
         setOfferTotal(0);
       }
+      return [];
     } finally {
       if (requestId === offerRequestRef.current) {
         setLoading(false);
@@ -494,6 +506,7 @@ function PublicSite() {
   }
 
   useEffect(() => {
+    setHomeOfferLimit(8);
     const timeout = window.setTimeout(() => loadOfferPage(), 280);
     return () => window.clearTimeout(timeout);
   }, [query, store, category, sort, minPrice, maxPrice, minDiscount, freeShipping, favoritesOnly, favorites.join(','), config.publicOfferPageSize]);
@@ -566,6 +579,8 @@ function PublicSite() {
   const advancedFilterCount = [minPrice, maxPrice, minDiscount, freeShipping].filter(Boolean).length;
   const favoriteSet = new Set(favorites);
   const visibleOffers = favoritesOnly ? offers.filter((offer) => favoriteSet.has(offer.id)) : offers;
+  const filtersActive = Boolean(favoritesOnly || query || store !== 'Todas' || category || minPrice || maxPrice || minDiscount || freeShipping);
+  const displayedOffers = filtersActive ? visibleOffers : visibleOffers.slice(0, homeOfferLimit);
   function toggleFavorite(offer) {
     setFavorites((current) => {
       const next = current.includes(offer.id) ? current.filter((id) => id !== offer.id) : [...current, offer.id];
@@ -573,6 +588,16 @@ function PublicSite() {
       if (!current.includes(offer.id) && config.clickAnalyticsEnabled !== false) trackPublicEvent('favorite', { id: offer.id, label: offer.title, store: offer.store });
       return next;
     });
+  }
+
+  async function showMoreOffers() {
+    if (!filtersActive && homeOfferLimit < visibleOffers.length) {
+      setHomeOfferLimit((current) => Math.min(current + 8, visibleOffers.length));
+      return;
+    }
+
+    const nextOffers = await loadOfferPage({ append: true });
+    if (!filtersActive && nextOffers.length) setHomeOfferLimit((current) => current + 8);
   }
 
   async function askAssistant(event) {
@@ -670,9 +695,9 @@ function PublicSite() {
         <div className="section-heading"><div><span className="eyebrow dark">OPORTUNIDADES SELECIONADAS</span><h2>{favoritesOnly ? 'Seus produtos favoritos' : category ? `Ofertas de ${offerCategories.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === category) || category}` : store !== 'Todas' ? `Ofertas do ${offerStores.find((item) => String(item).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === store) || store}` : 'Ofertas que valem a pena'}</h2><p>Compare preços e escolha sua próxima economia.</p></div><span className="results-count"><strong>{favoritesOnly ? visibleOffers.length : offerTotal}</strong> ofertas encontradas</span></div>
         {loading && <p className="notice">Atualizando ofertas…</p>}
         <div className="offer-grid">
-          {visibleOffers.map((offer) => <OfferCard offer={offer} config={config} favorite={favoriteSet.has(offer.id)} onFavorite={toggleFavorite} key={offer.id} />)}
+          {displayedOffers.map((offer) => <OfferCard offer={offer} config={config} favorite={favoriteSet.has(offer.id)} onFavorite={toggleFavorite} key={offer.id} />)}
         </div>
-        {visibleOffers.length < offerTotal && <div className="load-more"><button className="button subtle" type="button" disabled={loadingMore} onClick={() => loadOfferPage({ append: true })}>{loadingMore ? 'Carregando…' : 'Mostrar mais ofertas'}</button><small>Exibindo {visibleOffers.length} de {offerTotal}</small></div>}
+        {displayedOffers.length < offerTotal && <div className="load-more"><button className="button subtle" type="button" disabled={loadingMore} onClick={showMoreOffers}>{loadingMore ? 'Carregando…' : 'Mostrar mais ofertas'}</button><small>Exibindo {displayedOffers.length} de {offerTotal}</small></div>}
         {!loading && !(favoritesOnly ? visibleOffers.length : offerTotal) && <div className="empty"><strong>{favoritesOnly ? 'Você ainda não salvou ofertas' : 'Nenhuma oferta encontrada'}</strong><p>{favoritesOnly ? 'Toque no coração de uma oferta para encontrá-la aqui.' : 'Tente remover algum filtro.'}</p></div>}
       </section>
 
