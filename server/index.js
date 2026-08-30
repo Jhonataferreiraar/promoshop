@@ -72,6 +72,7 @@ import {
   beginInstagramAuthorization,
   cleanupInstagramAssets,
   enqueueInstagramFeedFromWhatsapp,
+  enqueueInstagramForCompletedWhatsappRound,
   enqueueInstagramFromWhatsapp,
   finishInstagramAuthorization,
   generateInstagramFeedAsset,
@@ -236,6 +237,20 @@ function appendStoreLog(data, message, level = 'info') {
     createdAt: new Date().toISOString()
   });
   data.logs = data.logs.slice(0, 200);
+}
+
+function releaseInstagramAfterWhatsappRound(data, round) {
+  if (!round?.id || round.instagramReleasedAt) return { stories: [], feed: [], processed: 0 };
+  const released = enqueueInstagramForCompletedWhatsappRound(data, round.id);
+  round.instagramReleasedAt = new Date().toISOString();
+  if (released.stories.length || released.feed.length) {
+    appendStoreLog(
+      data,
+      `Instagram: rodada ${round.id} concluída no WhatsApp; ${released.stories.length} Story(s) e ${released.feed.length} publicação(ões) do Feed foram liberados para seus próprios intervalos.`,
+      'success'
+    );
+  }
+  return released;
 }
 
 function activePublicationRound(data) {
@@ -1931,6 +1946,8 @@ async function skipRoundAudience(
         round.completedAt =
           new Date()
             .toISOString();
+
+        releaseInstagramAfterWhatsappRound(data, round);
 
         data.meta
           .lastPublicationRound = {
@@ -7658,9 +7675,9 @@ app.get(
      * INTERVALO CONFIGURADO NO PAINEL
      * ======================================================
      *
-     * O intervalo separa cada promoção, inclusive os grupos da mesma rodada.
-     * Assim, uma configuração de 10 minutos é respeitada entre G01, G02,
-     * G03 e os demais destinos, sem disparos em sequência.
+     * O intervalo separa rodadas completas. Dentro da mesma rodada, G01, G02,
+     * G03 e os demais públicos seguem em sequência com a pausa curta e segura
+     * aplicada pelo worker do WhatsApp.
      *
      * Publicações marcadas como "Publicar agora" são tratadas antes deste
      * bloco e continuam imediatas.
@@ -8541,9 +8558,6 @@ app.post(
 
         recordSentSourceInLedger(data, item);
 
-        const instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
-        const instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
-
         appendStoreLog(
           data,
           item.roundAudienceCode
@@ -8551,22 +8565,6 @@ app.post(
             : `WhatsApp: publicação enviada (${req.params.id}).`,
           'success'
         );
-
-        if (instagramQueuedItem) {
-          appendStoreLog(
-            data,
-            `Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`,
-            'success'
-          );
-        }
-
-        if (instagramFeedQueuedItem) {
-          appendStoreLog(
-            data,
-            `Instagram: ${instagramFeedQueuedItem.title} entrou na fila do Feed após o envio no WhatsApp.`,
-            'success'
-          );
-        }
 
         /*
          * ==================================================
@@ -8578,13 +8576,16 @@ app.post(
           data.meta
             ?.publicationRound;
 
+        let deferredUntilRoundCompletion = false;
+
         if (
           round &&
           item.roundId &&
           round.id ===
             item.roundId &&
           item.roundAudienceCode
-        ) {
+          ) {
+          deferredUntilRoundCompletion = true;
           const audienceCode =
             normalizeAudienceCode(
               item
@@ -8639,6 +8640,8 @@ app.post(
               new Date()
                 .toISOString();
 
+            releaseInstagramAfterWhatsappRound(data, round);
+
             data.meta
               .lastPublicationRound = {
               ...round
@@ -8647,6 +8650,31 @@ app.post(
             data.meta
               .publicationRound =
               null;
+          }
+        }
+
+        // Publicações manuais ou antigas que não pertencem à rodada ativa
+        // continuam sendo liberadas imediatamente, preservando o fluxo já
+        // existente. Somente a rodada automática aguarda todos os grupos.
+        if (!deferredUntilRoundCompletion) {
+          const instagramQueuedItem = enqueueInstagramFromWhatsapp(data, item);
+          const instagramFeedQueuedItem = enqueueInstagramFeedFromWhatsapp(data, item);
+          item.instagramReleaseProcessedAt = new Date().toISOString();
+
+          if (instagramQueuedItem) {
+            appendStoreLog(
+              data,
+              `Instagram: ${instagramQueuedItem.title} entrou na fila de Stories após o envio no WhatsApp.`,
+              'success'
+            );
+          }
+
+          if (instagramFeedQueuedItem) {
+            appendStoreLog(
+              data,
+              `Instagram: ${instagramFeedQueuedItem.title} entrou na fila do Feed após o envio no WhatsApp.`,
+              'success'
+            );
           }
         }
       }
@@ -8788,6 +8816,8 @@ app.post(
               round.completedAt =
                 new Date()
                   .toISOString();
+
+              releaseInstagramAfterWhatsappRound(data, round);
 
               data.meta
                 .lastPublicationRound = {

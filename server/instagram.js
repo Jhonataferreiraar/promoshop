@@ -865,6 +865,34 @@ export function enqueueInstagramFeedFromWhatsapp(data, queueItem) {
   return item;
 }
 
+export function enqueueInstagramForCompletedWhatsappRound(data, roundId) {
+  const normalizedRoundId = String(roundId || '').trim();
+  if (!normalizedRoundId) return { stories: [], feed: [], processed: 0 };
+
+  const stories = [];
+  const feedById = new Map();
+  let processed = 0;
+  const completedAt = new Date().toISOString();
+  const sentItems = (Array.isArray(data.queue) ? data.queue : [])
+    .filter((item) => (
+      item?.status === 'sent' &&
+      String(item.roundId || '') === normalizedRoundId &&
+      !item.instagramReleaseProcessedAt
+    ))
+    .sort((left, right) => new Date(left.sentAt || 0).getTime() - new Date(right.sentAt || 0).getTime());
+
+  for (const item of sentItems) {
+    const story = enqueueInstagramFromWhatsapp(data, item);
+    const feedItem = enqueueInstagramFeedFromWhatsapp(data, item);
+    if (story) stories.push(story);
+    if (feedItem) feedById.set(feedItem.id, feedItem);
+    item.instagramReleaseProcessedAt = completedAt;
+    processed += 1;
+  }
+
+  return { stories, feed: [...feedById.values()], processed };
+}
+
 export function backfillInstagramFeedFromRecentWhatsapp(data) {
   const config = data.config || {};
   if (config.instagramFeedEnabled !== true || config.instagramFeedAutoFromWhatsapp !== true) return 0;
@@ -879,8 +907,15 @@ export function backfillInstagramFeedFromRecentWhatsapp(data) {
   if (pendingCount() >= target) return 0;
 
   const maximumAge = Math.max(1, Number(config.instagramFeedDuplicateDays || 7)) * DAY;
+  const activeRoundId = String(data.meta?.publicationRound?.id || '');
   const recentSent = (data.queue || [])
-    .filter((entry) => entry.status === 'sent' && Date.now() - new Date(entry.sentAt || entry.createdAt || 0).getTime() <= maximumAge)
+    .filter((entry) => (
+      entry.status === 'sent' &&
+      // Ofertas da rodada atual só ficam visíveis ao Instagram quando todos
+      // os públicos do WhatsApp tiverem sido atendidos ou encerrados.
+      !(activeRoundId && String(entry.roundId || '') === activeRoundId && !entry.instagramReleaseProcessedAt) &&
+      Date.now() - new Date(entry.sentAt || entry.createdAt || 0).getTime() <= maximumAge
+    ))
     .sort((a, b) => new Date(b.sentAt || b.createdAt || 0).getTime() - new Date(a.sentAt || a.createdAt || 0).getTime())
     .slice(0, 300);
   let added = 0;
@@ -1125,6 +1160,15 @@ function latestAutomaticCarousel(data, config) {
   return { selected, stories, sourceIds: [...sourceIds], consumedIds };
 }
 
+export function instagramWaitsForWhatsappRound(data = {}) {
+  const round = data.meta?.publicationRound;
+  return Boolean(
+    round?.id &&
+    Array.isArray(round.pendingAudienceCodes) &&
+    round.pendingAudienceCodes.length
+  );
+}
+
 function feedSourceIds(entry) {
   return new Set([
     ...(Array.isArray(entry?.sourceIds) ? entry.sourceIds : []),
@@ -1166,6 +1210,7 @@ export async function processInstagramQueue({ forceId = '' } = {}) {
     }
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
+    if (!forceId && instagramWaitsForWhatsappRound(data)) return { waitingForWhatsappRound: true };
     if (!forceId && (config.instagramEnabled !== true || !withinSchedule(config))) return { paused: true };
     const rateLimitUntil = instagramRateLimitUntil(data);
     if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };
@@ -1263,6 +1308,7 @@ export async function processInstagramFeedQueue({ forceId = '' } = {}) {
     }
     const config = data.config || {};
     if (!secrets.instagramAccessToken || !secrets.instagramUserId) return { connected: false };
+    if (!forceId && instagramWaitsForWhatsappRound(data)) return { waitingForWhatsappRound: true };
     if (!forceId && (config.instagramFeedEnabled !== true || !withinFeedSchedule(config))) return { paused: true };
     const rateLimitUntil = instagramRateLimitUntil(data);
     if (rateLimitUntil > Date.now()) return { rateLimited: true, retryAt: new Date(rateLimitUntil).toISOString() };

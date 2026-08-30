@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import sharp from 'sharp';
 
-import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramFromWhatsapp, feedEntryRepeatsPublishedSource, formatInstagramRetryAt, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
+import { backfillInstagramFeedFromRecentWhatsapp, enqueueInstagramFeedFromWhatsapp, enqueueInstagramForCompletedWhatsappRound, enqueueInstagramFromWhatsapp, feedEntryRepeatsPublishedSource, formatInstagramRetryAt, generateInstagramFeedAsset, generateInstagramHighlightAsset, generateInstagramStory, instagramRateLimitUntil, instagramWaitsForWhatsappRound, isInstagramRateLimitError, sanitizeFeedCaption, verifyInstagramSignedRequest } from '../server/instagram.js';
 import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes, selectInstagramTheme } from '../server/instagramThemes.js';
 import { sanitizeInstagramHighlights } from '../server/instagramHighlights.js';
 
@@ -45,6 +45,8 @@ assert.equal(instagramRateLimitUntil({
 assert.equal(formatInstagramRetryAt(null), '', 'uma pausa sem data não pode virar dezembro de 1969');
 assert.equal(formatInstagramRetryAt('1970-01-01T00:00:00.000Z'), '', 'uma pausa vencida não deve ser exibida');
 assert.match(formatInstagramRetryAt(futureRetry), /\d{2}\/\d{2}\/\d{4}/, 'uma pausa futura válida deve ser exibida');
+assert.equal(instagramWaitsForWhatsappRound({ meta: { publicationRound: { id: 'round-1', pendingAudienceCodes: ['G02'] } } }), true, 'o Instagram deve aguardar a rodada ativa do WhatsApp');
+assert.equal(instagramWaitsForWhatsappRound({ meta: { publicationRound: null } }), false, 'o Instagram deve ser liberado depois da rodada');
 
 const data = {
   config,
@@ -80,6 +82,33 @@ const backfillData = {
 assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 2, 'deve recuperar ofertas já enviadas ao WhatsApp');
 assert.equal(backfillData.instagramFeedQueue[0].items.length, 2, 'deve montar o carrossel com as ofertas recentes');
 assert.equal(backfillInstagramFeedFromRecentWhatsapp(backfillData), 0, 'não deve duplicar o preenchimento automático');
+
+const completedRoundData = {
+  config: {
+    ...feedData.config,
+    instagramAudienceCodes: [],
+    instagramFeedCarouselSize: 2
+  },
+  meta: { publicationRound: { id: 'round-active', pendingAudienceCodes: ['G02'] } },
+  offers: [
+    data.offers[0],
+    { id: 'offer-round-2', title: 'Fone Bluetooth da rodada', store: 'Magalu', price: 89.9, originalPrice: 129.9, discount: 30, image: 'https://example.com/round-headphone.jpg', affiliateUrl: 'https://example.com/round-headphone' }
+  ],
+  queue: [
+    { id: 'round-queue-1', roundId: 'round-active', offerId: 'offer-1', status: 'sent', sentAt: '2026-08-30T12:00:00.000Z', targetAudienceCodes: ['G01'] },
+    { id: 'round-queue-2', roundId: 'round-active', offerId: 'offer-round-2', status: 'sent', sentAt: '2026-08-30T12:01:00.000Z', targetAudienceCodes: ['G02'] }
+  ],
+  instagramQueue: [],
+  instagramFeedQueue: []
+};
+assert.equal(backfillInstagramFeedFromRecentWhatsapp(completedRoundData), 0, 'o Feed não pode antecipar uma rodada ainda ativa');
+const releasedRound = enqueueInstagramForCompletedWhatsappRound(completedRoundData, 'round-active');
+assert.equal(releasedRound.processed, 2, 'todas as ofertas enviadas na rodada devem ser processadas juntas');
+assert.equal(releasedRound.stories.length, 2, 'os Stories devem ser liberados somente ao concluir a rodada');
+assert.equal(releasedRound.feed.length, 1, 'as ofertas devem compor um único carrossel da rodada');
+assert.equal(completedRoundData.instagramFeedQueue[0].items.length, 2);
+assert.ok(completedRoundData.queue.every((item) => item.instagramReleaseProcessedAt));
+assert.equal(enqueueInstagramForCompletedWhatsappRound(completedRoundData, 'round-active').processed, 0, 'a liberação da rodada deve ser idempotente');
 
 const permanentFailureData = {
   config: { ...feedData.config, instagramFeedCarouselSize: 2 },
