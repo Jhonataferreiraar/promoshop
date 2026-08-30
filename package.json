@@ -25,6 +25,7 @@
     "test:whatsapp-patch": "node scripts/test-whatsapp-patch.mjs",
     "test:whatsapp-process": "node scripts/test-whatsapp-process.mjs",
     "test:whatsapp-schedule": "node scripts/test-whatsapp-schedule.mjs",
+    "test:whatsapp-store-priority": "node scripts/test-whatsapp-store-priority.mjs",
     "test:whatsapp-mentions": "node scripts/test-whatsapp-mentions.mjs",
     "test:whatsapp-dedup": "node scripts/test-whatsapp-dedup.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",

@@ -92,6 +92,7 @@ import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
 import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
+import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
 import { safeRedirectDestination } from './urlSecurity.js';
 
 const app = express();
@@ -1774,7 +1775,8 @@ async function getPublicationRound(
     return {
       id: round.id,
       pendingAudienceCodes,
-      usedOfferIds: Array.isArray(round.usedOfferIds) ? [...round.usedOfferIds] : []
+      usedOfferIds: Array.isArray(round.usedOfferIds) ? [...round.usedOfferIds] : [],
+      storePriorityCursor: normalizeWhatsappStorePriorityCursor(round.storePriorityCursor)
     };
   }
 
@@ -1839,7 +1841,9 @@ async function getPublicationRound(
           pendingAudienceCodes:
             [...audienceCodes],
 
-          usedOfferIds: []
+          usedOfferIds: [],
+
+          storePriorityCursor: 0
         };
 
         data.meta
@@ -1870,6 +1874,8 @@ async function getPublicationRound(
             ? round.usedOfferIds
             : [];
 
+        round.storePriorityCursor = normalizeWhatsappStorePriorityCursor(round.storePriorityCursor);
+
         if (
           !round
             .pendingAudienceCodes
@@ -1897,7 +1903,9 @@ async function getPublicationRound(
           [
             ...round
               .usedOfferIds
-          ]
+          ],
+
+        storePriorityCursor: normalizeWhatsappStorePriorityCursor(round.storePriorityCursor)
       };
     }
   );
@@ -7798,6 +7806,12 @@ app.get(
           }
         );
 
+      const prioritizedCandidates = prioritizeWhatsappCandidates(
+        candidates,
+        offers,
+        round.storePriorityCursor
+      );
+
       /*
        * Nenhuma promoção disponível
        * para esse grupo.
@@ -7846,7 +7860,7 @@ app.get(
        */
       for (
         const item
-        of candidates
+        of prioritizedCandidates
       ) {
         const prepared =
           await prepareWithAi(
@@ -7868,6 +7882,12 @@ app.get(
         }
 
         if (prepared) {
+          const nextStorePriority = nextWhatsappStorePriorityCursor(
+            item,
+            offers,
+            round.storePriorityCursor
+          );
+
           /*
            * Registra oficialmente que
            * este item pertence à rodada.
@@ -7918,12 +7938,14 @@ app.get(
                     audienceCode
                   ];
               }
+
+              saved.storePriorityNextCursor = nextStorePriority;
             }
           );
 
           if (productClaimed) {
             await addLog(
-              `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}.`,
+              `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}. Próxima prioridade: ${WHATSAPP_STORE_PRIORITY[nextStorePriority]}.`,
               'success'
             );
 
@@ -8591,6 +8613,10 @@ app.post(
               item
                 .roundAudienceCode
             );
+
+          round.storePriorityCursor = normalizeWhatsappStorePriorityCursor(
+            item.storePriorityNextCursor ?? round.storePriorityCursor
+          );
 
           /*
            * Grupo foi atendido.
