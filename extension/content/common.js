@@ -42,7 +42,11 @@
     const title = firstText(element, ['h1', 'h2', 'h3', 'h4', '[class*="title"]', '[class*="name"]', '[data-testid*="title"]']) || clean(document.title, 180);
     const discount = extractDiscount(text);
     const rawCode = clean(element?.getAttribute?.('data-code') || element?.getAttribute?.('data-coupon-code') || firstText(element, ['[class*="coupon-code"]', '[data-testid*="code"]']), 80);
-    const code = /^[A-Z0-9][A-Z0-9_-]{3,79}$/i.test(rawCode) ? rawCode : extractCode(text);
+    const normalizedRawCode = rawCode.toUpperCase();
+    const codeCharactersValid = [...normalizedRawCode].every((character) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'.includes(character));
+    const code = normalizedRawCode.length >= 4 && normalizedRawCode.length <= 80 && codeCharactersValid
+      ? normalizedRawCode
+      : extractCode(text);
     return { title, store, code: code.toUpperCase(), description: clean(text, 500), ...discount, minPurchase: 0, expiresAt: extractExpiry(text), link, image };
   }
   function scanPage(store) {

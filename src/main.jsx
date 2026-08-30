@@ -177,14 +177,12 @@ function anonymousStorageId(storage, key) {
     const current = storage.getItem(key);
     if (current) return current;
 
-    const generated = window.crypto?.randomUUID
-      ? window.crypto.randomUUID().replace(/-/g, '')
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    const generated = window.crypto.randomUUID().replace(/-/g, '');
 
     storage.setItem(key, generated);
     return generated;
   } catch {
-    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    return window.crypto.randomUUID().replace(/-/g, '');
   }
 }
 

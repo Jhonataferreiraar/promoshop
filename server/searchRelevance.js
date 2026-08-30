@@ -57,7 +57,7 @@ export function productSearchRelevance(query, offer, { strict = true } = {}) {
   const wrongCatalogCategory = Boolean(intent && !requestedAccessories.length && /mercado-livre/i.test(String(offer?.source || '')) && tokens(categoryText).some((token) => ['acessorio', 'acessorios', 'componente', 'componentes', 'livro', 'livros', 'papelaria', 'peca', 'pecas'].includes(token)));
   const intentPosition = intent ? Math.min(...intentMatchTerms.map((alias) => titleTokens.indexOf(alias)).filter((index) => index >= 0), Number.POSITIVE_INFINITY) : -1;
   const indirectIntentReference = Boolean(intent && !requestedAccessories.length && intentPosition > 0 && (
-    intentPosition > 7 || intentMatchTerms.some((alias) => new RegExp(`\\b(?:para|do|da|de) ${alias}\\b`).test(titleText))
+    intentPosition > 7 || intentMatchTerms.some((alias) => ['para', 'do', 'da', 'de'].some((prefix) => ` ${titleText} `.includes(` ${prefix} ${alias} `)))
   ));
   const unwantedAccessories = intent && !requestedAccessories.length
     ? intent.accessories.filter((word) => {

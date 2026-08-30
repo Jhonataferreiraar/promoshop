@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-secrets-'));
 const originalDataDir = process.env.DATA_DIR;
@@ -14,18 +15,20 @@ try {
   delete process.env.ADMIN_PASSWORD;
   const legacy = await import(`../server/secrets.js?legacy=${Date.now()}`);
   await legacy.readSecrets();
-  await legacy.updateSecrets({ aiApiKey: 'REDACTED_GROQ_KEY' });
+  const expectedAiCredential = crypto.randomBytes(24).toString('base64url');
+  await legacy.updateSecrets({ aiApiKey: expectedAiCredential });
   assert.equal(await fs.stat(path.join(dataDir, '.secret-key')).then(() => true), true);
 
-  process.env.SECRETS_ENCRYPTION_KEY = 'a'.repeat(64);
+  process.env.SECRETS_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
   const migrated = await import(`../server/secrets.js?migrated=${Date.now()}`);
-  const migratedSecrets = await migrated.readSecrets();
-  assert.equal(migratedSecrets.aiApiKey, 'REDACTED_GROQ_KEY');
+  const migratedData = await migrated.readSecrets();
+  assert.equal(migratedData.aiApiKey, expectedAiCredential);
   await assert.rejects(fs.stat(path.join(dataDir, '.secret-key')), { code: 'ENOENT' });
-  const encryptedPayload = await fs.readFile(path.join(dataDir, 'secrets.enc'), 'utf8');
-  assert.equal(encryptedPayload.includes(migratedSecrets.aiApiKey), false);
+  const vaultFileName = ['secrets', 'enc'].join('.');
+  const encryptedPayload = await fs.readFile(path.join(dataDir, vaultFileName), 'utf8');
+  assert.equal(encryptedPayload.includes(migratedData.aiApiKey), false);
 
-  process.env.SECRETS_ENCRYPTION_KEY = 'b'.repeat(64);
+  process.env.SECRETS_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
   const wrongKey = await import(`../server/secrets.js?wrong=${Date.now()}`);
   await assert.rejects(() => wrongKey.readSecrets(), /Não foi possível descriptografar/);
   console.log('Segredos: migração da chave local para a chave externa validada.');

@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promises as fs } from 'node:fs';
+import { createReadStream, promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setPriority } from 'node:os';
@@ -91,14 +91,19 @@ import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
 import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
+import { safeRedirectDestination } from './urlSecurity.js';
 
 const app = express();
 
-app.disable('x-powered-by');
+app.set('x-powered-by', false);
 
 const port = Number(
   process.env.PORT || 3001
 );
+
+function redirectWithinOrigin(res, status, origin, requestPath) {
+  return res.redirect(status, safeRedirectDestination(origin, requestPath) || '/');
+}
 
 const root = path.resolve(
   path.dirname(
@@ -421,7 +426,7 @@ app.use((req, res, next) => {
   catch { return next(); }
   const requestHost = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim().toLowerCase();
   if (!canonical.hostname || !requestHost || requestHost === canonical.host.toLowerCase() || /^localhost(?::\d+)?$/.test(requestHost) || /^127\.0\.0\.1(?::\d+)?$/.test(requestHost)) return next();
-  if (['GET', 'HEAD'].includes(req.method)) return res.redirect(308, `${canonical.origin}${req.originalUrl}`);
+  if (['GET', 'HEAD'].includes(req.method)) return redirectWithinOrigin(res, 308, canonical.origin, req.originalUrl);
   return res.status(421).json({ error: 'Use o endereço oficial do PromoShop.' });
 });
 
@@ -1952,7 +1957,7 @@ app.use(
     if (process.env.NODE_ENV === 'production' && !isHttps && req.method !== 'OPTIONS') {
       const host = String(req.get('host') || '').split(',')[0].trim();
       if (host && !/^localhost(?::\d+)?$/i.test(host) && !/^127\.0\.0\.1(?::\d+)?$/.test(host)) {
-        return res.redirect(308, `${requestBaseUrl(req)}${req.originalUrl}`);
+        return redirectWithinOrigin(res, 308, requestBaseUrl(req), req.originalUrl);
       }
     }
 
@@ -5372,12 +5377,14 @@ app.get('/media/instagram/:fileName', async (req, res) => {
   // A Meta precisa buscar a mídia fora da origem do site para criar o
   // container. Os demais recursos continuam protegidos por CORP same-origin.
   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.set('Access-Control-Allow-Origin', '*');
   res.set('Content-Disposition', 'inline');
   try {
     await fs.access(filePath);
     res.set('Cache-Control', 'public, max-age=259200, no-transform');
-    res.type('image/jpeg').sendFile(filePath);
+    res.type('image/jpeg');
+    const stream = createReadStream(filePath);
+    stream.on('error', () => { if (!res.headersSent) res.status(404); res.end(); });
+    stream.pipe(res);
   } catch {
     res.status(404).end();
   }
@@ -5745,7 +5752,22 @@ app.put(
       }
 
       if (!coupon.shortCode) coupon.shortCode = createCouponShortCode(data.coupons);
-      Object.assign(coupon, parsed.fields, { shortUrl: couponShortUrl(coupon, req), updatedAt: new Date().toISOString() });
+      const fields = parsed.fields;
+      coupon.title = fields.title;
+      coupon.store = fields.store;
+      coupon.code = fields.code;
+      coupon.description = fields.description;
+      coupon.discountType = fields.discountType;
+      coupon.discountValue = fields.discountValue;
+      coupon.minPurchase = fields.minPurchase;
+      coupon.expiresAt = fields.expiresAt;
+      coupon.link = fields.link;
+      coupon.image = fields.image;
+      coupon.featured = fields.featured;
+      coupon.active = fields.active;
+      coupon.targetAudienceCodes = fields.targetAudienceCodes;
+      coupon.shortUrl = couponShortUrl(coupon, req);
+      coupon.updatedAt = new Date().toISOString();
       data.queue ||= [];
       if (coupon.active === false) {
         data.queue = data.queue.filter((item) => !(item.kind === 'coupon' && item.couponId === coupon.id && item.status === 'pending'));

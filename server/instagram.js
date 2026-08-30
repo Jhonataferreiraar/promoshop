@@ -475,8 +475,10 @@ function localFeedCaption(stories = []) {
 }
 
 export function sanitizeFeedCaption(value, stories = []) {
-  const supplied = String(value || '').trim();
-  const looksLikePreviousAutomaticCaption = /^🔥\s*Ofertas selecionadas do dia/i.test(supplied) && (/\n•\s/.test(supplied) || /\{offers\}/i.test(supplied));
+  const supplied = String(value || '').trim().slice(0, 2200);
+  const normalizedSupplied = supplied.toLocaleLowerCase('pt-BR');
+  const looksLikePreviousAutomaticCaption = normalizedSupplied.startsWith('🔥 ofertas selecionadas do dia') &&
+    (supplied.includes('\n• ') || normalizedSupplied.includes('{offers}'));
   const useLocalModel = !supplied || supplied === DEFAULT_FEED_CAPTION || looksLikePreviousAutomaticCaption;
   let caption = useLocalModel ? localFeedCaption(stories) : supplied;
   const summary = localFeedSummary(stories);
@@ -1055,11 +1057,20 @@ async function publishFeedPost(config, secrets, imageUrls, caption) {
   return { containerId: carousel.id, mediaId: result.id, childIds };
 }
 
+function validClockTime(value) {
+  const candidate = String(value || '');
+  if (candidate.length !== 5 || candidate[2] !== ':') return false;
+  const hour = Number(candidate.slice(0, 2));
+  const minute = Number(candidate.slice(3));
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 &&
+    Number.isInteger(minute) && minute >= 0 && minute <= 59;
+}
+
 function withinSchedule(config, date = new Date()) {
   const parts = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
   const now = `${parts.find((part) => part.type === 'hour')?.value || '00'}:${parts.find((part) => part.type === 'minute')?.value || '00'}`;
-  const start = /^\d{2}:\d{2}$/.test(config.instagramPublishingStart) ? config.instagramPublishingStart : '08:00';
-  const end = /^\d{2}:\d{2}$/.test(config.instagramPublishingEnd) ? config.instagramPublishingEnd : '23:00';
+  const start = validClockTime(config.instagramPublishingStart) ? config.instagramPublishingStart : '08:00';
+  const end = validClockTime(config.instagramPublishingEnd) ? config.instagramPublishingEnd : '23:00';
   return start <= end ? now >= start && now <= end : now >= start || now <= end;
 }
 
@@ -1073,8 +1084,8 @@ function withinFeedSchedule(config, date = new Date()) {
   if (!allowedDays.includes(weekdayNumbers[weekday])) return false;
   const parts = new Intl.DateTimeFormat('pt-BR', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
   const now = `${parts.find((part) => part.type === 'hour')?.value || '00'}:${parts.find((part) => part.type === 'minute')?.value || '00'}`;
-  const start = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingStart) ? config.instagramFeedPublishingStart : '09:00';
-  const end = /^\d{2}:\d{2}$/.test(config.instagramFeedPublishingEnd) ? config.instagramFeedPublishingEnd : '21:00';
+  const start = validClockTime(config.instagramFeedPublishingStart) ? config.instagramFeedPublishingStart : '09:00';
+  const end = validClockTime(config.instagramFeedPublishingEnd) ? config.instagramFeedPublishingEnd : '21:00';
   return start <= end ? now >= start && now <= end : now >= start || now <= end;
 }
 

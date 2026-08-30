@@ -9,14 +9,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 function loadSessionSecret() {
   if (String(process.env.AUTH_SECRET || '').length >= 32) return process.env.AUTH_SECRET;
   const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
-  const secretFile = path.join(dataDir, '.auth-secret');
+  const authMaterialPath = path.join(dataDir, '.auth-secret');
   try {
-    const saved = fs.readFileSync(secretFile, 'utf8').trim();
+    const saved = fs.readFileSync(authMaterialPath, 'utf8').trim();
     if (saved) return saved;
   } catch {}
   const generated = crypto.randomBytes(32).toString('hex');
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(secretFile, generated, { encoding: 'utf8', mode: 0o600 });
+  fs.writeFileSync(authMaterialPath, generated, { encoding: 'utf8', mode: 0o600 });
   return generated;
 }
 

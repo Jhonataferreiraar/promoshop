@@ -1,5 +1,3 @@
-const COLOR = /^#[0-9a-f]{6}$/i;
-
 export const DEFAULT_INSTAGRAM_THEMES = [
   { id: 'default', name: 'PromoShop', enabled: true, automatic: true, start: '01-01', end: '12-31', priority: 0, background: '#1269f3', background2: '#0848b8', accent: '#ffd84d', text: '#ffffff', decoration: 'spark' },
   { id: 'carnival', name: 'Carnaval', enabled: true, automatic: true, start: '02-01', end: '03-10', priority: 20, background: '#6d28d9', background2: '#db2777', accent: '#fde047', text: '#ffffff', decoration: 'confetti' },
@@ -16,11 +14,19 @@ export const DEFAULT_INSTAGRAM_THEMES = [
 ];
 
 function cleanDate(value, fallback) {
-  return /^\d{2}-\d{2}$/.test(String(value || '')) ? String(value) : fallback;
+  const candidate = String(value || '');
+  const [month, day, extra] = candidate.split('-');
+  const valid = !extra && month?.length === 2 && day?.length === 2 &&
+    Number.isInteger(Number(month)) && Number(month) >= 1 && Number(month) <= 12 &&
+    Number.isInteger(Number(day)) && Number(day) >= 1 && Number(day) <= 31;
+  return valid ? candidate : fallback;
 }
 
 function cleanColor(value, fallback) {
-  return COLOR.test(String(value || '')) ? String(value).toLowerCase() : fallback;
+  const candidate = String(value || '').toLowerCase();
+  const valid = candidate.length === 7 && candidate[0] === '#' &&
+    [...candidate.slice(1)].every((character) => '0123456789abcdef'.includes(character));
+  return valid ? candidate : fallback;
 }
 
 export function sanitizeInstagramThemes(value) {

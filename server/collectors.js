@@ -835,7 +835,7 @@ function parsePercent(value) {
 }
 
 function extractAliProducts(value, found = []) {
-  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+  if (typeof value === 'string' && ['[', '{'].includes(value.trim().charAt(0))) {
     try { return extractAliProducts(JSON.parse(value), found); } catch { return found; }
   }
   if (Array.isArray(value)) {
@@ -852,7 +852,7 @@ function extractAliProducts(value, found = []) {
 }
 
 function extractAliPromoNames(value, found = []) {
-  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+  if (typeof value === 'string' && ['[', '{'].includes(value.trim().charAt(0))) {
     try { return extractAliPromoNames(JSON.parse(value), found); } catch { return found; }
   }
   if (Array.isArray(value)) {
@@ -866,7 +866,7 @@ function extractAliPromoNames(value, found = []) {
 }
 
 function extractAliPromotionLinks(value, found = []) {
-  if (typeof value === 'string' && /^[\[{]/.test(value.trim())) {
+  if (typeof value === 'string' && ['[', '{'].includes(value.trim().charAt(0))) {
     try { return extractAliPromotionLinks(JSON.parse(value), found); } catch { return found; }
   }
   if (Array.isArray(value)) {

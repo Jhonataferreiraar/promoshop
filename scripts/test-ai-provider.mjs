@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
-process.env.AI_API_KEY = 'test-ai-key-placeholder';
-process.env.GEMINI_API_KEY = 'test-gemini-key-placeholder';
+const aiTestCredential = crypto.randomBytes(24).toString('base64url');
+const geminiTestCredential = crypto.randomBytes(24).toString('base64url');
+process.env.AI_API_KEY = aiTestCredential;
+process.env.GEMINI_API_KEY = geminiTestCredential;
 // O teste nunca deve ler as credenciais criptografadas do ambiente do
 // desenvolvedor ou de uma instalação real do painel.
 process.env.DATA_DIR = await mkdtemp(path.join(tmpdir(), 'promoshop-ai-test-'));
@@ -30,7 +33,7 @@ assert.equal(queuedForAi.offerSnapshot.price, 49.9);
 
 globalThis.fetch = async (url, options) => {
   assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
-  assert.equal(options.headers.Authorization, 'Bearer test-ai-key-placeholder');
+  assert.equal(options.headers.Authorization, `Bearer ${aiTestCredential}`);
   const body = JSON.parse(options.body);
   assert.equal(body.model, 'openai/gpt-oss-20b');
   const sentText = body.messages.map((message) => message.content).join('\n');
@@ -67,7 +70,7 @@ try {
 
   globalThis.fetch = async (url, options) => {
     assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
-    assert.equal(options.headers['x-goog-api-key'], 'test-gemini-key-placeholder');
+    assert.equal(options.headers['x-goog-api-key'], geminiTestCredential);
     const body = JSON.parse(options.body);
     assert.equal(body.generationConfig.responseMimeType, 'application/json');
     assert.match(body.contents[0].parts[0].text, /Fone Bluetooth Teste/);

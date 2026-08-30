@@ -9,7 +9,6 @@ RUN apt-get update \
       chromium \
       fonts-liberation \
       fonts-noto-color-emoji \
-      gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -30,6 +29,8 @@ ENV NODE_ENV=production
 ENV WEB_CONCURRENCY=1
 
 EXPOSE 10000
+
+USER node
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 

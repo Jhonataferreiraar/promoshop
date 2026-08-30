@@ -76,7 +76,7 @@ async function retireLocalDataKey() {
 async function encryptSensitive(value) {
   const key = await getDataKey();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
   return {
     __encrypted: 'aes-256-gcm-v1',
@@ -89,8 +89,11 @@ async function encryptSensitive(value) {
 async function decryptSensitive(value) {
   if (!value || value.__encrypted !== 'aes-256-gcm-v1') return { value, encrypted: false };
   const decryptWithKey = (key) => {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(value.iv, 'base64'));
-    decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
+    const iv = Buffer.from(value.iv, 'base64');
+    const tag = Buffer.from(value.tag, 'base64');
+    if (iv.length !== 12 || tag.length !== 16) throw new Error('Dados criptografados inválidos.');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
+    decipher.setAuthTag(tag);
     const plain = Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]);
     return JSON.parse(plain.toString('utf8'));
   };

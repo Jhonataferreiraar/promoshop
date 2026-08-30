@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-ml-oauth-'));
 process.env.DATA_DIR = testDataDir;
@@ -9,16 +10,19 @@ process.env.DATA_DIR = testDataDir;
 try {
   const { readSecrets, secretStatus, updateSecrets } = await import('../server/secrets.js');
   const { beginMercadoLivreAuthorization, finishMercadoLivreAuthorization } = await import('../server/mercadolivre.js');
+  const preservedAiCredential = crypto.randomBytes(24).toString('base64url');
   await Promise.all([
-    updateSecrets({ aiApiKey: 'test-ai-key-that-must-be-preserved' }),
+    updateSecrets({ aiApiKey: preservedAiCredential }),
     updateSecrets({ mercadoLivreUserId: 'concurrent-update' })
   ]);
-  assert.equal((await readSecrets()).aiApiKey, 'test-ai-key-that-must-be-preserved');
-  await updateSecrets({ mercadoLivreClientId: '123456', mercadoLivreClientSecret: 'secret-for-test' });
+  assert.equal((await readSecrets()).aiApiKey, preservedAiCredential);
+  const clientId = String(crypto.randomInt(100000, 999999));
+  const clientCredential = crypto.randomBytes(32).toString('base64url');
+  await updateSecrets({ mercadoLivreClientId: clientId, mercadoLivreClientSecret: clientCredential });
   const redirectUri = 'https://example.com/api/mercadolivre/callback';
   const authorizationUrl = new URL(await beginMercadoLivreAuthorization(redirectUri));
   assert.equal(authorizationUrl.hostname, 'auth.mercadolivre.com.br');
-  assert.equal(authorizationUrl.searchParams.get('client_id'), '123456');
+  assert.equal(authorizationUrl.searchParams.get('client_id'), clientId);
   assert.equal(authorizationUrl.searchParams.get('redirect_uri'), redirectUri);
   assert.equal(authorizationUrl.searchParams.get('code_challenge_method'), 'S256');
   const state = authorizationUrl.searchParams.get('state');

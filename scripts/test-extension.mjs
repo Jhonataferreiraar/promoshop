@@ -3,9 +3,18 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
+
+async function availablePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-extension-'));
-const port = 33000 + Math.floor(Math.random() * 500);
+const port = await availablePort();
 const origin = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['server/index.js'], {
   cwd: path.resolve(import.meta.dirname, '..'),

@@ -13,7 +13,7 @@ const ICONS = [
 ];
 
 function uniqueId() {
-  return `highlight-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return `highlight-${crypto.randomUUID()}`;
 }
 
 export default function InstagramHighlightsPanel({ data, setData, authApi, setMessage, load }) {

@@ -377,7 +377,6 @@ function databaseSsl(connectionString) {
   const mode = String(process.env.PGSSL || '').trim().toLowerCase();
   if (mode === 'disable' || isLocalDatabase(connectionString) || isRenderInternalDatabase(connectionString)) return false;
   const certificate = String(process.env.PGSSL_ROOT_CERT || '').replace(/\\n/g, '\n').trim();
-  if (mode === 'require') return { rejectUnauthorized: false };
   return { rejectUnauthorized: true, ...(certificate ? { ca: certificate } : {}) };
 }
 

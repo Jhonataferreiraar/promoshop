@@ -456,7 +456,8 @@ async function syncGroups(attempt = 1) {
     console.log(`WhatsApp conectado. ${groups.length} grupos/canais disponíveis.`);
   } catch (error) {
     console.error(
-      `Tentativa ${attempt} de carregar grupos falhou:`,
+      'Tentativa %d de carregar grupos falhou: %s\n%s',
+      attempt,
       error?.message || String(error),
       error?.stack || ''
     );
@@ -552,16 +553,9 @@ async function resolveDestinations(item) {
 
       return audienceCodes.some(
         (code) => {
-          const escapedCode =
-            code.replace(
-              /[.*+?^${}()|[\]\\]/g,
-              '\\$&'
-            );
-
-          return new RegExp(
-            `(?:\\||\\s)${escapedCode}\\s*$`,
-            'i'
-          ).test(name);
+          const normalizedName = String(name || '').trim().toUpperCase();
+          const normalizedCode = String(code || '').trim().toUpperCase();
+          return normalizedName.endsWith(`| ${normalizedCode}`) || normalizedName.endsWith(` ${normalizedCode}`);
         }
       );
     });

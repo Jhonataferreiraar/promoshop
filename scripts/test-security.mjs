@@ -3,10 +3,23 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import net from 'node:net';
+import { safeRedirectDestination } from '../server/urlSecurity.js';
+
+async function availablePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
 
 const testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-security-'));
-const port = 32000 + Math.floor(Math.random() * 1000);
+const port = await availablePort();
 const origin = `http://127.0.0.1:${port}`;
+assert.equal(safeRedirectDestination(origin, '/seguranca?origem=teste'), `${origin}/seguranca?origem=teste`);
+assert.equal(safeRedirectDestination(origin, '//dominio-externo.example/phishing'), '');
+assert.equal(safeRedirectDestination(origin, '/seguranca\r\nLocation:https://dominio-externo.example'), '');
 const child = spawn(process.execPath, ['server/index.js'], {
   cwd: path.resolve(import.meta.dirname, '..'),
   env: {

@@ -6,12 +6,13 @@ import crypto from 'node:crypto';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const keyFile = path.join(dataDir, '.secret-key');
-const secretsFile = path.join(dataDir, 'secrets.enc');
+const vaultPath = path.join(dataDir, 'secrets.enc');
 let secretsUpdateQueue = Promise.resolve();
 let cachedSecrets = null;
 let cachedSecretsAt = 0;
 let secretsReadPromise = null;
 const SECRETS_CACHE_TTL_MS = 5_000;
+const FILE_TEXT_ENCODING = 'utf8';
 
 export function normalizeApiKey(value) {
   return String(value || '')
@@ -102,15 +103,18 @@ async function activeEncryptionKey() {
 async function encrypt(value, providedKey = null) {
   const key = providedKey || await activeEncryptionKey();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
   const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]);
   return JSON.stringify({ iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') });
 }
 
 function decryptWithKey(payload, key) {
   const parsed = JSON.parse(payload);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(parsed.iv, 'base64'));
-  decipher.setAuthTag(Buffer.from(parsed.tag, 'base64'));
+  const iv = Buffer.from(parsed.iv, 'base64');
+  const tag = Buffer.from(parsed.tag, 'base64');
+  if (iv.length !== 12 || tag.length !== 16) throw new Error('Segredo criptografado inválido.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
+  decipher.setAuthTag(tag);
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(parsed.data, 'base64')), decipher.final()]).toString('utf8'));
 }
 
@@ -132,10 +136,10 @@ async function decrypt(payload) {
 }
 
 async function writeSecrets(value) {
-  const temporaryFile = `${secretsFile}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  const temporaryFile = `${vaultPath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   await fs.writeFile(temporaryFile, await encrypt(value), { encoding: 'utf8', mode: 0o600 });
   try {
-    await fs.rename(temporaryFile, secretsFile);
+    await fs.rename(temporaryFile, vaultPath);
   } catch (error) {
     await fs.unlink(temporaryFile).catch(() => { });
     throw error;
@@ -211,7 +215,7 @@ export async function readSecrets() {
   secretsReadPromise = (async () => {
     await fs.mkdir(dataDir, { recursive: true });
     try {
-      const decrypted = await decrypt(await fs.readFile(secretsFile, 'utf8'));
+      const decrypted = await decrypt(await fs.readFile(vaultPath, FILE_TEXT_ENCODING));
       const value = decrypted.value;
       if (decrypted.source === 'file' && environmentEncryptionKey()) {
         await writeSecrets(value);

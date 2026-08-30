@@ -8,10 +8,6 @@ function normalizeText(value) {
     .trim();
 }
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function containsKeyword(text, keyword) {
   const normalizedText = normalizeText(text);
   const normalizedKeyword = normalizeText(keyword);
@@ -45,8 +41,7 @@ function containsKeyword(text, keyword) {
     });
   }
 
-  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedKeyword)}(?=\\s|$)`, 'i');
-  return pattern.test(normalizedText);
+  return ` ${normalizedText} `.includes(` ${normalizedKeyword} `);
 }
 
 export const DEFAULT_WHATSAPP_AUDIENCES = [

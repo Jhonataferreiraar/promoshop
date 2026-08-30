@@ -32,10 +32,10 @@ assert.equal(sanitizeInstagramThemes([{ id: 'x', name: 'X', background: 'invalid
 assert.equal(sanitizeInstagramHighlights([{ id: 'offers', name: 'Ofertas', icon: 'invalid', description: 'Teste' }])[0].icon, 'star');
 
 const signedPayload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: '123' })).toString('base64url');
-const signedSecret = 'app-secret-for-test';
-const signedSignature = crypto.createHmac('sha256', signedSecret).update(signedPayload).digest('base64url');
-assert.equal(verifyInstagramSignedRequest(`${signedSignature}.${signedPayload}`, signedSecret).user_id, '123');
-assert.throws(() => verifyInstagramSignedRequest(`invalid.${signedPayload}`, signedSecret));
+const signingKey = crypto.randomBytes(32).toString('hex');
+const signedSignature = crypto.createHmac('sha256', signingKey).update(signedPayload).digest('base64url');
+assert.equal(verifyInstagramSignedRequest(`${signedSignature}.${signedPayload}`, signingKey).user_id, '123');
+assert.throws(() => verifyInstagramSignedRequest(`invalid.${signedPayload}`, signingKey));
 assert.equal(isInstagramRateLimitError({ metaCode: 429, message: 'Too many requests' }), true);
 const futureRetry = new Date(Date.now() + 60_000).toISOString();
 assert.equal(instagramRateLimitUntil({

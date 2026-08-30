@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-auth-cookies-'));
 const previous = {
@@ -13,7 +14,7 @@ const previous = {
 try {
   process.env.NODE_ENV = 'production';
   process.env.DATA_DIR = dataDir;
-  process.env.AUTH_SECRET = 'auth-cookie-test-secret-with-more-than-32-characters';
+  process.env.AUTH_SECRET = crypto.randomBytes(32).toString('hex');
   const auth = await import(`../server/auth.js?production-cookies=${Date.now()}`);
   const headers = [];
   const response = { append(name, value) { if (name === 'Set-Cookie') headers.push(value); } };
