@@ -2114,7 +2114,9 @@ function AdminApp() {
     setDialog({
       type: 'affiliate-link',
       offer,
-      value: offer.productUrl || offer.affiliateUrl || ''
+      value: offer.status === 'active'
+        ? offer.affiliateUrl || offer.productUrl || ''
+        : offer.productUrl || offer.affiliateUrl || ''
     });
   }
   async function confirmAffiliateLink(event) {
@@ -2125,7 +2127,7 @@ function AdminApp() {
       await authApi(`/admin/offers/${dialog.offer.id}`, { method: 'PUT', body: JSON.stringify({ affiliateUrl, status: 'active' }) });
       setDialog(null);
       await load();
-      setMessage('Link confirmado e oferta publicada.');
+      setMessage(dialog.offer.status === 'active' ? 'Link de afiliado atualizado.' : 'Link confirmado e oferta publicada.');
     } catch (error) { setMessage(error.message); }
   }
   async function collect({ pauseRound = false } = {}) {
@@ -2788,7 +2790,10 @@ function AdminApp() {
 
                   <div className="offer-row-actions">
                     <button onClick={() => editOffer(offer)}>Editar</button>
-                    {offer.status === 'active' ? (
+                    <button onClick={() => activateOffer(offer)}>
+                      {offer.status === 'active' ? 'Alterar link' : 'Vincular'}
+                    </button>
+                    {offer.status === 'active' && (
                       <>
                         <button
                           onClick={() =>
@@ -2807,14 +2812,6 @@ function AdminApp() {
                           Publicar agora
                         </button>
                       </>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          activateOffer(offer)
-                        }
-                      >
-                        Vincular
-                      </button>
                     )}
 
                     <button
@@ -3632,7 +3629,7 @@ function AdminApp() {
     </form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
     {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
-  </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' || dialog.type === 'confirm-action' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>VINCULAR OFERTA</span><h2 id="modal-title">Adicionar link de afiliado</h2><p>Cole o link gerado pela ferramenta oficial para liberar esta oferta.</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">Confirmar link</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{dialog.eyebrow || 'EXCLUIR OFERTA'}</span><h2 id="modal-title">{dialog.title || 'Tem certeza?'}</h2><p>{dialog.body || 'A oferta será removida do painel. Esta ação não poderá ser desfeita.'}</p></div>{dialog.offer && <div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div>}<div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>{dialog.cancelLabel || 'Cancelar'}</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>{dialog.confirmLabel || 'Excluir oferta'}</button></div></div>}</section></div>}</div>;
+  </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' || dialog.type === 'confirm-action' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>{dialog.offer?.status === 'active' ? 'ATUALIZAR VÍNCULO' : 'VINCULAR OFERTA'}</span><h2 id="modal-title">{dialog.offer?.status === 'active' ? 'Alterar link de afiliado' : 'Adicionar link de afiliado'}</h2><p>{dialog.offer?.status === 'active' ? 'Substitua o link atual pelo novo endereço de afiliado gerado pela ferramenta oficial.' : 'Cole o link gerado pela ferramenta oficial para liberar esta oferta.'}</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>{dialog.offer?.status === 'active' ? 'O link de afiliado atual está preenchido. Substitua-o e confirme para atualizar.' : 'O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.'}</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">{dialog.offer?.status === 'active' ? 'Atualizar link' : 'Confirmar link'}</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{dialog.eyebrow || 'EXCLUIR OFERTA'}</span><h2 id="modal-title">{dialog.title || 'Tem certeza?'}</h2><p>{dialog.body || 'A oferta será removida do painel. Esta ação não poderá ser desfeita.'}</p></div>{dialog.offer && <div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div>}<div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>{dialog.cancelLabel || 'Cancelar'}</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>{dialog.confirmLabel || 'Excluir oferta'}</button></div></div>}</section></div>}</div>;
 }
 
 function InboxPanel({ messages = [], inboxConfig = {}, onMarkRead, onReply, onDelete, onSetup }) {
