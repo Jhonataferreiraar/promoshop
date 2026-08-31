@@ -66,7 +66,7 @@ import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
 import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
-import { buildProductStructuredData, buildWebsiteStructuredData, latestSeoDate } from './seoStructuredData.js';
+import { buildWebsiteStructuredData, latestSeoDate } from './seoStructuredData.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
 import { buildGroupDirectoryMessage, sanitizeGroupDirectoryCodes } from './groupDirectory.js';
 import {
@@ -9202,6 +9202,7 @@ function pageSeo(config, pathname, origin, offers = []) {
     image: String(offer?.image || config.seoImageUrl || '').trim(),
     offer,
     exists,
+    isOfferRoute: Boolean(offerMatch),
     isCatalogRoute
   };
 }
@@ -9212,18 +9213,15 @@ function injectSeo(html, data, req) {
   const origin = publicSiteOrigin(config, req);
   const seo = pageSeo(config, pathname, origin, data.offers || []);
   const siteName = String(config.seoSiteName || config.brandName || 'PromoShop').trim();
-  const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || seo.exists === false || config.seoIndexingEnabled === false;
-  const schema = seo.offer ? buildProductStructuredData(seo.offer, {
-    canonical: seo.canonical,
-    description: seo.description
-  }) : pathname === '/' ? buildWebsiteStructuredData(config, { origin, description: seo.description }) : null;
+  const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || seo.isOfferRoute || seo.exists === false || config.seoIndexingEnabled === false;
+  const schema = pathname === '/' ? buildWebsiteStructuredData(config, { origin, description: seo.description }) : null;
   const structuredData = config.seoStructuredDataEnabled === false || noIndex || !schema ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`;
   const tags = [
     `<meta name="description" content="${escapeHtml(seo.description)}">`,
     `<meta name="application-name" content="${escapeHtml(siteName)}">`,
     `<meta name="apple-mobile-web-app-title" content="${escapeHtml(siteName)}">`,
     `<meta name="keywords" content="${escapeHtml(config.seoKeywords || '')}">`,
-    `<meta name="robots" content="${noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}">`,
+    `<meta name="robots" content="${noIndex ? (seo.isOfferRoute ? 'noindex, follow' : 'noindex, nofollow') : 'index, follow, max-image-preview:large'}">`,
     seo.exists ? `<link rel="canonical" href="${escapeHtml(seo.canonical)}">` : '',
     '<meta property="og:type" content="website">',
     `<meta property="og:site_name" content="${escapeHtml(siteName)}">`,
@@ -9282,9 +9280,6 @@ app.get('/sitemap.xml', async (req, res) => {
     }
     const storePath = `/loja/${catalogSlug(offer.store)}`;
     if (!storePath.endsWith('/')) entries.set(storePath, latestSeoDate([entries.get(storePath), offerLastmod], homeLastmod));
-  }
-  for (const offer of eligible.slice(0, 450)) {
-    entries.set(`/oferta/${offerPublicSlug(offer)}`, latestSeoDate([offer.updatedAt || offer.createdAt], homeLastmod));
   }
   const urls = [...entries].map(([pathname, lastmod]) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '/' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
