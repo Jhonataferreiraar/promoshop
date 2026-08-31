@@ -5425,7 +5425,7 @@ app.post('/api/admin/instagram/queue/retry-failed', requireAdmin, async (_req, r
       Object.assign(item, { status: 'pending', attempts: 0, retryAt: null, error: null, instagramRateLimited: false, rateLimitedAt: null, metaPublishingStartedAt: null });
       retried += 1;
     }
-    if (retried > 0) appendActivity(data, `Instagram: ${retried} Story(s) com falha retornaram para a fila.`, 'success');
+    if (retried > 0) appendStoreLog(data, `Instagram: ${retried} Story(s) com falha retornaram para a fila.`, 'success');
   });
   res.json({ ok: true, retried });
 });
@@ -5448,7 +5448,7 @@ app.delete('/api/admin/instagram/queue/failed/all', requireAdmin, async (_req, r
     const queue = data.instagramQueue || [];
     deleted = queue.filter((item) => item.status === 'failed').length;
     data.instagramQueue = queue.filter((item) => item.status !== 'failed');
-    if (deleted > 0) appendActivity(data, `Instagram: ${deleted} Story(s) com falha foram excluídos da fila.`, 'success');
+    if (deleted > 0) appendStoreLog(data, `Instagram: ${deleted} Story(s) com falha foram excluídos da fila.`, 'success');
   });
   res.json({ ok: true, deleted });
 });

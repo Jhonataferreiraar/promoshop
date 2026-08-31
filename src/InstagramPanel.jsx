@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ConfirmationModal from './ConfirmationModal.jsx';
 
 const stores = ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'];
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou' };
@@ -24,6 +25,7 @@ function formatThemeDate(value) {
 export default function InstagramPanel({ data, setData, secretForm, setSecretForm, authApi, setMessage, load, audiences = [] }) {
   const [preview, setPreview] = useState('');
   const [busy, setBusy] = useState('');
+  const [confirmDeleteFailed, setConfirmDeleteFailed] = useState(false);
   const config = data.config || {};
   const secrets = data.secrets || {};
   const queue = useMemo(() => [...(data.instagramQueue || [])].reverse(), [data.instagramQueue]);
@@ -124,19 +126,28 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
 
   const deleteAllFailed = () => {
     const failedCount = queue.filter((item) => item.status === 'failed').length;
-    if (!failedCount || !window.confirm(`Excluir permanentemente ${failedCount} Story(s) com falha da fila? As demais publicações não serão alteradas.`)) return;
-    action('delete-all-failed', async () => {
+    if (failedCount) setConfirmDeleteFailed(true);
+  };
+
+  const confirmDeleteAllFailed = async () => {
+    setBusy('delete-all-failed');
+    try {
       const result = await authApi('/admin/instagram/queue/failed/all', { method: 'DELETE' });
       setData((current) => ({
         ...current,
         instagramQueue: (current.instagramQueue || []).filter((item) => item.status !== 'failed')
       }));
+      setConfirmDeleteFailed(false);
       setMessage(`${result.deleted || 0} Story(s) com falha excluído(s) da fila.`);
       await refreshInstagramState();
-    });
+    } catch (error) {
+      setMessage(`Não foi possível excluir as falhas: ${error.message}`);
+    } finally {
+      setBusy('');
+    }
   };
 
-  return <div className="instagram-admin-layout">
+  return <><div className="instagram-admin-layout">
     <section className={`panel instagram-status-card ${connected ? 'connected' : ''}`}>
       <div className="instagram-account">
         <div className="instagram-avatar">{secrets.instagramProfilePictureUrl ? <img src={secrets.instagramProfilePictureUrl} alt="" /> : '◎'}</div>
@@ -197,5 +208,14 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
     </section>
 
     <div className="instagram-save-bar"><div><strong>Importante</strong><span>Salve antes de conectar ou sair desta aba.</span></div><button className="button primary" type="button" disabled={Boolean(busy)} onClick={() => action('save', () => save())}>{busy === 'save' ? 'Salvando…' : 'Salvar configurações do Instagram'}</button></div>
-  </div>;
+  </div><ConfirmationModal
+    open={confirmDeleteFailed}
+    eyebrow="LIMPAR FILA DE STORIES"
+    title="Excluir todos os Stories com falha?"
+    body={`${queue.filter((item) => item.status === 'failed').length} Story(s) com falha serão removidos permanentemente. As publicações aguardando ou já concluídas não serão alteradas.`}
+    confirmLabel="Excluir todas as falhas"
+    onCancel={() => setConfirmDeleteFailed(false)}
+    onConfirm={confirmDeleteAllFailed}
+    busy={busy === 'delete-all-failed'}
+  /></>;
 }
