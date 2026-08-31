@@ -6,17 +6,10 @@ import InstagramFeedPanel from './InstagramFeedPanel.jsx';
 import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
-import { optimizedProductImage } from './imageOptimization.js';
+import { optimizedProductImage, optimizedProductImageSrcSet } from './imageOptimization.js';
 
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
 const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
-
-const deferredFontStylesheet = document.getElementById('promoshop-fonts');
-if (deferredFontStylesheet) {
-  const activateFonts = () => { deferredFontStylesheet.media = 'all'; };
-  if (document.readyState === 'complete') window.requestAnimationFrame(activateFonts);
-  else window.addEventListener('load', activateFonts, { once: true });
-}
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -387,10 +380,11 @@ function readFavorites() {
 }
 
 function OfferCard({ offer, config, favorite = false, onFavorite }) {
-  const image = optimizedProductImage(offer.image, 450);
+  const image = optimizedProductImage(offer.image, 350);
+  const imageSrcSet = optimizedProductImageSrcSet(offer.image);
   return <article className="offer-card">
-    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={image} alt={offer.title} width="450" height="450" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={(event) => { if (event.currentTarget.src !== offer.image) event.currentTarget.src = offer.image; }} /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
-    <div className="offer-content"><div className="offer-meta">{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3><a href={`/oferta/${offer.publicSlug || offer.id}`}>{offer.title}</a></h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
+    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={image} srcSet={imageSrcSet} sizes="(max-width: 640px) calc(100vw - 72px), (max-width: 900px) calc(50vw - 58px), 189px" alt={offer.title} width="350" height="350" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={(event) => { if (event.currentTarget.src !== offer.image) { event.currentTarget.removeAttribute('srcset'); event.currentTarget.src = offer.image; } }} /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
+    <div className="offer-content"><div className="offer-meta">{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3><a href={`/oferta/${offer.publicSlug || offer.id}`}>{offer.title}</a></h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" aria-label={`Ir para a oferta de ${offer.title} no ${offer.store}`} href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
   </article>;
 }
 
@@ -665,7 +659,7 @@ function PublicSite() {
         {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? 'Fechar menu' : 'Abrir menu'} onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
         <nav className={mobileMenuOpen ? 'mobile-open' : ''}>
           <a href="#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a>
-          {coupons.length > 0 && <a href="#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a>}
+          {coupons.length > 0 && <a href="#cupons" aria-label="Ver cupons em destaque" onClick={() => setMobileMenuOpen(false)}>Cupons</a>}
           <a href="#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a>
           <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a>
           {config.instagramUrl && <a href={config.instagramUrl} target="_blank" rel="noreferrer" onClick={() => { setMobileMenuOpen(false); if (config.clickAnalyticsEnabled !== false) trackPublicEvent('instagram', { id: 'header', label: 'Instagram PromoShop', store: 'Instagram' }); }}>Instagram</a>}
@@ -780,6 +774,7 @@ function PublicSite() {
 
                   <a
                     className="button primary full"
+                    aria-label={`Entrar no grupo ${audience.code} — ${audience.name}`}
                     href={audience.whatsappLink}
                     target="_blank"
                     rel="noreferrer"

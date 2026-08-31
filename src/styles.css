@@ -8,6 +8,8 @@
   --soft: #f7f8fa;
   --white: #fff;
   --success: #16a66a;
+  --font-body: Inter, Roboto, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", Inter, Roboto, "Segoe UI", Helvetica, Arial, sans-serif;
 
   --radius-sm: 12px;
   --radius-md: 18px;
@@ -20,7 +22,7 @@
   --shadow-md:
     0 18px 45px rgba(16, 24, 40, .09);
 
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
 
   color: var(--ink);
   background: var(--white);
@@ -83,7 +85,7 @@ body {
 .hero-metrics { display: flex; gap: 0; margin-top: 38px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,.22); }
 .hero-metrics span { min-width: 145px; padding-right: 26px; margin-right: 26px; border-right: 1px solid rgba(255,255,255,.2); display: grid; gap: 3px; }
 .hero-metrics span:last-child { border: 0; margin: 0; padding: 0; }
-.hero-metrics strong { font: 700 18px/1.2 'Manrope', sans-serif; }
+.hero-metrics strong { font: 700 18px/1.2 var(--font-display); }
 .hero-metrics small { color: #fff; font-size: 12px; }
 .site-shell .hero-art { transform: scale(.92); transform-origin: center; }
 
@@ -157,8 +159,8 @@ body {
 .section-heading.centered { justify-content: center; text-align: center; }
 .how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .how-grid article { position: relative; padding: 30px; border: 1px solid #eaecf0; border-radius: 20px; background: #fff; box-shadow: var(--shadow-sm); }
-.how-grid article > span { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 25px; border-radius: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, white); font-weight: 800; }
-.how-grid h3 { margin: 0 0 8px; font: 700 20px/1.2 'Manrope', sans-serif; }
+.how-grid article > span { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 25px; border-radius: 12px; color: #0754ce; background: #eef4ff; font-weight: 800; }
+.how-grid h3 { margin: 0 0 8px; font: 700 20px/1.2 var(--font-display); }
 .how-grid p { margin: 0; color: var(--muted); line-height: 1.6; }
 .site-shell .whatsapp-section { padding: 80px 0; background: #fff; }
 .site-shell .whatsapp-card { padding: 42px 46px; border: 0; border-radius: 24px; color: #fff; background: linear-gradient(120deg, #075e54, #12a269); box-shadow: 0 24px 50px rgba(7,94,84,.2); }
@@ -284,7 +286,7 @@ body {
 .advanced-ai label { margin-top: 13px; }
 .ai-preview { margin-top: 18px; padding: 18px; border: 1px solid #b2ddff; border-radius: 13px; background: #eff8ff; }
 .ai-preview > span { color: #175cd3; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.ai-preview pre { margin: 10px 0 0; color: #1849a9; white-space: pre-wrap; font: 500 13px/1.55 'DM Sans', sans-serif; }
+.ai-preview pre { margin: 10px 0 0; color: #1849a9; white-space: pre-wrap; font: 500 13px/1.55 var(--font-body); }
 .fallback-template { margin-top: 20px; padding-top: 20px; display: grid; gap: 14px; border-top: 1px solid #eaecf0; }
 .fallback-template > div { display: grid; gap: 3px; }
 .fallback-template > div small { color: #98a2b3; }
@@ -417,7 +419,7 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
-  font: 800 23px/1 'Manrope', sans-serif;
+  font: 800 23px/1 var(--font-display);
 }
 
 .logo-mark {
@@ -479,7 +481,7 @@ a {
 }
 
 .hero h1 {
-  font: 800 clamp(48px, 6vw, 78px)/1.03 'Manrope', sans-serif;
+  font: 800 clamp(48px, 6vw, 78px)/1.03 var(--font-display);
   letter-spacing: -3px;
   margin: 0 0 24px;
   max-width: 680px;
@@ -875,7 +877,7 @@ a {
 
 .section-heading h2,
 .whatsapp-card h2 {
-  font: 800 clamp(30px, 4vw, 44px)/1.15 'Manrope';
+  font: 800 clamp(30px, 4vw, 44px)/1.15 var(--font-display);
   margin: 0;
   letter-spacing: -1.5px;
 }
@@ -962,7 +964,7 @@ a {
 
 .offer-content h3 {
   min-height: 50px;
-  font: 700 17px/1.45 'Manrope';
+  font: 700 17px/1.45 var(--font-display);
   margin: 9px 0;
 }
 
@@ -985,7 +987,7 @@ a {
 }
 
 .prices strong {
-  font: 800 27px/1.2 'Manrope';
+  font: 800 27px/1.2 var(--font-display);
 }
 
 .notice,
@@ -1093,7 +1095,7 @@ footer {
 }
 
 .login-card h1 {
-  font: 800 32px/1.15 'Manrope';
+  font: 800 32px/1.15 var(--font-display);
   margin: 6px 0;
 }
 
@@ -1220,12 +1222,12 @@ footer {
 }
 
 .admin-main h1 {
-  font: 800 34px/1.2 'Manrope';
+  font: 800 34px/1.2 var(--font-display);
   margin: 0;
 }
 
 .admin-main h2 {
-  font: 800 20px/1.2 'Manrope';
+  font: 800 20px/1.2 var(--font-display);
   margin: 0 0 22px;
 }
 
@@ -1395,7 +1397,7 @@ footer {
 }
 
 .stats strong {
-  font: 800 34px 'Manrope';
+  font: 800 34px var(--font-display);
 }
 
 .panel {
@@ -4505,8 +4507,8 @@ button {
   margin-bottom: 14px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(18, 105, 243, 0.1);
-  color: var(--primary);
+  background: #eef4ff;
+  color: #0754ce;
   font-size: 12px;
   font-weight: 800;
 }
@@ -5046,15 +5048,15 @@ button {
 .coupon-card { display: flex; flex-direction: column; min-width: 0; height: 100%; gap: 13px; padding: 22px; border: 1px solid #e4e7ec; border-radius: 18px; background: #fff; box-shadow: var(--shadow-sm); }
 .coupon-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #667085; font-size: 12px; }
 .coupon-store { color: #1269f3; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
-.coupon-card h3 { margin: 0; font: 800 20px/1.25 'Manrope'; }
+.coupon-card h3 { margin: 0; font: 800 20px/1.25 var(--font-display); }
 .coupon-card p { margin: 0; color: #667085; line-height: 1.5; }
 .coupon-card .coupon-description { display: -webkit-box; min-height: 3em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .coupon-card h3 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .connection-progress-note { display: block; margin-top: 8px; color: #175cd3; font-weight: 700; }
 .coupon-card-actions { display: grid; gap: 13px; margin-top: auto; }
-.coupon-discount { color: #079b63; font: 800 22px 'Manrope'; }
+.coupon-discount { color: #079b63; font: 800 22px var(--font-display); }
 .coupon-code { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px dashed #98a2b3; border-radius: 10px; background: #f8fafc; }
-.coupon-code span { min-width: 0; overflow-wrap: anywhere; color: #101828; font: 800 15px/1.2 'Manrope'; letter-spacing: .08em; }
+.coupon-code span { min-width: 0; overflow-wrap: anywhere; color: #101828; font: 800 15px/1.2 var(--font-display); letter-spacing: .08em; }
 .coupon-code button { border: 0; color: var(--primary); background: transparent; font-weight: 800; cursor: pointer; }
 
 /* Cupons no painel */
@@ -5382,7 +5384,7 @@ button {
 .site-shell .site-footer .footer-brand { display: grid; gap: 11px; }
 .site-shell .site-footer .footer-brand .logo { width: fit-content; color: #fff; }
 .site-shell .site-footer .footer-brand p { max-width: 360px; margin: 0; color: #aab8cc; font-size: 13px; line-height: 1.55; }
-.site-shell .site-footer .footer-brand small { color: #71819a; font-size: 12px; }
+.site-shell .site-footer .footer-brand small { color: #aab8cc; font-size: 12px; }
 .site-shell .site-footer .footer-column { display: grid; align-content: start; justify-items: start; gap: 10px; }
 .site-shell .site-footer .footer-column h3 { margin: 2px 0 5px; color: #fff; font-size: 13px; letter-spacing: .02em; }
 .site-shell .site-footer .footer-column a,
@@ -5390,11 +5392,11 @@ button {
 .site-shell .site-footer .footer-column a:hover,
 .site-shell .site-footer .footer-privacy-button:hover { color: #fff; }
 .site-shell .site-footer .footer-privacy-button { margin: 0; padding: 0; border: 0; color: #aab8cc; background: transparent; font: inherit; font-size: 13px; line-height: 1.45; text-align: left; cursor: pointer; }
-.site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #71819a; font-size: 11px; line-height: 1.5; }
+.site-shell .site-footer .footer-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; margin-top: 38px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); color: #aab8cc; font-size: 11px; line-height: 1.5; }
 .privacy-consent { position: fixed; z-index: 1000; right: 24px; bottom: 24px; left: 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; width: min(1040px, calc(100% - 48px)); margin-inline: auto; padding: 18px; border: 1px solid #d0d5dd; border-radius: 18px; color: #101828; background: rgba(255,255,255,.98); box-shadow: 0 24px 70px rgba(16,24,40,.22); backdrop-filter: blur(12px); }
 .privacy-consent-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #fff; background: var(--primary); font-weight: 900; box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 25%, transparent); }
 .privacy-consent-copy { min-width: 0; }
-.privacy-consent-copy > h2 { margin: 0 0 4px; font: 800 15px/1.3 'Manrope', sans-serif; }
+.privacy-consent-copy > h2 { margin: 0 0 4px; font: 800 15px/1.3 var(--font-display); }
 .privacy-consent-copy p { max-width: 680px; margin: 0; color: #475467; font-size: 13px; line-height: 1.5; }
 .privacy-consent-copy > span { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 7px; }
 .privacy-consent-copy a { color: var(--primary); font-size: 12px; font-weight: 800; }
