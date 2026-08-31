@@ -16,6 +16,13 @@ function calculateDiscount(price, originalPrice) {
   return Math.round((1 - price / originalPrice) * 100);
 }
 
+function mercadoLivreAttribute(item, identifiers) {
+  const accepted = new Set(identifiers);
+  const attributes = [item?.attributes, item?.buy_box_winner?.attributes].flat().filter(Boolean);
+  const match = attributes.find((attribute) => accepted.has(String(attribute?.id || '').toUpperCase()));
+  return String(match?.value_name || match?.value_id || '').trim();
+}
+
 function normalizeMercadoLivre(item) {
   const price = Number(item.price || 0);
   const originalPrice = Number(item.original_price || item.originalPrice || 0);
@@ -31,6 +38,9 @@ function normalizeMercadoLivre(item) {
     productUrl: item.permalink,
     affiliateUrl: item.permalink,
     freeShipping: Boolean(item.shipping?.free_shipping),
+    brand: mercadoLivreAttribute(item, ['BRAND']),
+    gtin: mercadoLivreAttribute(item, ['GTIN', 'EAN', 'UPC']),
+    mpn: mercadoLivreAttribute(item, ['MANUFACTURER_PART_NUMBER', 'PART_NUMBER']),
     featured: calculateDiscount(price, originalPrice) >= 30,
     status: 'pending-link',
     source: 'mercado-livre',
@@ -59,6 +69,9 @@ function normalizeMercadoLivreCatalog(product) {
     productUrl: permalink,
     affiliateUrl: permalink,
     freeShipping: Boolean(winner.shipping?.free_shipping),
+    brand: mercadoLivreAttribute(product, ['BRAND']),
+    gtin: mercadoLivreAttribute(product, ['GTIN', 'EAN', 'UPC']),
+    mpn: mercadoLivreAttribute(product, ['MANUFACTURER_PART_NUMBER', 'PART_NUMBER']),
     featured: calculateDiscount(price, originalPrice) >= 30,
     status: 'pending-link',
     source: 'mercado-livre',
@@ -1049,7 +1062,10 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
       const savedOffer = existing.get(offer.id) || data.offers.find((entry) => queueItemSourceMatches(entry, offer));
       if (savedOffer) {
         existing.set(offer.id, savedOffer);
-        for (const key of ['title', 'store', 'category', 'price', 'originalPrice', 'image', 'freeShipping', 'featured']) {
+        for (const key of [
+          'title', 'store', 'category', 'price', 'originalPrice', 'image', 'freeShipping', 'featured',
+          'externalId', 'brand', 'gtin', 'mpn', 'rating', 'ratingCount'
+        ]) {
           if (offer[key] !== undefined && offer[key] !== null && offer[key] !== '') savedOffer[key] = offer[key];
         }
         savedOffer.updatedAt = refreshedAt;

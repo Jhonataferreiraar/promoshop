@@ -66,6 +66,7 @@ import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
 import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
+import { buildProductStructuredData } from './seoStructuredData.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
 import { buildGroupDirectoryMessage, sanitizeGroupDirectoryCodes } from './groupDirectory.js';
 import {
@@ -9199,13 +9200,10 @@ function injectSeo(html, data, req) {
   const seo = pageSeo(config, pathname, origin, data.offers || []);
   const siteName = String(config.seoSiteName || config.brandName || 'PromoShop').trim();
   const noIndex = pathname.startsWith('/admin') || pathname === '/favoritos' || seo.exists === false || config.seoIndexingEnabled === false;
-  const schema = seo.offer ? {
-    '@context': 'https://schema.org', '@type': 'Product', name: seo.offer.title,
-    image: seo.offer.image ? [seo.offer.image] : undefined,
-    description: seo.description,
-    category: seo.offer.category || undefined,
-    offers: { '@type': 'Offer', url: seo.canonical, priceCurrency: 'BRL', price: Number(seo.offer.price || 0).toFixed(2), availability: 'https://schema.org/InStock', seller: { '@type': 'Organization', name: seo.offer.store || 'Loja parceira' } }
-  } : pathname === '/' ? {
+  const schema = seo.offer ? buildProductStructuredData(seo.offer, {
+    canonical: seo.canonical,
+    description: seo.description
+  }) : pathname === '/' ? {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: siteName,
