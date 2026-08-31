@@ -5393,6 +5393,17 @@ app.post('/api/admin/instagram/feed/queue/:id/retry', requireAdmin, async (req, 
   res.json({ ok: true });
 });
 
+app.delete('/api/admin/instagram/feed/queue/failed/all', requireAdmin, async (_req, res) => {
+  let deleted = 0;
+  await updateStore((data) => {
+    const queue = data.instagramFeedQueue || [];
+    deleted = queue.filter((item) => item.status === 'failed').length;
+    data.instagramFeedQueue = queue.filter((item) => item.status !== 'failed');
+    if (deleted > 0) appendStoreLog(data, `Instagram Feed: ${deleted} publicação(ões) com falha foram excluídas da fila.`, 'success');
+  });
+  res.json({ ok: true, deleted });
+});
+
 app.delete('/api/admin/instagram/feed/queue/:id', requireAdmin, async (req, res) => {
   let removed = false;
   await updateStore((data) => {

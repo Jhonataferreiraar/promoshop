@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ConfirmationModal from './ConfirmationModal.jsx';
 
 const statusText = { pending: 'Aguardando', publishing: 'Publicando', sent: 'Publicado', failed: 'Falhou', cancelled: 'Cancelado' };
 const templateText = { classic: 'Original', editorial: 'Seleção PromoShop', spotlight: 'Destaque', split: 'Capa dividida', showcase: 'Vitrine', minimal: 'Essencial', flash: 'Oferta relâmpago' };
@@ -36,6 +37,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
   const [previewUrls, setPreviewUrls] = useState([]);
   const [previewTemplates, setPreviewTemplates] = useState([]);
   const [busy, setBusy] = useState('');
+  const [confirmDeleteFailed, setConfirmDeleteFailed] = useState(false);
   const themes = Array.isArray(config.instagramThemes) ? config.instagramThemes.filter((theme) => theme.enabled !== false) : [];
   const queue = useMemo(() => [...(data.instagramFeedQueue || [])].reverse(), [data.instagramFeedQueue]);
   const sources = useMemo(() => [
@@ -132,6 +134,28 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
     finally { setBusy(''); }
   }
 
+  function deleteAllFailed() {
+    if (queue.some((item) => item.status === 'failed')) setConfirmDeleteFailed(true);
+  }
+
+  async function confirmDeleteAllFailed() {
+    setBusy('delete-all-failed');
+    try {
+      const result = await authApi('/admin/instagram/feed/queue/failed/all', { method: 'DELETE' });
+      setData((current) => ({
+        ...current,
+        instagramFeedQueue: (current.instagramFeedQueue || []).filter((item) => item.status !== 'failed')
+      }));
+      setConfirmDeleteFailed(false);
+      setMessage(`${result.deleted || 0} post(s) com falha excluído(s) da fila do Feed.`);
+      await refreshFeedState();
+    } catch (error) {
+      setMessage(`Não foi possível excluir as falhas do Feed: ${error.message}`);
+    } finally {
+      setBusy('');
+    }
+  }
+
   function togglePublishingDay(day, checked) {
     const current = Array.isArray(config.instagramFeedPublishingDays) && config.instagramFeedPublishingDays.length ? config.instagramFeedPublishingDays : [1, 3, 5];
     const next = checked ? [...new Set([...current, day])] : current.filter((entry) => Number(entry) !== day);
@@ -139,7 +163,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
     setConfig({ instagramFeedPublishingDays: next.sort((a, b) => a - b) });
   }
 
-  return <section className="panel instagram-feed-panel">
+  return <><section className="panel instagram-feed-panel">
     <div className="panel-heading"><div><span className="section-step">FEED DO INSTAGRAM</span><h2>Posts e carrosséis automáticos</h2><p>O Feed fica separado dos Stories e, na automação, usa as promoções mais recentes que foram publicadas nos grupos.</p></div></div>
     {rateLimited && <div className="instagram-feed-auto-summary"><span>!</span><div><strong>Publicações pausadas pela Meta</strong><p>A Meta detectou excesso de ações. A automação não fará novas tentativas até aproximadamente {formatDate(rateLimitedUntil)}, evitando repetição e novos bloqueios.</p></div></div>}
     <div className="instagram-toggle-grid">
@@ -180,6 +204,15 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
       </div>
       <div className="instagram-preview instagram-feed-preview">{previewUrls.length ? <><div className="instagram-feed-preview-grid">{previewUrls.map((url) => <img key={url} src={url} alt="Prévia do post do Feed" />)}</div>{previewTemplates.length > 0 && <strong>Modelo gerado: {[...new Set(previewTemplates.map((item) => templateText[item] || item))].join(', ')}</strong>}</> : <div><strong>Prévia do Feed</strong><p>Selecione os itens e gere uma prévia antes de colocar na fila.</p></div>}<small>O post usa “Acesse a bio do perfil” e não exibe links diretos na descrição.</small></div>
     </div>
-    <div className="instagram-queue-panel instagram-feed-queue"><div className="panel-heading"><div><span className="section-step">FILA DO FEED</span><h2>Posts recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div></div><div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.assetFileNames?.[0] ? <img src={`/media/instagram/${item.assetFileNames[0]}`} alt="" /> : item.postType === 'carousel' ? '▦' : '◇'}</div><div><strong>{item.title}</strong><span>{item.postType === 'carousel' ? `Carrossel · ${item.items?.length || 0} itens` : 'Post único'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.scheduledFor || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status === 'pending' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && item.status !== 'sent' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Feed está vazia</strong><p>As publicações automáticas e manuais aparecerão aqui.</p></div>}</div></div>
-  </section>;
+    <div className="instagram-queue-panel instagram-feed-queue"><div className="panel-heading"><div><span className="section-step">FILA DO FEED</span><h2>Posts recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div>{queue.some((item) => item.status === 'failed') && <div className="instagram-queue-bulk-actions"><button className="button danger" type="button" disabled={Boolean(busy)} onClick={deleteAllFailed}>{busy === 'delete-all-failed' ? 'Excluindo…' : 'Excluir todas as falhas'}</button></div>}</div><div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.assetFileNames?.[0] ? <img src={`/media/instagram/${item.assetFileNames[0]}`} alt="" /> : item.postType === 'carousel' ? '▦' : '◇'}</div><div><strong>{item.title}</strong><span>{item.postType === 'carousel' ? `Carrossel · ${item.items?.length || 0} itens` : 'Post único'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.scheduledFor || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status === 'pending' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && item.status !== 'sent' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Feed está vazia</strong><p>As publicações automáticas e manuais aparecerão aqui.</p></div>}</div></div>
+  </section><ConfirmationModal
+    open={confirmDeleteFailed}
+    eyebrow="LIMPAR FILA DO FEED"
+    title="Excluir todos os posts com falha?"
+    body={`${queue.filter((item) => item.status === 'failed').length} post(s) com falha serão removidos permanentemente. As publicações aguardando ou já concluídas não serão alteradas.`}
+    confirmLabel="Excluir todas as falhas"
+    onCancel={() => setConfirmDeleteFailed(false)}
+    onConfirm={confirmDeleteAllFailed}
+    busy={busy === 'delete-all-failed'}
+  /></>;
 }
