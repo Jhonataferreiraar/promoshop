@@ -166,6 +166,7 @@ const initialData = {
     seoImageUrl: '',
     seoIndexingEnabled: true,
     seoStructuredDataEnabled: true,
+    updatedAt: null,
     publicOfferPageSize: 24,
     publicOfferMaxAgeDays: 45,
     smartRankingEnabled: true,

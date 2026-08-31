@@ -66,7 +66,7 @@ import {
   getAudienceCodesForOffer
 } from './audienceRouting.js';
 import { normalizeSearchText, rankProductSearchResults } from './searchRelevance.js';
-import { buildProductStructuredData } from './seoStructuredData.js';
+import { buildProductStructuredData, buildWebsiteStructuredData, latestSeoDate } from './seoStructuredData.js';
 import { stripAffiliateDisclosure } from './messageSanitizer.js';
 import { buildGroupDirectoryMessage, sanitizeGroupDirectoryCodes } from './groupDirectory.js';
 import {
@@ -4075,6 +4075,8 @@ app.put(
 
           data.meta.publicationRound = null;
         }
+
+        data.config.updatedAt = new Date().toISOString();
 
         if (
           writingStyleChanged
@@ -9196,7 +9198,7 @@ function pageSeo(config, pathname, origin, offers = []) {
   return {
     title: page?.[0] || fallbackTitle,
     description: page?.[1] || fallbackDescription,
-    canonical: `${origin}${pathname === '/' ? '' : pathname}`,
+    canonical: `${origin}${pathname === '/' ? '/' : pathname}`,
     image: String(offer?.image || config.seoImageUrl || '').trim(),
     offer,
     exists,
@@ -9214,28 +9216,12 @@ function injectSeo(html, data, req) {
   const schema = seo.offer ? buildProductStructuredData(seo.offer, {
     canonical: seo.canonical,
     description: seo.description
-  }) : pathname === '/' ? {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: siteName,
-    alternateName: [...new Set([
-      config.brandName || 'PromoShop',
-      config.seoTitle || '',
-      new URL(origin).hostname.toLowerCase()
-    ].map((value) => String(value || '').trim()).filter((value) => value && value !== siteName))],
-    url: origin,
-    description: seo.description,
-    publisher: {
-      '@type': 'Organization',
-      name: config.brandName || 'PromoShop',
-      url: origin,
-      logo: `${origin}/favicon-512.png`,
-      email: config.contactEmail || undefined
-    }
-  } : null;
+  }) : pathname === '/' ? buildWebsiteStructuredData(config, { origin, description: seo.description }) : null;
   const structuredData = config.seoStructuredDataEnabled === false || noIndex || !schema ? '' : `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`;
   const tags = [
     `<meta name="description" content="${escapeHtml(seo.description)}">`,
+    `<meta name="application-name" content="${escapeHtml(siteName)}">`,
+    `<meta name="apple-mobile-web-app-title" content="${escapeHtml(siteName)}">`,
     `<meta name="keywords" content="${escapeHtml(config.seoKeywords || '')}">`,
     `<meta name="robots" content="${noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}">`,
     seo.exists ? `<link rel="canonical" href="${escapeHtml(seo.canonical)}">` : '',
@@ -9268,18 +9254,39 @@ app.get('/robots.txt', async (req, res) => {
 });
 
 app.get('/sitemap.xml', async (req, res) => {
-  const { config, offers } = await readStore();
+  const { config, offers, coupons } = await readStore();
   if (config.seoIndexingEnabled === false) return res.status(404).end();
   const origin = publicSiteOrigin(config, req);
-  const lastmod = String(config.legalPolicyVersion || privacyPolicyVersion).slice(0, 10);
+  const legalLastmod = latestSeoDate([], config.legalPolicyVersion || privacyPolicyVersion);
   const eligible = (offers || []).filter((offer) => publicOfferAllowed(offer, config));
-  const paths = ['/', '/cupons', '/sobre', '/contato', '/termos-de-uso', '/privacidade', '/exclusao-de-dados'];
-  const catalogPaths = [
-    ...new Set(eligible.filter((offer) => publicCategoryAllowed(offer.category)).map((offer) => `/ofertas/${catalogSlug(offer.category)}`).filter((path) => !path.endsWith('/'))),
-    ...new Set(eligible.map((offer) => `/loja/${catalogSlug(offer.store)}`).filter((path) => !path.endsWith('/'))),
-    ...eligible.slice(0, 450).map((offer) => `/oferta/${offerPublicSlug(offer)}`)
-  ];
-  const urls = [...paths, ...catalogPaths].map((pathname) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
+  const activeCoupons = (coupons || []).filter((coupon) => publicCouponAllowed(coupon));
+  const homeLastmod = latestSeoDate([
+    config.updatedAt,
+    ...eligible.map((offer) => offer.updatedAt || offer.createdAt),
+    ...activeCoupons.map((coupon) => coupon.updatedAt || coupon.createdAt)
+  ], legalLastmod);
+  const entries = new Map([
+    ['/', homeLastmod],
+    ['/cupons', latestSeoDate(activeCoupons.map((coupon) => coupon.updatedAt || coupon.createdAt), homeLastmod)],
+    ['/sobre', legalLastmod],
+    ['/contato', legalLastmod],
+    ['/termos-de-uso', legalLastmod],
+    ['/privacidade', legalLastmod],
+    ['/exclusao-de-dados', legalLastmod]
+  ]);
+  for (const offer of eligible) {
+    const offerLastmod = latestSeoDate([offer.updatedAt || offer.createdAt], homeLastmod);
+    if (publicCategoryAllowed(offer.category)) {
+      const categoryPath = `/ofertas/${catalogSlug(offer.category)}`;
+      if (!categoryPath.endsWith('/')) entries.set(categoryPath, latestSeoDate([entries.get(categoryPath), offerLastmod], homeLastmod));
+    }
+    const storePath = `/loja/${catalogSlug(offer.store)}`;
+    if (!storePath.endsWith('/')) entries.set(storePath, latestSeoDate([entries.get(storePath), offerLastmod], homeLastmod));
+  }
+  for (const offer of eligible.slice(0, 450)) {
+    entries.set(`/oferta/${offerPublicSlug(offer)}`, latestSeoDate([offer.updatedAt || offer.createdAt], homeLastmod));
+  }
+  const urls = [...entries].map(([pathname, lastmod]) => `<url><loc>${xmlEscape(`${origin}${pathname === '/' ? '/' : pathname}`)}</loc><lastmod>${xmlEscape(lastmod)}</lastmod></url>`).join('');
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
 });
 

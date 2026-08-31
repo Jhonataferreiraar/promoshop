@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { buildProductStructuredData, normalizeGtin } from '../server/seoStructuredData.js';
+import { buildProductStructuredData, buildWebsiteStructuredData, latestSeoDate, normalizeGtin } from '../server/seoStructuredData.js';
 
 assert.equal(normalizeGtin('7894900011517'), '7894900011517');
 assert.equal(normalizeGtin('7894900011518'), '');
@@ -30,5 +30,28 @@ const conservativeSchema = buildProductStructuredData({ id: 'offer-2', title: 'P
 assert.equal(conservativeSchema.brand, undefined);
 assert.equal(conservativeSchema.aggregateRating, undefined);
 assert.equal(conservativeSchema.review, undefined);
+
+const websiteSchema = buildWebsiteStructuredData({
+  brandName: 'PromoShop',
+  seoSiteName: 'PromoShop',
+  seoTitle: 'PromoShop - Ofertas Diárias',
+  contactEmail: 'contato@example.com',
+  instagramUrl: 'https://www.instagram.com/promoshop/'
+}, {
+  origin: 'https://promoshop.example',
+  description: 'Ofertas selecionadas.'
+});
+const website = websiteSchema['@graph'].find((item) => item['@type'] === 'WebSite');
+const organization = websiteSchema['@graph'].find((item) => item['@type'] === 'Organization');
+assert.equal(website.name, 'PromoShop');
+assert.equal(website.alternateName, 'Promo Shop');
+assert.equal(website.url, 'https://promoshop.example/');
+assert.notEqual(website.alternateName, 'promoshop.example');
+assert.equal(organization.logo.url, 'https://promoshop.example/favicon-512.png');
+assert.equal(organization.logo.width, 512);
+assert.deepEqual(organization.sameAs, ['https://www.instagram.com/promoshop/']);
+
+assert.equal(latestSeoDate(['2026-08-28T12:00:00Z', '2026-08-31T01:00:00Z'], '2026-08-23'), '2026-08-31');
+assert.equal(latestSeoDate([], '2026-08-23-v5'), '2026-08-23');
 
 console.log('SEO: Product e AggregateOffer validados sem dados comerciais inventados.');
