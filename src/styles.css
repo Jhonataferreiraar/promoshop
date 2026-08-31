@@ -84,7 +84,7 @@ body {
 .hero-metrics span { min-width: 145px; padding-right: 26px; margin-right: 26px; border-right: 1px solid rgba(255,255,255,.2); display: grid; gap: 3px; }
 .hero-metrics span:last-child { border: 0; margin: 0; padding: 0; }
 .hero-metrics strong { font: 700 18px/1.2 'Manrope', sans-serif; }
-.hero-metrics small { color: rgba(255,255,255,.66); font-size: 12px; }
+.hero-metrics small { color: #fff; font-size: 12px; }
 .site-shell .hero-art { transform: scale(.92); transform-origin: center; }
 
 /* Discovery and filters */
@@ -470,7 +470,7 @@ a {
   font-weight: 800;
   font-size: 12px;
   letter-spacing: 1.8px;
-  color: #bcd7ff;
+  color: #fff;
   margin-bottom: 17px;
 }
 
@@ -5394,7 +5394,7 @@ button {
 .privacy-consent { position: fixed; z-index: 1000; right: 24px; bottom: 24px; left: 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; width: min(1040px, calc(100% - 48px)); margin-inline: auto; padding: 18px; border: 1px solid #d0d5dd; border-radius: 18px; color: #101828; background: rgba(255,255,255,.98); box-shadow: 0 24px 70px rgba(16,24,40,.22); backdrop-filter: blur(12px); }
 .privacy-consent-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #fff; background: var(--primary); font-weight: 900; box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 25%, transparent); }
 .privacy-consent-copy { min-width: 0; }
-.privacy-consent-copy > strong { display: block; margin-bottom: 4px; font: 800 15px/1.3 'Manrope', sans-serif; }
+.privacy-consent-copy > h2 { margin: 0 0 4px; font: 800 15px/1.3 'Manrope', sans-serif; }
 .privacy-consent-copy p { max-width: 680px; margin: 0; color: #475467; font-size: 13px; line-height: 1.5; }
 .privacy-consent-copy > span { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 7px; }
 .privacy-consent-copy a { color: var(--primary); font-size: 12px; font-weight: 800; }

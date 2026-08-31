@@ -6,9 +6,17 @@ import InstagramFeedPanel from './InstagramFeedPanel.jsx';
 import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
+import { optimizedProductImage } from './imageOptimization.js';
 
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
 const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
+
+const deferredFontStylesheet = document.getElementById('promoshop-fonts');
+if (deferredFontStylesheet) {
+  const activateFonts = () => { deferredFontStylesheet.media = 'all'; };
+  if (document.readyState === 'complete') window.requestAnimationFrame(activateFonts);
+  else window.addEventListener('load', activateFonts, { once: true });
+}
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -350,10 +358,10 @@ function PrivacyConsent({ policyVersion = privacyPolicyVersion }) {
 
   if (!open) return null;
 
-  return <aside className="privacy-consent" role="dialog" aria-label="Preferências de privacidade" aria-live="polite">
+  return <section className="privacy-consent" aria-labelledby="privacy-consent-title" aria-live="polite">
     <div className="privacy-consent-icon" aria-hidden="true">✓</div>
     <div className="privacy-consent-copy">
-      <strong>Privacidade e medição de acessos</strong>
+      <h2 id="privacy-consent-title">Privacidade e medição de acessos</h2>
       <p>Com sua autorização, usamos um identificador anônimo no navegador para contar visitas e interações com ofertas, cupons e grupos. Não guardamos seu nome ou IP nessa medição. O site continua funcionando normalmente se você rejeitar.</p>
       <span><a href="/privacidade">Política de Privacidade</a><a href="/termos-de-uso">Termos de Uso</a>{choice && <small>Escolha atual: {choice === 'accepted' ? 'medição aceita' : 'medição rejeitada'}.</small>}</span>
     </div>
@@ -361,7 +369,7 @@ function PrivacyConsent({ policyVersion = privacyPolicyVersion }) {
       <button type="button" className="privacy-reject" onClick={() => choose('rejected')}>Rejeitar</button>
       <button type="button" className="privacy-accept" onClick={() => choose('accepted')}>Aceitar medição</button>
     </div>
-  </aside>;
+  </section>;
 }
 
 function discount(offer) {
@@ -379,8 +387,9 @@ function readFavorites() {
 }
 
 function OfferCard({ offer, config, favorite = false, onFavorite }) {
+  const image = optimizedProductImage(offer.image, 450);
   return <article className="offer-card">
-    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={offer.image} alt={offer.title} width="640" height="640" loading="lazy" decoding="async" referrerPolicy="no-referrer" /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
+    <div className="offer-image"><a href={`/oferta/${offer.publicSlug || offer.id}`} aria-label={`Ver detalhes de ${offer.title}`}><img src={image} alt={offer.title} width="450" height="450" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={(event) => { if (event.currentTarget.src !== offer.image) event.currentTarget.src = offer.image; }} /></a>{discount(offer) > 0 && <span className="discount">{discount(offer)}% OFF</span>}<span className={`store-badge ${String(offer.store).toLowerCase().includes('shopee') ? 'shopee' : String(offer.store).toLowerCase().includes('aliexpress') ? 'aliexpress' : 'mercado'}`}>{offer.store}</span>{config.favoritesEnabled !== false && <button type="button" className={`favorite-button ${favorite ? 'active' : ''}`} aria-label={favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={() => onFavorite?.(offer)}>{favorite ? '♥' : '♡'}</button>}</div>
     <div className="offer-content"><div className="offer-meta">{offer.freeShipping && <span className="shipping">Frete grátis</span>}</div><h3><a href={`/oferta/${offer.publicSlug || offer.id}`}>{offer.title}</a></h3><div className="prices"><s>{offer.originalPrice && offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong><small>Preço, estoque e condições devem ser confirmados na loja.</small></div>{config.showOfferUpdatedAt !== false && (offer.updatedAt || offer.createdAt) && <small className="offer-updated">Atualizada em {new Date(offer.updatedAt || offer.createdAt).toLocaleDateString('pt-BR')}</small>}<small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><a className="button primary full" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ir para a oferta <span>↗</span></a></div>
   </article>;
 }
@@ -837,7 +846,7 @@ function PublicSite() {
                               {chatMessage.products.map((product) => (
                                 <article className="assistant-product" key={product.id}>
                                   <a className="assistant-product-image" href={`/oferta/${product.publicSlug || product.id}`}>
-                                    <img src={product.image} alt={product.title} width="96" height="96" loading="lazy" referrerPolicy="no-referrer" />
+                                    <img src={optimizedProductImage(product.image, 200)} alt={product.title} width="96" height="96" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={(event) => { if (event.currentTarget.src !== product.image) event.currentTarget.src = product.image; }} />
                                   </a>
                                   <div>
                                     <small>{product.store}{product.discount > 0 ? ` · ${product.discount}% OFF` : ''}</small>
