@@ -129,7 +129,7 @@ body {
 .results-count { padding: 10px 14px; border: 1px solid #eaecf0; border-radius: 999px; color: #667085; background: #f9fafb; font-size: 13px; }
 .results-count strong { color: var(--ink); }
 .site-shell .offer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
-.site-shell .offer-card { min-width: 0; border: 1px solid #e4e7ec; border-radius: 18px; box-shadow: var(--shadow-sm); overflow: hidden; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.site-shell .offer-card { min-width: 0; height: 100%; display: flex; flex-direction: column; border: 1px solid #e4e7ec; border-radius: 18px; box-shadow: var(--shadow-sm); overflow: hidden; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
 .site-shell .offer-card:hover { transform: translateY(-4px); border-color: #cdd5df; box-shadow: 0 18px 34px rgba(16,24,40,.1); }
 .site-shell .offer-image { height: 225px; padding: 18px; background: #f8fafc; }
 .site-shell .offer-image img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
@@ -138,7 +138,7 @@ body {
 .site-shell .store-badge.shopee { color: #c4320a; background: #fff4ed; border-color: #ffdfc7; }
 .site-shell .store-badge.aliexpress { color: #c01048; background: #fff1f3; border-color: #fecdd6; }
 .site-shell .store-badge.mercado { color: #854a0e; background: #fffaeb; border-color: #fedf89; }
-.site-shell .offer-content { min-height: 245px; padding: 18px; display: flex; flex-direction: column; }
+.site-shell .offer-content { min-height: 245px; padding: 18px; display: flex; flex: 1; flex-direction: column; }
 .offer-meta { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .offer-meta:has(.shipping:only-child) { justify-content: flex-end; }
 .offer-meta > small { max-width: 68%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #667085; font-size: 11px; text-transform: none; }
