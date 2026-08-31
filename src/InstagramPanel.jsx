@@ -122,6 +122,20 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
     await refreshInstagramState();
   });
 
+  const deleteAllFailed = () => {
+    const failedCount = queue.filter((item) => item.status === 'failed').length;
+    if (!failedCount || !window.confirm(`Excluir permanentemente ${failedCount} Story(s) com falha da fila? As demais publicações não serão alteradas.`)) return;
+    action('delete-all-failed', async () => {
+      const result = await authApi('/admin/instagram/queue/failed/all', { method: 'DELETE' });
+      setData((current) => ({
+        ...current,
+        instagramQueue: (current.instagramQueue || []).filter((item) => item.status !== 'failed')
+      }));
+      setMessage(`${result.deleted || 0} Story(s) com falha excluído(s) da fila.`);
+      await refreshInstagramState();
+    });
+  };
+
   return <div className="instagram-admin-layout">
     <section className={`panel instagram-status-card ${connected ? 'connected' : ''}`}>
       <div className="instagram-account">
@@ -178,7 +192,7 @@ export default function InstagramPanel({ data, setData, secretForm, setSecretFor
     </section>
 
     <section className="panel instagram-queue-panel">
-      <div className="panel-heading"><div><span className="section-step">FILA DO INSTAGRAM</span><h2>Stories recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div>{queue.some((item) => item.status === 'failed') && <button className="button subtle" type="button" disabled={Boolean(busy)} onClick={retryAllFailed}>{busy === 'retry-all' ? 'Recolocando…' : 'Tentar novamente todos'}</button>}</div>
+      <div className="panel-heading"><div><span className="section-step">FILA DO INSTAGRAM</span><h2>Stories recentes</h2><p>{queue.filter((item) => item.status === 'pending').length} aguardando · {queue.filter((item) => item.status === 'failed').length} com falha · {queue.filter((item) => item.status === 'sent').length} publicados</p></div>{queue.some((item) => item.status === 'failed') && <div className="instagram-queue-bulk-actions"><button className="button subtle" type="button" disabled={Boolean(busy)} onClick={retryAllFailed}>{busy === 'retry-all' ? 'Recolocando…' : 'Tentar novamente todos'}</button><button className="button danger" type="button" disabled={Boolean(busy)} onClick={deleteAllFailed}>{busy === 'delete-all-failed' ? 'Excluindo…' : 'Excluir todas as falhas'}</button></div>}</div>
       <div className="instagram-queue-list">{queue.slice(0, 100).map((item) => <article key={item.id} className={`instagram-queue-row ${item.status}`}><div className="instagram-queue-thumb">{item.image ? <img src={item.image} alt="" /> : '◇'}</div><div><strong>{item.title}</strong><span>{item.store} · {item.discount ? `${Math.round(item.discount)}% OFF` : 'oferta'}</span><small>{statusText[item.status] || item.status} · {formatDate(item.publishedAt || item.createdAt)}</small>{item.error && <em>{item.error}</em>}</div><div className="instagram-queue-actions">{item.status === 'pending' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'publish')}>Publicar agora</button>}{item.status === 'failed' && <button type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'retry')}>Tentar novamente</button>}{item.status !== 'publishing' && item.status !== 'sent' && <button className="danger" type="button" disabled={Boolean(busy)} onClick={() => queueAction(item.id, 'delete')}>Excluir</button>}</div></article>)}{!queue.length && <div className="empty"><strong>A fila do Instagram está vazia</strong><p>Depois da conexão, as promoções enviadas no WhatsApp entrarão aqui automaticamente.</p></div>}</div>
     </section>
 

@@ -5636,6 +5636,13 @@ button {
   line-height: 1.4;
 }
 
+.instagram-queue-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .site-shell:has(.privacy-consent) .assistant-floating-button,
 .site-shell:has(.privacy-consent) .assistant-chat {
   display: none;

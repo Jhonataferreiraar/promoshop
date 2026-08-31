@@ -5441,6 +5441,17 @@ app.post('/api/admin/instagram/queue/:id/retry', requireAdmin, async (req, res) 
   res.json({ ok: true });
 });
 
+app.delete('/api/admin/instagram/queue/failed/all', requireAdmin, async (_req, res) => {
+  let deleted = 0;
+  await updateStore((data) => {
+    const queue = data.instagramQueue || [];
+    deleted = queue.filter((item) => item.status === 'failed').length;
+    data.instagramQueue = queue.filter((item) => item.status !== 'failed');
+    if (deleted > 0) appendActivity(data, `Instagram: ${deleted} Story(s) com falha foram excluídos da fila.`, 'success');
+  });
+  res.json({ ok: true, deleted });
+});
+
 app.delete('/api/admin/instagram/queue/:id', requireAdmin, async (req, res) => {
   let removed = false;
   await updateStore((data) => {
