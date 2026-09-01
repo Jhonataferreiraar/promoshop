@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import crypto from 'node:crypto';
 
 async function availablePort() {
   const server = net.createServer();
@@ -16,9 +17,11 @@ async function availablePort() {
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-extension-'));
 const port = await availablePort();
 const origin = `http://127.0.0.1:${port}`;
+const adminCredential = `Test-${crypto.randomBytes(18).toString('base64url')}!`;
+const authRuntimeMaterial = crypto.randomBytes(48).toString('hex');
 const child = spawn(process.execPath, ['server/index.js'], {
   cwd: path.resolve(import.meta.dirname, '..'),
-  env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, ADMIN_PASSWORD: 'SenhaInicialSegura123!', AUTH_SECRET: 'extension-test-secret-long-and-random', SITE_URL: origin, WHATSAPP_AUTOSTART: 'false', NODE_ENV: 'test' },
+  env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, ADMIN_PASSWORD: adminCredential, AUTH_SECRET: authRuntimeMaterial, SITE_URL: origin, WHATSAPP_AUTOSTART: 'false', NODE_ENV: 'test' },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true
 });
@@ -33,7 +36,7 @@ async function waitForServer() {
 
 try {
   await waitForServer();
-  const login = await fetch(`${origin}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'SenhaInicialSegura123!' }) });
+  const login = await fetch(`${origin}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: adminCredential }) });
   assert.equal(login.status, 200);
   const loginBody = await login.json();
   assert.equal(Object.hasOwn(loginBody, 'token'), false);

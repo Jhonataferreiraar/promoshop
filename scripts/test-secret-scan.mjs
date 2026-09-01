@@ -13,6 +13,8 @@ const rules = [
   ['PostgreSQL com senha', /postgres(?:ql)?:\/\/[^\s:@/]+:[^\s@/]+@[^\s/]+/gi]
 ];
 
+const javascriptHardcodedCredential = /\b(?:[A-Za-z_$][\w$]*(?:secret|password|passwd|api_?key|apikey)[\w$]*|(?:secret|password|passwd|api_?key|apikey)[\w$]*)\s*(?:=|:)\s*["'][^"'\r\n]{4,}["']/gi;
+
 function placeholder(value) {
   return /(?:placeholder|example|exemplo|teste|test_|troque|defina|sua[_-]?chave|your[_-]?key|não[_-]?real)/i.test(value);
 }
@@ -22,6 +24,11 @@ for (const file of trackedFiles) {
   if (/\.(?:png|jpe?g|gif|webp|ico|woff2?|zip)$/i.test(file)) continue;
   let content;
   try { content = await fs.readFile(file, 'utf8'); } catch { continue; }
+  if (/\.(?:[cm]?js|jsx)$/i.test(file)) {
+    for (const match of content.matchAll(javascriptHardcodedCredential)) {
+      if (!placeholder(match[0])) findings.push(`${file}: possível credencial fixa em código JavaScript`);
+    }
+  }
   for (const [name, expression] of rules) {
     expression.lastIndex = 0;
     for (const match of content.matchAll(expression)) {

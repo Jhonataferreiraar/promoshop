@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { safeRedirectDestination } from '../server/urlSecurity.js';
 
 async function availablePort() {
@@ -17,6 +18,10 @@ async function availablePort() {
 const testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'promoshop-security-'));
 const port = await availablePort();
 const origin = `http://127.0.0.1:${port}`;
+const initialAdminCredential = `Test-${crypto.randomBytes(18).toString('base64url')}!`;
+const updatedAdminCredential = `Updated-${crypto.randomBytes(18).toString('base64url')}!`;
+const authRuntimeMaterial = crypto.randomBytes(48).toString('hex');
+const workerRuntimeToken = crypto.randomBytes(48).toString('hex');
 assert.equal(safeRedirectDestination(origin, '/seguranca?origem=teste'), `${origin}/seguranca?origem=teste`);
 assert.equal(safeRedirectDestination(origin, '//dominio-externo.example/phishing'), '');
 assert.equal(safeRedirectDestination(origin, '/seguranca\r\nLocation:https://dominio-externo.example'), '');
@@ -27,9 +32,9 @@ const child = spawn(process.execPath, ['server/index.js'], {
     PORT: String(port),
     DATA_DIR: testDataDir,
     STORE_BACKEND: 'file',
-    ADMIN_PASSWORD: 'SenhaInicialSegura123!',
-    AUTH_SECRET: 'security-test-secret-that-is-long-and-random',
-    WORKER_TOKEN: 'security-test-worker-token-that-is-long-enough',
+    ADMIN_PASSWORD: initialAdminCredential,
+    AUTH_SECRET: authRuntimeMaterial,
+    WORKER_TOKEN: workerRuntimeToken,
     SITE_URL: origin,
     WHATSAPP_AUTOSTART: 'false',
     NODE_ENV: 'test'
@@ -79,7 +84,7 @@ try {
   assert.equal(Object.hasOwn(publicHome.config, 'whatsappAudiences'), false);
   assert.equal(Object.hasOwn(publicHome, 'secrets'), false);
 
-  const validLogin = await login('SenhaInicialSegura123!');
+  const validLogin = await login(initialAdminCredential);
   assert.equal(validLogin.status, 200);
   const loginBody = await validLogin.json();
   assert.equal(loginBody.authenticated, true);
@@ -100,7 +105,7 @@ try {
   assert.equal(Object.hasOwn(whatsappState, 'queue'), false);
   const qrWorkerHeaders = {
     'content-type': 'application/json',
-    'x-worker-token': 'security-test-worker-token-that-is-long-enough'
+    'x-worker-token': workerRuntimeToken
   };
   const qrUpdate = await fetch(`${origin}/api/worker/qr`, {
     method: 'POST', headers: qrWorkerHeaders, body: JSON.stringify({ qr: 'temporary-qr-for-security-test' })
@@ -243,7 +248,7 @@ try {
   const queuedItem = await queuedResponse.json();
   const workerHeaders = {
     'content-type': 'application/json',
-    'x-worker-token': 'security-test-worker-token-that-is-long-enough'
+    'x-worker-token': workerRuntimeToken
   };
   const workerPost = (route, body) => fetch(`${origin}${route}`, {
     method: 'POST', headers: workerHeaders, body: JSON.stringify(body)
@@ -328,11 +333,11 @@ try {
   const passwordChange = await fetch(`${origin}/api/admin/secrets`, {
     method: 'PUT',
     headers: authorization,
-    body: JSON.stringify({ adminPassword: 'NovaSenhaSegura456!' })
+    body: JSON.stringify({ adminPassword: updatedAdminCredential })
   });
   assert.equal(passwordChange.status, 200);
   assert.equal((await fetch(`${origin}/api/admin/dashboard`, { headers: authorization })).status, 401);
-  assert.equal((await login('NovaSenhaSegura456!')).status, 200);
+  assert.equal((await login(updatedAdminCredential)).status, 200);
 
   for (let attempt = 0; attempt < 5; attempt += 1) assert.equal((await login('senha-incorreta')).status, 401);
   const blocked = await login('senha-incorreta');
