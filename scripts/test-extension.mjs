@@ -67,9 +67,15 @@ try {
   assert.equal(coupon.approvalStatus, 'pending');
   const approved = await fetch(`${origin}/api/admin/extension/coupons/${coupon.id}/approve`, { method: 'POST', headers: adminHeaders, body: '{}' });
   assert.equal(approved.status, 200);
-  const offerIngest = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada com link oficial', price: 79.9, originalPrice: 129.9, discount: 38, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/abc123', freeShipping: true }] }) });
+  const qualityConfig = await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ qualityMinimumScore: 95 }) });
+  assert.equal(qualityConfig.status, 200);
+  const longOfferTitle = `Oferta capturada com link oficial ${'com detalhes do produto '.repeat(12)}`;
+  const offerIngest = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: longOfferTitle, price: 79.9, originalPrice: 129.9, discount: 38, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/abc123', freeShipping: true }] }) });
   assert.equal(offerIngest.status, 202);
   assert.equal((await offerIngest.clone().json()).imported.length, 1);
+  const publicOffers = await fetch(`${origin}/api/offers?paged=1&store=Mercado%20Livre&sort=recent`).then((response) => response.json());
+  assert.equal(publicOffers.total, 1);
+  assert.equal(publicOffers.offers[0].store, 'Mercado Livre');
   const offerRefresh = await fetch(`${origin}/api/extension/mercadolivre/offers`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-promoshop-extension-token': offerToken }, body: JSON.stringify({ offers: [{ externalId: 'MLB123456789', title: 'Oferta capturada atualizada', price: 69.9, originalPrice: 129.9, discount: 46, image: 'https://http2.mlstatic.com/D_NQ_NP_123.jpg', productUrl: 'https://www.mercadolivre.com.br/produto/p/MLB123456789', affiliateUrl: 'https://meli.la/xyz456' }] }) });
   assert.equal(offerRefresh.status, 202);
   assert.equal((await offerRefresh.json()).imported[0].updated, true);

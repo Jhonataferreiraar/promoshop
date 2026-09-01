@@ -1023,9 +1023,40 @@ function offerIsFresh(offer, config, nowMs = Date.now()) {
   return Number.isFinite(updatedAt) && updatedAt > 0 && nowMs - updatedAt <= maxAgeDays * 24 * 60 * 60 * 1000;
 }
 
+/*
+ * A captura da extensão do Mercado Livre já passa por validações mais
+ * restritivas no endpoint de ingestão: imagem oficial, página do produto e
+ * link meli.la. Esses itens não devem desaparecer da vitrine apenas porque
+ * o administrador elevou a nota mínima para ofertas coletadas por APIs.
+ * Ainda exigimos os dados essenciais aqui para que um registro alterado não
+ * ganhe uma exceção de qualidade indevidamente.
+ */
+function isTrustedMercadoLivreExtensionOffer(offer, config = {}) {
+  if (String(offer?.source || '') !== 'mercado-livre-extension' || String(offer?.store || '').trim() !== 'Mercado Livre') return false;
+  if (!String(offer?.title || '').trim() || !(Number(offer?.price) > 0) || !(Number(offer?.originalPrice) > Number(offer?.price))) return false;
+  if (offer?.linkStatus === 'broken') return false;
+  const blocked = normalizedTerms(config.qualityBlockedTerms);
+  if (blocked.some((term) => String(offer.title).toLocaleLowerCase('pt-BR').includes(term))) return false;
+
+  const isHttpsHost = (value, hosts, allowSubdomains = true) => {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:' || url.username || url.password) return false;
+      const hostname = url.hostname.toLowerCase();
+      return hosts.some((host) => hostname === host || (allowSubdomains && hostname.endsWith(`.${host}`)));
+    } catch {
+      return false;
+    }
+  };
+
+  return isHttpsHost(offer.image, ['mlstatic.com'])
+    && isHttpsHost(offer.productUrl, ['mercadolivre.com.br'])
+    && isHttpsHost(offer.affiliateUrl, ['meli.la'], false);
+}
+
 function publicOfferAllowed(offer, config, nowMs = Date.now()) {
   if (offer?.status !== 'active' || !offerIsFresh(offer, config, nowMs)) return false;
-  if (offer?.qualityOverride === true || config.qualityFilterEnabled === false) return true;
+  if (offer?.qualityOverride === true || isTrustedMercadoLivreExtensionOffer(offer, config) || config.qualityFilterEnabled === false) return true;
   const quality = offerQuality(offer, config);
   return quality.score >= boundedNumber(config.qualityMinimumScore, 55, 0, 100);
 }
