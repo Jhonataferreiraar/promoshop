@@ -221,6 +221,14 @@ try {
   const robots = await fetch(`${origin}/robots.txt`).then((response) => response.text());
   assert.match(robots, /Sitemap:/);
   assert.match(robots, /Disallow: \/admin/);
+  const llmsResponse = await fetch(`${origin}/llms.txt`);
+  assert.equal(llmsResponse.status, 200);
+  assert.match(llmsResponse.headers.get('content-type') || '', /text\/plain/);
+  const llms = await llmsResponse.text();
+  assert.match(llms, /^# PromoShop/m);
+  assert.match(llms, /https?:\/\/[^\s)]+\/sitemap\.xml/);
+  assert.match(llms, /conteúdo de afiliado/i);
+  assert.doesNotMatch(llms, /\/admin(?:\s|\)|$)/);
   const sitemap = await fetch(`${origin}/sitemap.xml`).then((response) => response.text());
   assert.match(sitemap, /<urlset/);
   assert.match(sitemap, /\/privacidade/);

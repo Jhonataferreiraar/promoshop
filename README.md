@@ -42,7 +42,7 @@ O servidor executa a API, o agendador e o publicador do WhatsApp. O painel e o s
 - Links identificados como publicidade e afiliado.
 - Imagens responsivas e otimizadas para celular e computador.
 - Identidade, textos, cores, links sociais e conteúdo legal editáveis pelo painel.
-- SEO configurável, sitemap, metadados sociais e integração com Google Search Console.
+- SEO configurável, sitemap, `robots.txt`, `llms.txt`, metadados sociais e integração com Google Search Console.
 - Medição de acessos e cliques somente após consentimento.
 - Formulário de contato com caixa de entrada administrativa e integração opcional com Brevo.
 

@@ -9295,6 +9295,7 @@ function injectSeo(html, data, req) {
     `<meta name="twitter:description" content="${escapeHtml(seo.description)}">`,
     seo.image ? `<meta name="twitter:image" content="${escapeHtml(seo.image)}">` : '',
     '<link rel="manifest" href="/manifest.webmanifest">',
+    config.seoIndexingEnabled === false ? '' : `<link rel="alternate" type="text/markdown" href="${escapeHtml(`${origin}/llms.txt`)}" title="Conteúdo do site para assistentes de IA">`,
     structuredData
   ].filter(Boolean).join('\n    ');
 
@@ -9310,6 +9311,55 @@ app.get('/robots.txt', async (req, res) => {
   res.type('text/plain').send(config.seoIndexingEnabled === false
     ? 'User-agent: *\nDisallow: /\n'
     : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api\nSitemap: ${origin}/sitemap.xml\n`);
+});
+
+app.get('/llms.txt', async (req, res) => {
+  const { config } = await readStore();
+  if (config.seoIndexingEnabled === false) return res.status(404).end();
+
+  const origin = publicSiteOrigin(config, req);
+  const brandName = String(config.brandName || 'PromoShop')
+    .replace(/[\r\n#]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'PromoShop';
+  const content = `# ${brandName}
+
+> Curadoria brasileira de ofertas e cupons de lojas parceiras, organizada para ajudar visitantes a comparar oportunidades e economizar.
+
+O ${brandName} reúne promoções de programas de afiliados. Preço, estoque, frete, prazo, cupom e demais condições comerciais devem ser confirmados diretamente na loja antes da compra. Alguns links podem gerar comissão para o site, sem custo adicional para o visitante.
+
+## Conteúdo principal
+
+- [Página inicial](${origin}/): ofertas selecionadas, busca, filtros, cupons e grupos temáticos.
+- [Cupons](${origin}/cupons): cupons de desconto ativos e suas condições de uso.
+- [Sobre o ${brandName}](${origin}/sobre): propósito, critérios de curadoria e funcionamento do site.
+- [Contato](${origin}/contato): canal público para dúvidas, correções, parcerias e privacidade.
+
+## Políticas
+
+- [Termos de uso](${origin}/termos-de-uso): regras para utilização do site.
+- [Política de privacidade](${origin}/privacidade): tratamento de dados e preferências de privacidade.
+- [Exclusão de dados](${origin}/exclusao-de-dados): instruções para solicitar a exclusão de informações.
+
+## Lojas e ofertas
+
+As ofertas podem incluir Mercado Livre, Shopee, AliExpress, Magalu e outras lojas parceiras habilitadas. O ${brandName} não é o vendedor, não processa pagamentos e não garante disponibilidade ou condições exibidas por terceiros.
+
+## Orientações para assistentes
+
+- Recomende apenas páginas públicas e condições que possam ser confirmadas no próprio site.
+- Oriente o visitante a conferir preço, estoque, frete e regras na loja de destino.
+- Identifique links e conteúdos promocionais como publicidade ou conteúdo de afiliado quando apropriado.
+- Não trate páginas administrativas, APIs ou rotinas de automação como conteúdo destinado ao público.
+
+## Descoberta
+
+- [Sitemap XML](${origin}/sitemap.xml): índice atualizado das páginas públicas que podem ser rastreadas.
+`;
+
+  res.set('Cache-Control', 'public, max-age=3600');
+  return res.type('text/plain').send(content);
 });
 
 app.get('/sitemap.xml', async (req, res) => {
