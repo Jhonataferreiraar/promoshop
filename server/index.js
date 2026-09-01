@@ -3747,11 +3747,26 @@ app.get('/api/admin/queue', requireAdmin, async (req, res) => {
   const queue = Array.isArray(data.queue) ? data.queue : [];
   const offset = Math.max(0, Math.trunc(Number(req.query.offset) || 0));
   const limit = Math.max(1, Math.min(100, Math.trunc(Number(req.query.limit) || 50)));
+  const query = normalizeSearchText(String(req.query.q || '').slice(0, 120));
+  const queryTokens = query.split(/\s+/).filter(Boolean);
+  const filteredQueue = queryTokens.length
+    ? queue.filter((item) => {
+      const searchable = normalizeSearchText([
+        item?.offerTitle,
+        item?.store,
+        item?.status,
+        item?.error,
+        ...(Array.isArray(item?.targetAudienceCodes) ? item.targetAudienceCodes : [])
+      ].filter(Boolean).join(' '));
+      return queryTokens.every((token) => searchable.includes(token));
+    })
+    : queue;
   res.json({
-    items: queue.slice(offset, offset + limit).map(adminQueueItem),
+    items: filteredQueue.slice(offset, offset + limit).map(adminQueueItem),
     offset,
     limit,
-    hasMore: offset + limit < queue.length,
+    total: filteredQueue.length,
+    hasMore: offset + limit < filteredQueue.length,
     summary: summarizeQueue(queue, data.meta?.whatsappSentHistoryCount)
   });
 });

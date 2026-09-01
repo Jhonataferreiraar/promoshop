@@ -5219,6 +5219,18 @@ button {
 .analytics-ranking-list > small { color: #667085; }
 .queue-clear-failed { min-height: 36px; padding: 0 13px; border: 1px solid #fecdca; border-radius: 9px; color: #b42318; background: #fff5f4; font-size: 12px; font-weight: 800; cursor: pointer; }
 .queue-clear-failed:hover { border-color: #fda29b; background: #fee4e2; }
+.queue-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.queue-search { display: flex; width: 38px; min-height: 38px; align-items: center; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 10px; background: #fff; transition: width .2s ease, border-color .2s ease, box-shadow .2s ease; }
+.queue-search.open { width: min(290px, 40vw); border-color: #84adff; box-shadow: 0 0 0 3px rgba(21, 112, 239, .1); }
+.queue-search-toggle { display: grid; flex: 0 0 38px; width: 38px; min-height: 36px; place-items: center; padding: 0; border: 0; color: #344054; background: transparent; cursor: pointer; }
+.queue-search-toggle:hover { color: var(--primary); background: #f5f8ff; }
+.queue-search-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+.queue-search input { width: 100%; min-width: 0; height: 36px; padding: 0 10px 0 0; border: 0; outline: 0; color: #101828; background: transparent; font: inherit; font-size: 12px; font-weight: 650; }
+.queue-search input::placeholder { color: #98a2b3; }
+@media (max-width: 640px) {
+  .queue-heading-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .queue-search.open { flex: 1 1 210px; width: auto; max-width: 100%; }
+}
 
 /* Site, SEO, qualidade e políticas editáveis */
 .site-settings-layout { display: grid; gap: 20px; padding-bottom: 94px; }
