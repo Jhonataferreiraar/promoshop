@@ -1135,18 +1135,19 @@ footer {
 
 .turnstile-panel {
   display: grid;
-  gap: 7px;
+  justify-items: center;
   padding: 12px 0 2px;
 }
 
 .turnstile-widget {
+  width: 100%;
   min-height: 65px;
   display: flex;
   align-items: center;
+  justify-content: center;
   overflow: hidden;
 }
 
-.turnstile-panel small,
 .login-security-note {
   color: var(--muted);
   font-size: 12px;

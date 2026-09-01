@@ -1380,11 +1380,31 @@ function Login({ onLogin }) {
     }
   }
 
+  function getCurrentTurnstileToken() {
+    if (turnstileWidgetRef.current && window.turnstile?.getResponse) {
+      try {
+        const response = window.turnstile.getResponse(turnstileWidgetRef.current);
+        if (response) return String(response).trim();
+      } catch {}
+    }
+
+    const hiddenInput = turnstileContainerRef.current?.querySelector('input[name="cf-turnstile-response"]');
+    const inputToken = String(hiddenInput?.value || '').trim();
+    if (inputToken) return inputToken;
+
+    return String(turnstileToken || '').trim();
+  }
+
   async function submit(event) {
     event.preventDefault();
-    if (turnstileConfig.enabled && !turnstileToken) {
+    const currentTurnstileToken = turnstileConfig.enabled ? getCurrentTurnstileToken() : '';
+    if (turnstileConfig.enabled && !currentTurnstileToken) {
       setError('Confirme que você não é um robô para entrar.');
       return;
+    }
+    if (currentTurnstileToken && currentTurnstileToken !== turnstileToken) {
+      setTurnstileToken(currentTurnstileToken);
+      setTurnstileState('ready');
     }
     setBusy(true);
     setError('');
@@ -1393,7 +1413,7 @@ function Login({ onLogin }) {
         method: 'POST',
         body: JSON.stringify({
           ...form,
-          ...(turnstileConfig.enabled ? { turnstileToken } : {})
+          ...(turnstileConfig.enabled ? { turnstileToken: currentTurnstileToken } : {})
         })
       });
       onLogin('cookie');
@@ -1405,8 +1425,8 @@ function Login({ onLogin }) {
     }
   }
   const securityPending = turnstileState === 'checking' || turnstileState === 'loading' || turnstileState === 'error';
-  const submitDisabled = busy || securityPending || (turnstileConfig.enabled && (!turnstileToken || turnstileState !== 'ready'));
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{turnstileConfig.enabled && <div className="turnstile-panel"><div className="turnstile-widget" ref={turnstileContainerRef} aria-label="Confirmação de segurança"></div><small>Confirmação de segurança do Cloudflare para proteger o painel.</small></div>}{turnstileState === 'checking' && <p className="login-security-note" aria-live="polite">Verificando a proteção de acesso…</p>}{error && <p className="error" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={submitDisabled}>{busy ? 'Entrando…' : 'Entrar'}</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
+  const submitDisabled = busy || securityPending;
+  return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{turnstileConfig.enabled && <div className="turnstile-panel"><div className="turnstile-widget" ref={turnstileContainerRef} aria-label="Confirmação de segurança"></div></div>}{turnstileState === 'checking' && <p className="login-security-note" aria-live="polite">Verificando a proteção de acesso…</p>}{error && <p className="error" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={submitDisabled}>{busy ? 'Entrando…' : 'Entrar'}</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
 }
 
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };
