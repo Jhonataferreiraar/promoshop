@@ -246,6 +246,17 @@ try {
   });
   assert.equal(queuedResponse.status, 201);
   const queuedItem = await queuedResponse.json();
+  const audienceUpdate = await fetch(`${origin}/api/admin/queue/${queuedItem.id}/audience`, {
+    method: 'PATCH', headers: authorization, body: JSON.stringify({ targetAudienceCodes: ['G04'] })
+  });
+  assert.equal(audienceUpdate.status, 200);
+  const audienceUpdateBody = await audienceUpdate.json();
+  assert.deepEqual(audienceUpdateBody.item.targetAudienceCodes, ['G04']);
+  const queueAfterAudienceUpdate = JSON.parse(await fs.readFile(path.join(testDataDir, 'db.json'), 'utf8'))
+    .queue.find((item) => item.id === queuedItem.id);
+  assert.deepEqual(queueAfterAudienceUpdate.targetAudienceCodes, ['G04']);
+  assert.deepEqual(queueAfterAudienceUpdate.offerSnapshot.targetAudienceCodes, ['G04']);
+  assert.equal(queueAfterAudienceUpdate.roundAudienceCode, 'G04');
   const workerHeaders = {
     'content-type': 'application/json',
     'x-worker-token': workerRuntimeToken

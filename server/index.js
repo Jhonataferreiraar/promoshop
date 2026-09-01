@@ -6323,6 +6323,52 @@ app.delete(
   }
 );
 
+app.patch(
+  '/api/admin/queue/:id/audience',
+  requireAdmin,
+  async (req, res) => {
+    const requestedCodes = normalizeCouponAudienceCodes(req.body?.targetAudienceCodes);
+    if (requestedCodes.length !== 1) {
+      return res.status(400).json({ error: 'Escolha exatamente um grupo de destino.' });
+    }
+
+    const selectedCode = requestedCodes[0];
+    let updatedItem = null;
+    let blockedStatus = '';
+    let invalidAudience = false;
+
+    await updateStore((data) => {
+      const item = (data.queue || []).find((entry) => entry.id === req.params.id);
+      if (!item) return;
+
+      if (!['pending', 'failed'].includes(item.status) || (item.deliverySentDestinationIds || []).length > 0) {
+        blockedStatus = item.status || 'indisponível';
+        return;
+      }
+
+      const audience = (data.config?.whatsappAudiences || []).find(
+        (entry) => normalizeAudienceCode(entry?.code) === selectedCode && entry?.enabled !== false
+      );
+      if (!audience) {
+        invalidAudience = true;
+        return;
+      }
+
+      item.targetAudienceCodes = [selectedCode];
+      item.roundAudienceCode = selectedCode;
+      if (item.offerSnapshot) item.offerSnapshot.targetAudienceCodes = [selectedCode];
+      updatedItem = adminQueueItem(item);
+    });
+
+    if (invalidAudience) return res.status(400).json({ error: 'O grupo selecionado não está ativo ou não existe.' });
+    if (blockedStatus) return res.status(409).json({ error: 'O grupo não pode ser alterado porque esta publicação já começou ou foi concluída.' });
+    if (!updatedItem) return res.status(404).json({ error: 'Publicação não encontrada na fila.' });
+
+    await addLog(`Destino alterado manualmente: ${updatedItem.offerTitle} → ${selectedCode}.`, 'success');
+    return res.json({ ok: true, item: updatedItem });
+  }
+);
+
 app.delete(
   '/api/admin/queue/:id',
   requireAdmin,

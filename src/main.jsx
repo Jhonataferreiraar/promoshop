@@ -1402,6 +1402,7 @@ function AdminApp() {
   const [queuePage, setQueuePage] = useState({ total: 0, hasMore: false, summary: {} });
   const [queueSearchOpen, setQueueSearchOpen] = useState(false);
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
+  const [queueAudienceSaving, setQueueAudienceSaving] = useState('');
   const [dialog, setDialog] = useState(null);
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
@@ -2063,6 +2064,19 @@ function AdminApp() {
   async function forceQueueItem(id) { await authApi(`/admin/queue/${id}/force`, { method: 'POST', body: '{}' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Publicação priorizada. O envio será feito em alguns segundos.'); }
   async function retryQueueItem(id) { await authApi(`/admin/queue/${id}/retry`, { method: 'POST', body: '{}' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Nova tentativa priorizada. O envio será feito em alguns segundos.'); }
   async function removeQueueItem(id) { await authApi(`/admin/queue/${id}`, { method: 'DELETE' }); await Promise.all([load(), loadQueuePage(true)]); setMessage('Item removido da fila.'); }
+  async function updateQueueAudience(id, code) {
+    setQueueAudienceSaving(id);
+    try {
+      await authApi(`/admin/queue/${id}/audience`, { method: 'PATCH', body: JSON.stringify({ targetAudienceCodes: [code] }) });
+      await Promise.all([load(), loadQueuePage(true)]);
+      const audience = configuredAudiences.find((item) => String(item.code).toUpperCase() === String(code).toUpperCase());
+      setMessage(`Destino alterado para ${code}${audience?.name ? ` — ${audience.name}` : ''}.`);
+    } catch (error) {
+      setMessage(`Não foi possível alterar o grupo: ${error.message}`);
+    } finally {
+      setQueueAudienceSaving('');
+    }
+  }
   function clearFailedQueue() {
     const failedCount = Number(queuePage.summary?.failed || data.queueSummary?.failed || 0);
     if (!failedCount) return;
@@ -2869,7 +2883,7 @@ function AdminApp() {
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).length} cadastrado(s). Cupons importados aguardando revisão ficam somente na Extensão de cupons.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).some((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)) && <div className="empty"><strong>Nenhum cupom aprovado</strong><p>Cupons importados pela extensão aparecem aqui depois que você aprová-los.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
-    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
+    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -3801,7 +3815,7 @@ function AnalyticsDashboard({ analytics = {}, config = {}, secrets = {}, secretF
   </div>;
 }
 
-function QueueTable({ queue, onRemove, onForce, onRetry, emptyTitle = 'A fila está vazia', emptyText = 'Envie uma oferta pelo painel.' }) {
+function QueueTable({ queue, onRemove, onForce, onRetry, onAudienceChange, audiences = [], audienceSavingId = '', emptyTitle = 'A fila está vazia', emptyText = 'Envie uma oferta pelo painel.' }) {
   if (!queue.length) return <div className="empty"><strong>{emptyTitle}</strong><p>{emptyText}</p></div>;
   return <div className="queue-table">{queue.map((item) => {
     const statusLabel = item.status === 'pending'
@@ -3814,13 +3828,9 @@ function QueueTable({ queue, onRemove, onForce, onRetry, emptyTitle = 'A fila es
             ? 'Repetida bloqueada'
             : item.status;
     return <div key={item.id}><span><strong>{item.offerTitle}</strong>
-      <small>
-        {item.store}
+      <small>{item.store}
 
-        {Array.isArray(item.targetAudienceCodes) &&
-          item.targetAudienceCodes.length > 0
-          ? ` · ${item.targetAudienceCodes.join(', ')}`
-          : ''}
+        {!onAudienceChange && Array.isArray(item.targetAudienceCodes) && item.targetAudienceCodes.length > 0 ? ` · ${item.targetAudienceCodes.join(', ')}` : ''}
 
         {item.force && item.status === 'pending'
           ? ' · envio imediato'
@@ -3829,7 +3839,7 @@ function QueueTable({ queue, onRemove, onForce, onRetry, emptyTitle = 'A fila es
         {item.error
           ? ` · ${item.error}`
           : ''}
-      </small>
+      </small>{onAudienceChange && item.kind === 'offer' && ['pending', 'failed'].includes(item.status) ? <label className="queue-audience-editor"><span>Grupo de destino</span><select value={item.targetAudienceCodes?.[0] || ''} disabled={audienceSavingId === item.id} onChange={(event) => onAudienceChange(item.id, event.target.value)} aria-label={`Grupo de destino de ${item.offerTitle}`}><option value="" disabled>Escolha um grupo</option>{audiences.map((audience) => <option key={audience.code} value={String(audience.code).toUpperCase()}>{String(audience.code).toUpperCase()} — {audience.name || 'Grupo sem nome'}</option>)}</select>{audienceSavingId === item.id && <small>Salvando…</small>}</label> : onAudienceChange && <small className="queue-audience-readonly">Destino: {(item.targetAudienceCodes || []).join(', ') || 'não definido'}</small>}
     </span><span className={`status ${item.status}`}>{statusLabel}</span><time>{new Date(item.createdAt).toLocaleString('pt-BR')}</time><div className="queue-actions">{onRetry && item.status === 'failed' && <button className="queue-force" onClick={() => onRetry(item.id)}>Tentar novamente</button>}{onForce && item.status === 'pending' && !item.force && <button className="queue-force" onClick={() => onForce(item.id)}>Publicar agora</button>}{onRemove && item.status !== 'sent' && <button className="queue-remove" onClick={() => onRemove(item.id)}>Remover</button>}</div></div>;
   })}</div>;
 }

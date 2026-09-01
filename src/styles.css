@@ -1585,6 +1585,12 @@ footer {
   cursor: pointer;
   font-weight: 700;
 }
+.queue-audience-editor { display: grid; max-width: 290px; gap: 5px; margin-top: 5px; }
+.queue-audience-editor > span { color: #475467; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.queue-audience-editor select { width: 100%; min-height: 34px; padding: 5px 30px 5px 9px; border: 1px solid #b2ccff; border-radius: 8px; color: #1849a9; background: #f5f8ff; font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.queue-audience-editor select:focus { outline: 3px solid rgba(21, 112, 239, .12); border-color: var(--primary); }
+.queue-audience-editor select:disabled { cursor: wait; opacity: .65; }
+.queue-audience-editor > small, .queue-audience-readonly { color: #667085; font-size: 10px; }
 
 .queue-actions {
   display: flex;
