@@ -15,6 +15,11 @@ services:
         value: https://promoshop.jhonatafaraujo.com.br
       - key: ADMIN_PASSWORD
         sync: false
+      # Cloudflare Turnstile: site key é pública, secret key permanece no Render.
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
       # Formulário de contato enviado pelo Brevo.
       - key: BREVO_API_KEY
         sync: false

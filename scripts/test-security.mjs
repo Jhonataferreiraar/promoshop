@@ -36,6 +36,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     AUTH_SECRET: authRuntimeMaterial,
     WORKER_TOKEN: workerRuntimeToken,
     SITE_URL: origin,
+    TURNSTILE_SITE_KEY: '',
+    TURNSTILE_SECRET_KEY: '',
     WHATSAPP_AUTOSTART: 'false',
     NODE_ENV: 'test'
   },
@@ -64,6 +66,8 @@ async function login(password) {
 
 try {
   await waitForServer();
+  const authConfig = await fetch(`${origin}/api/auth/config`, { cache: 'no-store' }).then((response) => response.json());
+  assert.deepEqual(authConfig, { turnstileEnabled: false, turnstileSiteKey: '' });
   const health = await fetch(`${origin}/api/health`, { headers: { Origin: 'https://malicioso.example' } });
   assert.equal(health.headers.get('access-control-allow-origin'), null);
   assert.equal(health.headers.get('x-powered-by'), null);

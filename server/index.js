@@ -96,6 +96,11 @@ import { terminateChildProcess } from './whatsappProcess.js';
 import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
 import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
 import { safeRedirectDestination } from './urlSecurity.js';
+import {
+  turnstileEnabled,
+  turnstilePublicConfig,
+  verifyTurnstileToken
+} from './turnstile.js';
 
 const app = express();
 
@@ -2096,7 +2101,7 @@ app.use(
 
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'"
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com"
     );
 
     if (isHttps) {
@@ -3551,6 +3556,11 @@ app.get(
  * ==========================================================
  */
 
+app.get('/api/auth/config', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(turnstilePublicConfig());
+});
+
 app.post(
   '/api/auth/login',
   async (
@@ -3642,6 +3652,33 @@ app.post(
     const password = String(req.body?.password || '').slice(0, 256);
     if (!username || !password) {
       return res.status(400).json({ error: 'Informe usuário e senha.' });
+    }
+
+    if (turnstileEnabled()) {
+      let expectedHostname = '';
+      try {
+        expectedHostname = new URL(requestBaseUrl(req)).hostname;
+      } catch {}
+
+      const validation = await verifyTurnstileToken(
+        req.body?.turnstileToken || req.body?.['cf-turnstile-response'],
+        {
+          remoteIp: clientIp,
+          expectedAction: 'admin-login',
+          expectedHostname
+        }
+      );
+
+      if (!validation.success) {
+        const errorCodes = validation.errorCodes || [];
+        console.warn(`Turnstile bloqueou uma tentativa de login (${errorCodes.join(',') || 'sem código'}).`);
+        if (errorCodes.some((code) => ['internal-error', 'siteverify-unavailable', 'timeout'].includes(code))) {
+          return res.status(503).json({ error: 'A confirmação de segurança não respondeu. Atualize a página e tente novamente.' });
+        }
+        registerFailedLogin(clientIp);
+        await registerPersistentFailedLogin(clientIp);
+        return res.status(403).json({ error: 'Confirme que você não é um robô e tente novamente.' });
+      }
     }
 
     const expectedUser =

@@ -174,6 +174,54 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+let turnstileScriptPromise = null;
+
+function loadTurnstileScript() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Turnstile só pode ser carregado no navegador.'));
+  if (window.turnstile?.render) return Promise.resolve(window.turnstile);
+  if (turnstileScriptPromise) return turnstileScriptPromise;
+
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = window.setTimeout(() => finish(reject, new Error('A proteção antirobô demorou para carregar.')), 15_000);
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      callback(value);
+    };
+    const waitUntilReady = () => {
+      if (!window.turnstile?.ready) {
+        finish(reject, new Error('A proteção antirobô não ficou disponível.'));
+        return;
+      }
+      try {
+        window.turnstile.ready(() => finish(resolve, window.turnstile));
+      } catch (error) {
+        finish(reject, error);
+      }
+    };
+
+    let script = document.querySelector('script[data-promoshop-turnstile]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.promoshopTurnstile = 'true';
+    }
+    script.addEventListener('load', waitUntilReady, { once: true });
+    script.addEventListener('error', () => finish(reject, new Error('Não foi possível carregar a proteção antirobô.')), { once: true });
+    if (window.turnstile?.render) waitUntilReady();
+    else if (!script.parentNode) document.head.appendChild(script);
+  }).catch((error) => {
+    turnstileScriptPromise = null;
+    throw error;
+  });
+
+  return turnstileScriptPromise;
+}
+
 function anonymousStorageId(storage, key) {
   try {
     const current = storage.getItem(key);
@@ -1254,12 +1302,116 @@ function InfoPage({ page }) {
 function Login({ onLogin }) {
   const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
-  async function submit(event) {
-    event.preventDefault(); setError('');
-    try { await api('/auth/login', { method: 'POST', body: JSON.stringify(form) }); onLogin('cookie'); }
-    catch (err) { setError(err.message); }
+  const [busy, setBusy] = useState(false);
+  const [turnstileConfig, setTurnstileConfig] = useState({ enabled: false, siteKey: '' });
+  const [turnstileState, setTurnstileState] = useState('checking');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileContainerRef = useRef(null);
+  const turnstileWidgetRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api('/auth/config', { cache: 'no-store' })
+      .then((config) => {
+        if (cancelled) return;
+        const siteKey = String(config?.turnstileSiteKey || '').trim();
+        const enabled = Boolean(config?.turnstileEnabled && siteKey);
+        setTurnstileConfig({ enabled, siteKey });
+        setTurnstileState(enabled ? 'loading' : 'disabled');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTurnstileState('error');
+        setError('Não foi possível verificar a proteção antirobô. Atualize a página e tente novamente.');
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!turnstileConfig.enabled || !turnstileConfig.siteKey) return undefined;
+    let cancelled = false;
+
+    loadTurnstileScript()
+      .then((turnstile) => new Promise((resolve) => turnstile.ready(() => resolve(turnstile))))
+      .then((turnstile) => {
+        if (cancelled || !turnstileContainerRef.current) return;
+        setTurnstileState('waiting');
+        turnstileWidgetRef.current = turnstile.render(turnstileContainerRef.current, {
+          sitekey: turnstileConfig.siteKey,
+          action: 'admin-login',
+          appearance: 'always',
+          theme: 'light',
+          callback: (token) => {
+            if (cancelled) return;
+            setTurnstileToken(String(token || ''));
+            setTurnstileState('ready');
+            setError('');
+          },
+          'expired-callback': () => {
+            if (cancelled) return;
+            setTurnstileToken('');
+            setTurnstileState('waiting');
+            setError('A confirmação expirou. Marque novamente para continuar.');
+          },
+          'error-callback': () => {
+            if (cancelled) return;
+            setTurnstileToken('');
+            setTurnstileState('error');
+            setError('A confirmação antirobô falhou. Atualize a página e tente novamente.');
+          }
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTurnstileState('error');
+        setError('Não foi possível carregar a confirmação antirobô. Atualize a página e tente novamente.');
+      });
+
+    return () => {
+      cancelled = true;
+      if (turnstileWidgetRef.current && window.turnstile?.remove) {
+        try { window.turnstile.remove(turnstileWidgetRef.current); } catch {}
+      }
+      turnstileWidgetRef.current = null;
+    };
+  }, [turnstileConfig.enabled, turnstileConfig.siteKey]);
+
+  function resetTurnstile() {
+    setTurnstileToken('');
+    if (turnstileWidgetRef.current && window.turnstile?.reset) {
+      try { window.turnstile.reset(turnstileWidgetRef.current); } catch {}
+      setTurnstileState('waiting');
+    }
   }
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{error && <p className="error">{error}</p>}<button className="button primary full">Entrar</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (turnstileConfig.enabled && !turnstileToken) {
+      setError('Confirme que você não é um robô para entrar.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          ...(turnstileConfig.enabled ? { turnstileToken } : {})
+        })
+      });
+      onLogin('cookie');
+    } catch (err) {
+      setError(err.message);
+      if (turnstileConfig.enabled) resetTurnstile();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const securityPending = turnstileState === 'checking' || turnstileState === 'loading' || turnstileState === 'error';
+  const submitDisabled = busy || securityPending || (turnstileConfig.enabled && (!turnstileToken || turnstileState !== 'ready'));
+  return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{turnstileConfig.enabled && <div className="turnstile-panel"><div className="turnstile-widget" ref={turnstileContainerRef} aria-label="Confirmação de segurança"></div><small>Confirmação de segurança do Cloudflare para proteger o painel.</small></div>}{turnstileState === 'checking' && <p className="login-security-note" aria-live="polite">Verificando a proteção de acesso…</p>}{error && <p className="error" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={submitDisabled}>{busy ? 'Entrando…' : 'Entrar'}</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
 }
 
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };

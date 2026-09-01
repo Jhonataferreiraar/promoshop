@@ -296,6 +296,8 @@ O arquivo [`.env.example`](.env.example) contém a lista completa.
 | `ADMIN_USER` | Usuário inicial do painel. |
 | `ADMIN_PASSWORD` | Senha inicial obrigatória. |
 | `AUTH_SECRET` | Assinatura das sessões administrativas. |
+| `TURNSTILE_SITE_KEY` | Chave pública do widget Cloudflare Turnstile usado no login. |
+| `TURNSTILE_SECRET_KEY` | Chave privada usada pelo servidor para validar o Turnstile. Nunca vai para o navegador ou para o Git. |
 | `SECRETS_ENCRYPTION_KEY` | Criptografia das credenciais do painel. |
 | `DATA_ENCRYPTION_KEY` | Criptografia de dados pessoais em repouso. |
 | `STORE_BACKEND` | `postgres` em produção ou `file` para compatibilidade local. |
@@ -345,7 +347,7 @@ O [`render.yaml`](render.yaml) configura atualmente:
 2. Confirme o serviço descrito em `render.yaml`.
 3. Crie um PostgreSQL na mesma região.
 4. Configure `DATABASE_URL` com a **Internal Database URL**.
-5. Defina `ADMIN_PASSWORD` e as variáveis secretas.
+5. Defina `ADMIN_PASSWORD`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` e as demais variáveis secretas.
 6. Preserve `SECRETS_ENCRYPTION_KEY` e `DATA_ENCRYPTION_KEY` em todos os deploys.
 7. Aguarde o health check e confirme `/api/health`.
 8. Entre no painel, configure as integrações e vincule o WhatsApp.
@@ -353,6 +355,19 @@ O [`render.yaml`](render.yaml) configura atualmente:
 No serviço de produção atual, o **Auto-Deploy está desativado no painel do Render**. Portanto, depois de enviar um commit ao GitHub, abra **Manual Deploy → Deploy latest commit** para publicá-lo. Se o Auto-Deploy for reativado posteriormente, o envio para `master` voltará a iniciar a publicação sozinho.
 
 Um `SIGTERM` no processo anterior durante o deploy é esperado: o Render encerra a instância antiga quando promove a nova versão. O importante é a nova instância conectar ao PostgreSQL e alcançar **Your service is live**.
+
+### Proteção antirobô do login
+
+O login administrativo usa o [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) quando as duas variáveis de ambiente estão preenchidas. A proteção é ativada somente depois de uma validação no servidor; colocar o widget no navegador, sozinho, não é suficiente.
+
+Para ativar:
+
+1. No Cloudflare, abra **Turnstile → Add site** e crie um widget no modo **Managed**.
+2. Informe `promoshop.jhonatafaraujo.com.br` nos hostnames permitidos. Inclua `localhost` apenas se quiser testar localmente.
+3. Copie a **Site Key** para `TURNSTILE_SITE_KEY` e a **Secret Key** para `TURNSTILE_SECRET_KEY` nas variáveis do Web Service no Render.
+4. Salve e faça um novo deploy. Acesse `/admin`, marque a confirmação e entre normalmente.
+
+A Site Key pode aparecer no HTML; a Secret Key deve permanecer apenas no Render. Não é necessário criar registro DNS para o Turnstile nem colocar essas chaves no painel ou no Git.
 
 ## Backup e recuperação
 
@@ -365,6 +380,7 @@ Mantenha também backups do PostgreSQL e do disco persistente. A sessão e o cof
 O projeto inclui:
 
 - Sessão administrativa em cookie `HttpOnly` e proteção CSRF.
+- Turnstile com validação server-side no login administrativo quando configurado.
 - Bloqueio progressivo de tentativas de login.
 - Cabeçalhos CSP, HSTS e `X-Frame-Options`.
 - Credenciais e dados pessoais criptografados separadamente.
@@ -388,6 +404,7 @@ Se uma credencial real for enviada ao Git, removê-la do arquivo não basta: rev
 |---|---|
 | `npm run build` | Compilação do site e painel. |
 | `npm run test:security` | Autenticação, CSRF, cabeçalhos e APIs públicas. |
+| `npm run test:turnstile` | Configuração e validação server-side do Turnstile. |
 | `npm run test:secret-scan` | Credenciais e chaves versionadas. |
 | `npm run test:secrets` | Criptografia do cofre. |
 | `npm run test:data-encryption` | Criptografia de dados pessoais. |

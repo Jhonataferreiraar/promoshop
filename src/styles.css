@@ -1133,6 +1133,35 @@ footer {
   border-radius: 9px;
 }
 
+.turnstile-panel {
+  display: grid;
+  gap: 7px;
+  padding: 12px 0 2px;
+}
+
+.turnstile-widget {
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.turnstile-panel small,
+.login-security-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.login-security-note {
+  margin: -10px 0 0 !important;
+}
+
+.login-card button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+
 .admin-shell {
   min-height: 100vh;
   background: var(--soft);

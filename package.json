@@ -12,6 +12,7 @@
     "test:ai": "node scripts/test-ai-provider.mjs",
     "test:mercadolivre": "node scripts/test-mercadolivre-oauth.mjs",
     "test:security": "node scripts/test-security.mjs",
+    "test:turnstile": "node scripts/test-turnstile.mjs",
     "test:auth-cookies": "node scripts/test-auth-cookies.mjs",
     "test:safe-remote": "node scripts/test-safe-remote.mjs",
     "test:secrets": "node scripts/test-secrets-encryption.mjs",
