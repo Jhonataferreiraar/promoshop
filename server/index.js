@@ -3657,7 +3657,12 @@ app.post(
     if (turnstileEnabled()) {
       let expectedHostname = '';
       try {
-        expectedHostname = new URL(requestBaseUrl(req)).hostname;
+        const requestHost = String(req.headers['x-forwarded-host'] || req.get('host') || '')
+          .split(',')[0]
+          .trim();
+        expectedHostname = requestHost
+          ? new URL(`https://${requestHost}`).hostname
+          : new URL(requestBaseUrl(req)).hostname;
       } catch {}
 
       const validation = await verifyTurnstileToken(
