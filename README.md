@@ -332,7 +332,7 @@ Não altere nem exclua `DATA_ENCRYPTION_KEY` depois que existirem dados criptogr
 O [`render.yaml`](render.yaml) configura atualmente:
 
 - Web Service em Docker no plano Pro.
-- Região Virginia e deploy por commit em `master`.
+- Região Virginia. O Blueprint solicita deploy por commit em `master`, mas essa opção pode ser desativada diretamente no serviço.
 - PostgreSQL como backend.
 - Chromium instalado na imagem.
 - Uma única instância do processo para proteger a sessão do WhatsApp.
@@ -349,6 +349,8 @@ O [`render.yaml`](render.yaml) configura atualmente:
 6. Preserve `SECRETS_ENCRYPTION_KEY` e `DATA_ENCRYPTION_KEY` em todos os deploys.
 7. Aguarde o health check e confirme `/api/health`.
 8. Entre no painel, configure as integrações e vincule o WhatsApp.
+
+No serviço de produção atual, o **Auto-Deploy está desativado no painel do Render**. Portanto, depois de enviar um commit ao GitHub, abra **Manual Deploy → Deploy latest commit** para publicá-lo. Se o Auto-Deploy for reativado posteriormente, o envio para `master` voltará a iniciar a publicação sozinho.
 
 Um `SIGTERM` no processo anterior durante o deploy é esperado: o Render encerra a instância antiga quando promove a nova versão. O importante é a nova instância conectar ao PostgreSQL e alcançar **Your service is live**.
 
