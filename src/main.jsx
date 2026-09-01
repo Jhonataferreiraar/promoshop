@@ -190,16 +190,12 @@ function loadTurnstileScript() {
       window.clearTimeout(timeout);
       callback(value);
     };
-    const waitUntilReady = () => {
-      if (!window.turnstile?.ready) {
+    const resolveTurnstile = () => {
+      if (!window.turnstile?.render) {
         finish(reject, new Error('A proteção antirobô não ficou disponível.'));
         return;
       }
-      try {
-        window.turnstile.ready(() => finish(resolve, window.turnstile));
-      } catch (error) {
-        finish(reject, error);
-      }
+      finish(resolve, window.turnstile);
     };
 
     let script = document.querySelector('script[data-promoshop-turnstile]');
@@ -210,9 +206,9 @@ function loadTurnstileScript() {
       script.defer = true;
       script.dataset.promoshopTurnstile = 'true';
     }
-    script.addEventListener('load', waitUntilReady, { once: true });
+    script.addEventListener('load', resolveTurnstile, { once: true });
     script.addEventListener('error', () => finish(reject, new Error('Não foi possível carregar a proteção antirobô.')), { once: true });
-    if (window.turnstile?.render) waitUntilReady();
+    if (window.turnstile?.render) resolveTurnstile();
     else if (!script.parentNode) document.head.appendChild(script);
   }).catch((error) => {
     turnstileScriptPromise = null;
@@ -1333,7 +1329,6 @@ function Login({ onLogin }) {
     let cancelled = false;
 
     loadTurnstileScript()
-      .then((turnstile) => new Promise((resolve) => turnstile.ready(() => resolve(turnstile))))
       .then((turnstile) => {
         if (cancelled || !turnstileContainerRef.current) return;
         setTurnstileState('waiting');
