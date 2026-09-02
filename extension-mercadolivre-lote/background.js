@@ -1,7 +1,9 @@
 const DEFAULT_ENDPOINT = 'https://promoshop.jhonatafaraujo.com.br';
-const MAX_BATCH_SIZE = 20;
+const MAX_BATCH_SIZE = 40;
 const UPLOAD_CHUNK_SIZE = 10;
-const DEFAULT_DELAY_MS = 2200;
+const DEFAULT_DELAY_MS = 10000;
+const MIN_DELAY_MS = 8000;
+const MAX_DELAY_MS = 15000;
 
 let batchState = null;
 
@@ -62,6 +64,7 @@ function snapshot(state) {
     failures: state.failed.slice(-20),
     uploadedCount: state.uploadedCount,
     duplicateCount: state.duplicateCount,
+    delayMs: state.delayMs,
     message: state.message || '',
     startedAt: state.startedAt,
     finishedAt: state.finishedAt || null
@@ -233,7 +236,7 @@ async function startBatch(message) {
     duplicateCount: 0,
     cancelRequested: false,
     activeTabId: null,
-    delayMs: Math.max(1200, Math.min(Number(message.delayMs) || DEFAULT_DELAY_MS, 10000)),
+    delayMs: Math.max(MIN_DELAY_MS, Math.min(Number(message.delayMs) || DEFAULT_DELAY_MS, MAX_DELAY_MS)),
     startedAt: new Date().toISOString(),
     message: 'Lote iniciado.'
   };

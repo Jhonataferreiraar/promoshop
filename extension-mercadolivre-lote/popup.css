@@ -12,6 +12,7 @@ button.primary { color: #fff; background: #1269f3; } button.secondary { color: #
 button:disabled { opacity: .5; cursor: not-allowed; }
 .full { width: 100%; margin-top: 10px; }
 .notice { margin: 13px 0 10px; padding: 10px; border: 1px solid #c9dcff; border-radius: 9px; color: #344054; background: #eef4ff; font-size: 11px; line-height: 1.45; }
+.notice strong + strong { display: block; margin-top: 5px; color: #1849a9; }
 .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: end; }
 .toolbar button { margin-top: 0; } .limit-label { margin: 0; } .limit-label select { width: 100%; }
 #status { margin: 12px 0 8px; padding: 10px; border-radius: 9px; color: #475467; background: #eef4ff; font-size: 11px; line-height: 1.45; }

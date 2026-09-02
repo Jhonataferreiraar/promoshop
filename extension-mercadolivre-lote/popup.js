@@ -16,6 +16,10 @@ const progressCount = document.querySelector('#progressCount');
 const report = document.querySelector('#report');
 let candidates = [];
 let batchRunning = false;
+const DEFAULT_DELAY_MS = 10000;
+const allProducts = () => limit.value === 'all';
+const selectedLimit = () => allProducts() ? candidates.length : Number(limit.value);
+const selectedLimitLabel = () => allProducts() ? 'todos os produtos encontrados' : `até ${limit.value} produtos`;
 
 const setStatus = (message) => { status.textContent = message; };
 const escapeHtml = (value) => String(value || '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -41,7 +45,7 @@ function selectedCandidates() {
 
 function updateSelectionCount() {
   const count = selectedCandidates().length;
-  selectedCount.textContent = `${count}/${Number(limit.value)} selecionados`;
+  selectedCount.textContent = `${count}/${allProducts() ? candidates.length : Number(limit.value)} selecionados`;
   startButton.disabled = batchRunning || count === 0;
   selectAll.checked = candidates.length > 0 && count === candidates.length;
 }
@@ -49,7 +53,7 @@ function updateSelectionCount() {
 function renderCandidates() {
   results.innerHTML = candidates.map((candidate, index) => `
     <label class="candidate">
-      <input type="checkbox" data-index="${index}" ${index < Number(limit.value) ? 'checked' : ''} />
+      <input type="checkbox" data-index="${index}" ${allProducts() || index < Number(limit.value) ? 'checked' : ''} />
       <img src="${escapeHtml(candidate.image)}" alt="" loading="lazy" />
       <span><strong>${escapeHtml(candidate.title || 'Produto Mercado Livre')}</strong><small>${escapeHtml(candidate.discount ? `${candidate.discount}% OFF` : 'Verificação no produto')}</small></span>
     </label>
@@ -70,7 +74,7 @@ async function scanPage() {
     candidates = Array.isArray(response?.products) ? response.products : [];
     renderCandidates();
     setStatus(candidates.length
-      ? `${candidates.length} produto(s) encontrado(s). Selecione até ${limit.value} para capturar.`
+      ? `${candidates.length} produto(s) encontrado(s). Selecione ${selectedLimitLabel()} para capturar.`
       : 'Nenhum produto individual encontrado. Abra uma busca ou categoria do Mercado Livre.');
   } catch (error) {
     candidates = [];
@@ -82,7 +86,7 @@ async function scanPage() {
 }
 
 async function startBatch() {
-  const selected = selectedCandidates().slice(0, Number(limit.value));
+  const selected = selectedCandidates().slice(0, selectedLimit());
   if (!selected.length) return setStatus('Selecione pelo menos um produto.');
   if (selectedCandidates().length > selected.length) setStatus(`Serão capturados os primeiros ${selected.length} produtos selecionados.`);
   startButton.disabled = true;
@@ -92,7 +96,7 @@ async function startBatch() {
   report.textContent = 'Preparando as páginas individuais…';
   let response;
   try {
-    response = await chrome.runtime.sendMessage({ type: 'START_ML_BATCH', candidates: selected, delayMs: 2200 });
+    response = await chrome.runtime.sendMessage({ type: 'START_ML_BATCH', candidates: selected, delayMs: DEFAULT_DELAY_MS });
   } catch {
     response = { error: 'Não foi possível iniciar a captura. Recarregue a extensão e tente novamente.' };
   }
@@ -184,12 +188,13 @@ startButton.addEventListener('click', startBatch);
 cancelButton.addEventListener('click', cancelBatch);
 limit.addEventListener('change', () => {
   const inputs = [...results.querySelectorAll('input[data-index]')];
-  inputs.forEach((input, index) => { input.checked = index < Number(limit.value); });
+  inputs.forEach((input, index) => { input.checked = allProducts() || index < Number(limit.value); });
   updateSelectionCount();
 });
 selectAll.addEventListener('change', () => {
   const inputs = [...results.querySelectorAll('input[data-index]')];
-  inputs.forEach((input, index) => { input.checked = selectAll.checked && index < Number(limit.value); });
+  if (selectAll.checked) limit.value = 'all';
+  inputs.forEach((input) => { input.checked = selectAll.checked; });
   updateSelectionCount();
 });
 load();

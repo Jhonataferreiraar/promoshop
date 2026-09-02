@@ -15,8 +15,8 @@ A versão em lote lê os produtos visíveis em uma página de busca, categoria o
 
 ## Como funciona
 
-- O lote pode ter 5, 10 ou 20 produtos.
-- A extensão processa os produtos um por vez, com intervalo entre páginas, para reduzir bloqueios temporários do Mercado Livre.
+- O lote pode ter 5, 10, 20, 40 ou todos os produtos encontrados na página (até 40 itens por leitura).
+- A extensão processa os produtos um por vez, com intervalo padrão de 10 segundos entre páginas, para reduzir bloqueios temporários do Mercado Livre.
 - Cada produto é validado novamente na página individual. Itens sem desconto válido, sem imagem ou sem link oficial são informados como falha e não entram no catálogo.
 - Os produtos confirmados são enviados em grupos de até 10, limite aceito pelo endpoint do PromoShop.
 - O processamento continua mesmo se o popup for fechado. Ao abri-lo novamente, o último progresso fica disponível.

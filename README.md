@@ -171,7 +171,7 @@ Captura uma oferta individual do Mercado Livre com o link criado pela Barra de A
 
 Pasta: [`extension-mercadolivre-lote/`](extension-mercadolivre-lote/)
 
-É uma versão independente para selecionar até 20 produtos de uma página de resultados. Ela abre cada produto individualmente, gera o link oficial `meli.la` e envia os itens confirmados em lotes ao painel. A extensão individual continua disponível para capturas pontuais.
+É uma versão independente para selecionar até 40 produtos de uma página de resultados — ou todos os itens encontrados. Ela abre cada produto individualmente, gera o link oficial `meli.la` e envia os itens confirmados em lotes ao painel, com intervalo de segurança entre as páginas. A extensão individual continua disponível para capturas pontuais.
 
 ### Instalação no Chrome ou Edge
 

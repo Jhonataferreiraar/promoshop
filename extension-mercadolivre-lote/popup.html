@@ -28,15 +28,18 @@
 
     <div class="notice">
       Abra uma página de busca, categoria ou ofertas do Mercado Livre com a Barra de Afiliados ativa. A extensão abrirá cada produto individualmente para gerar o link oficial <strong>meli.la</strong>.
+      <strong>Intervalo de segurança: 10 segundos entre cada produto.</strong>
     </div>
 
     <div class="toolbar">
       <button id="scan" class="secondary">Ler página</button>
-      <label class="limit-label">Lote
+      <label class="limit-label">Quantidade
         <select id="limit">
           <option value="5">5 produtos</option>
           <option value="10" selected>10 produtos</option>
           <option value="20">20 produtos</option>
+          <option value="40">40 produtos</option>
+          <option value="all">Todos da página</option>
         </select>
       </label>
     </div>
@@ -44,7 +47,7 @@
     <div id="status" role="status">Leia a página aberta para encontrar produtos.</div>
     <div id="selection" class="selection" hidden>
       <div class="selection-header">
-        <label class="select-all"><input id="selectAll" type="checkbox" checked /> Selecionar o lote</label>
+        <label class="select-all"><input id="selectAll" type="checkbox" checked /> Selecionar todos da página</label>
         <small id="selectedCount">0 selecionados</small>
       </div>
       <div id="results"></div>
