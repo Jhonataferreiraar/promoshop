@@ -1052,6 +1052,8 @@ export async function collectOfferCandidates() {
 export async function applyCollectedOffers({ candidates = [], errors = [], activityLogs = [] } = {}) {
   let imported = 0;
   let refreshedLinks = 0;
+  let activated = 0;
+  let activatedMercadoLivre = 0;
   await updateStore((data) => {
     const refreshedAt = new Date().toISOString();
     const existing = new Map(data.offers.map((offer) => [offer.id, offer]));
@@ -1062,6 +1064,15 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
       const savedOffer = existing.get(offer.id) || data.offers.find((entry) => queueItemSourceMatches(entry, offer));
       if (savedOffer) {
         existing.set(offer.id, savedOffer);
+        const incomingAffiliateUrl = String(offer.affiliateUrl || '').trim();
+        // Os coletores do Mercado Livre usam o permalink apenas como referência
+        // enquanto aguardam a criação do link de afiliado. Só uma oferta
+        // marcada como ativa possui um link confirmado; nunca deixe esse
+        // permalink substituir um meli.la já salvo (por exemplo, capturado pela
+        // extensão oficial).
+        const incomingHasConfirmedAffiliate = offer.status === 'active' && Boolean(incomingAffiliateUrl);
+        const wasPendingLink = savedOffer.status === 'pending-link';
+
         for (const key of [
           'title', 'store', 'category', 'price', 'originalPrice', 'image', 'freeShipping', 'featured',
           'externalId', 'brand', 'gtin', 'mpn', 'rating', 'ratingCount'
@@ -1080,18 +1091,27 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
             data.config.whatsappAudiences
           );
 
+        if (incomingHasConfirmedAffiliate && wasPendingLink) {
+          savedOffer.status = 'active';
+          activated += 1;
+          if (String(savedOffer.store || '').trim() === 'Mercado Livre') activatedMercadoLivre += 1;
+        }
+
         if (
-          offer.affiliateUrl &&
-          savedOffer.affiliateUrl !== offer.affiliateUrl
+          incomingHasConfirmedAffiliate &&
+          savedOffer.affiliateUrl !== incomingAffiliateUrl
         ) {
-          savedOffer.affiliateUrl = offer.affiliateUrl;
-          savedOffer.productUrl = offer.productUrl;
+          savedOffer.affiliateUrl = incomingAffiliateUrl;
+          if (offer.productUrl) savedOffer.productUrl = offer.productUrl;
 
           for (
             const queueItem of data.queue.filter(
-              (item) =>
-                item.offerId === offer.id &&
-                item.status === 'pending'
+              (item) => item.status === 'pending' && (
+                item.offerId === offer.id ||
+                item.offerId === savedOffer.id ||
+                queueItemSourceMatches(item, savedOffer) ||
+                queueItemSourceMatches(item, offer)
+              )
             )
           ) {
             const refreshedQueueItem =
@@ -1112,6 +1132,11 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
             queueItem.targetAudienceCodes =
               refreshedQueueItem.targetAudienceCodes;
 
+            queueItem.offerId = savedOffer.id;
+            queueItem.offerTitle = savedOffer.title;
+            queueItem.store = savedOffer.store;
+            queueItem.image = savedOffer.image;
+
             delete queueItem.aiStatus;
             delete queueItem.aiError;
             delete queueItem.aiRetryAt;
@@ -1120,6 +1145,17 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
           }
 
           refreshedLinks += 1;
+        }
+
+        // Quando a fila automática está ligada, uma oferta que acabou de
+        // receber o link pode entrar na fila sem depender de uma nova rodada
+        // manual. A checagem de histórico evita duplicar uma publicação já
+        // enviada ou já pendente.
+        if (incomingHasConfirmedAffiliate && wasPendingLink && data.config.autoQueue) {
+          const queueItem = makeQueueItem(savedOffer, data.config);
+          if (!hasSentSource(data.queue, queueItem) && !hasPendingSource(data.queue, queueItem)) {
+            data.queue.push(queueItem);
+          }
         }
 
         continue;
@@ -1160,11 +1196,15 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
     ...activityLogs,
     {
       message: `Coleta finalizada: ${imported} ofertas novas${refreshedLinks ? ` e ${refreshedLinks} links compactados` : ''}.`,
-      level: imported || refreshedLinks ? 'success' : 'info'
+      level: imported || refreshedLinks || activated ? 'success' : 'info'
     },
+    ...(activated ? [{
+      message: `${activatedMercadoLivre || activated} oferta(s) ${activatedMercadoLivre ? 'do Mercado Livre ' : ''}ativada(s) após confirmação do link de afiliado.`,
+      level: 'success'
+    }] : []),
     ...errors.map((message) => ({ message, level: 'error' }))
   ]);
-  return { imported, refreshedLinks, errors };
+  return { imported, refreshedLinks, activated, errors };
 }
 
 export async function runCollection() {
