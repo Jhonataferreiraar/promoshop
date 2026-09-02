@@ -97,6 +97,19 @@ import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
 import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
 import { safeRedirectDestination } from './urlSecurity.js';
 import {
+  claimMonitoringAlert,
+  enqueueMonitoringAlert,
+  failMonitoringAlert,
+  formatMonitoringAlert,
+  hasMonitoringAlertReady,
+  markMonitoringAlertSent,
+  monitoringEnabledForConfig,
+  monitoringQueueSummary,
+  monitoringRecipientForConfig,
+  normalizeMonitoringRecipient,
+  sanitizeMonitoringMessage
+} from './monitoring.js';
+import {
   turnstileEnabled,
   turnstilePublicConfig,
   verifyTurnstileToken
@@ -238,13 +251,101 @@ function effectiveWhatsappState(data = {}, now = Date.now()) {
 
 function appendStoreLog(data, message, level = 'info') {
   data.logs ||= [];
+  const createdAt = new Date().toISOString();
+  const normalizedMessage = String(message || '').slice(0, 2000);
   data.logs.unshift({
     id: createId('log'),
-    message,
+    message: normalizedMessage,
     level,
-    createdAt: new Date().toISOString()
+    createdAt
   });
   data.logs = data.logs.slice(0, 200);
+  enqueueMonitoringAlert(data, { type: 'log', level, message: normalizedMessage, createdAt });
+}
+
+const serverInstanceId = crypto.randomUUID();
+
+function currentDeploymentKey() {
+  return String(
+    process.env.RENDER_DEPLOY_ID ||
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GIT_COMMIT ||
+    process.env.COMMIT_SHA ||
+    ''
+  ).replace(/[^a-z0-9._:-]/gi, '').slice(0, 100);
+}
+
+function monitoringServiceName() {
+  return String(
+    process.env.RENDER_SERVICE_NAME ||
+    process.env.RENDER_SERVICE_ID ||
+    'PromoShop'
+  ).replace(/[^a-z0-9 ._:-]/gi, '').trim().slice(0, 100) || 'PromoShop';
+}
+
+async function recordServerLifecycle() {
+  const now = Date.now();
+  const deployKey = currentDeploymentKey();
+  const service = monitoringServiceName();
+  await updateStore((data) => {
+    data.meta ||= {};
+    const monitoring = data.meta.monitoring ||= {};
+    const previousHeartbeat = new Date(monitoring.serverHeartbeatAt || 0).getTime();
+    const previousDeployKey = String(monitoring.lastDeployKey || '');
+    const downtimeMinutes = Number.isFinite(previousHeartbeat) && previousHeartbeat > 0 && now - previousHeartbeat > 2 * 60_000
+      ? (now - previousHeartbeat) / 60_000
+      : null;
+    const type = deployKey && (!previousDeployKey || deployKey !== previousDeployKey)
+      ? 'deploy'
+      : downtimeMinutes != null
+        ? 'recovery'
+        : 'server';
+    const message = type === 'deploy'
+      ? `Novo deploy iniciado no serviço ${service}.`
+      : type === 'recovery'
+        ? `O servidor voltou a responder após uma indisponibilidade estimada de ${Math.max(1, Math.round(downtimeMinutes))} minuto(s).`
+        : `O servidor ${service} foi iniciado e está aceitando solicitações.`;
+    monitoring.serverStatus = 'running';
+    monitoring.serverHeartbeatAt = new Date(now).toISOString();
+    monitoring.serverStartedAt = new Date(now).toISOString();
+    monitoring.serverReadyAt = new Date(now).toISOString();
+    monitoring.lastDeployKey = deployKey || previousDeployKey;
+    monitoring.instanceId = serverInstanceId;
+    enqueueMonitoringAlert(data, {
+      type,
+      level: 'success',
+      message,
+      force: true,
+      dedupeKey: `lifecycle:${serverInstanceId}`,
+      metadata: {
+        service,
+        deployKey: deployKey || undefined,
+        downtimeMinutes: downtimeMinutes == null ? undefined : downtimeMinutes
+      }
+    });
+  });
+}
+
+async function recordServerHeartbeat() {
+  const now = new Date().toISOString();
+  await updateStore((data) => {
+    data.meta ||= {};
+    const monitoring = data.meta.monitoring ||= {};
+    monitoring.serverStatus = 'running';
+    monitoring.serverHeartbeatAt = now;
+    monitoring.instanceId ||= serverInstanceId;
+    monitoring.lastDeployKey ||= currentDeploymentKey();
+  });
+}
+
+async function recordServerStopping(signal) {
+  await updateStore((data) => {
+    data.meta ||= {};
+    const monitoring = data.meta.monitoring ||= {};
+    monitoring.serverStatus = 'stopping';
+    monitoring.serverHeartbeatAt = new Date().toISOString();
+    monitoring.serverStopSignal = String(signal || '').slice(0, 30);
+  });
 }
 
 function releaseInstagramAfterWhatsappRound(data, round) {
@@ -2278,6 +2379,7 @@ async function startWhatsappWorkerUnlocked({
             message:
               `Publicador encerrado (${code ?? 'sem código'}).`
           };
+          appendStoreLog(store, `WhatsApp: publicador encerrado (${code ?? 'sem código'}).`, 'warning');
         }
       );
 
@@ -3903,7 +4005,15 @@ app.get(
       collectionRequestedAt: dashboardMeta?.collectionRequestedAt || null,
       publicationRound: dashboardMeta?.publicationRound || null,
       lastPublicationRound: dashboardMeta?.lastPublicationRound || null,
-      whatsapp: dashboardMeta?.whatsapp || {}
+      whatsapp: dashboardMeta?.whatsapp || {},
+      monitoring: {
+        ...monitoringQueueSummary(dashboardData),
+        enabled: monitoringEnabledForConfig(dashboardData.config),
+        recipientConfigured: Boolean(monitoringRecipientForConfig(dashboardData.config)),
+        serverStatus: dashboardMeta?.monitoring?.serverStatus || 'unknown',
+        serverHeartbeatAt: dashboardMeta?.monitoring?.serverHeartbeatAt || null,
+        lastDeployKey: dashboardMeta?.monitoring?.lastDeployKey || ''
+      }
     };
 
     res.json({
@@ -4040,6 +4150,7 @@ app.put(
           monitoringWhatsappMinutes: [5, 1, 120],
           monitoringCollectionHours: [6, 1, 168],
           monitoringFailedQueueLimit: [10, 1, 500],
+          monitoringWhatsappCooldownMinutes: [5, 1, 120],
           extensionMaxCouponsPerRequest: [10, 1, 50],
           minDiscount: [20, 0, 99],
           maxPostsPerDay: [100, 1, 5000],
@@ -4088,9 +4199,15 @@ app.put(
           data.config.instagramUrl,
           previousConfig.instagramUrl || ''
         );
-        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri', 'whatsappDirectoryTitle', 'whatsappDirectoryIntro', 'whatsappDirectoryFooter']) {
+        for (const key of ['brandName', 'heroTitle', 'heroText', 'disclosure', 'contactEmail', 'seoSiteName', 'seoTitle', 'seoDescription', 'seoKeywords', 'seoImageUrl', 'affiliateDisclosureLabel', 'qualityBlockedTerms', 'monitoringEmail', 'monitoringWhatsappRecipient', 'legalResponsibleName', 'legalResponsibleType', 'legalCityState', 'legalPrivacyEmail', 'legalAffiliatePrograms', 'legalAboutCustomText', 'legalContactCustomText', 'legalTermsCustomText', 'legalPrivacyCustomText', 'searchConsoleSiteUrl', 'searchConsoleRedirectUri', 'whatsappDirectoryTitle', 'whatsappDirectoryIntro', 'whatsappDirectoryFooter']) {
           const maximum = key.endsWith('CustomText') ? 3000 : ['heroText', 'disclosure', 'seoDescription'].includes(key) ? 1000 : ['whatsappDirectoryIntro', 'whatsappDirectoryFooter'].includes(key) ? 500 : 300;
           data.config[key] = String(data.config[key] || '').trim().slice(0, maximum);
+        }
+        const normalizedMonitoringRecipient = normalizeMonitoringRecipient(data.config.monitoringWhatsappRecipient);
+        if (data.config.monitoringWhatsappRecipient && !normalizedMonitoringRecipient) {
+          data.config.monitoringWhatsappRecipient = previousConfig.monitoringWhatsappRecipient || '';
+        } else {
+          data.config.monitoringWhatsappRecipient = normalizedMonitoringRecipient;
         }
         if (!/^https:\/\//i.test(data.config.searchConsoleRedirectUri)) data.config.searchConsoleRedirectUri = previousConfig.searchConsoleRedirectUri || '';
         if (!/^(?:sc-domain:|https?:\/\/)/i.test(data.config.searchConsoleSiteUrl)) data.config.searchConsoleSiteUrl = previousConfig.searchConsoleSiteUrl || '';
@@ -4205,6 +4322,27 @@ app.put(
     });
   }
 );
+
+app.post('/api/admin/monitoring/whatsapp/test', requireAdmin, async (_req, res) => {
+  let alert = null;
+  let recipient = '';
+  await updateStore((data) => {
+    recipient = monitoringRecipientForConfig(data.config);
+    if (!monitoringEnabledForConfig(data.config)) return;
+    alert = enqueueMonitoringAlert(data, {
+      type: 'test',
+      level: 'success',
+      message: 'Este é um alerta de teste. O monitoramento do servidor está configurado para este WhatsApp.',
+      force: true,
+      dedupeKey: `test:${Date.now()}`
+    });
+  });
+  if (!recipient) {
+    return res.status(400).json({ error: 'Ative os alertas e informe um número de WhatsApp válido antes de testar.' });
+  }
+  if (!alert) return res.status(400).json({ error: 'Não foi possível criar o alerta de teste.' });
+  return res.status(202).json({ ok: true, message: 'Teste colocado na fila. Ele será enviado quando o WhatsApp estiver conectado.' });
+});
 
 app.put(
   '/api/admin/secrets',
@@ -8578,6 +8716,9 @@ app.post(
               : data.meta.whatsapp?.pairingCode,
             message
           };
+          if (stateChanged && ['offline', 'error'].includes(status)) {
+            appendStoreLog(data, `WhatsApp: ${message || 'publicador desconectado.'}`, status === 'error' ? 'error' : 'warning');
+          }
         }
       );
       whatsappHeartbeatPersistedAt = now.getTime();
@@ -8588,6 +8729,55 @@ app.post(
     });
   }
 );
+
+/*
+ * ==========================================================
+ * ALERTAS OPERACIONAIS PARA O WHATSAPP
+ * ==========================================================
+ */
+
+app.get('/api/worker/monitoring/next', requireWorker, async (_req, res) => {
+  const current = await readStore();
+  const currentRecipient = monitoringRecipientForConfig(current.config);
+  if (!monitoringEnabledForConfig(current.config) || !currentRecipient || !hasMonitoringAlertReady(current)) {
+    return res.status(204).end();
+  }
+  let alert = null;
+  let recipient = currentRecipient;
+  await updateStore((data) => {
+    recipient = monitoringRecipientForConfig(data.config);
+    if (!monitoringEnabledForConfig(data.config)) return;
+    alert = claimMonitoringAlert(data);
+    if (alert) {
+      alert.text = formatMonitoringAlert(alert, alert.metadata || {});
+    }
+  });
+  if (!alert || !recipient) return res.status(204).end();
+  return res.json({
+    id: alert.id,
+    recipient,
+    text: alert.text,
+    attempts: alert.attempts,
+    createdAt: alert.createdAt
+  });
+});
+
+app.post('/api/worker/monitoring/:id/sent', requireWorker, async (req, res) => {
+  let updated = false;
+  await updateStore((data) => {
+    updated = markMonitoringAlertSent(data, req.params.id);
+  });
+  return res.json({ ok: true, updated });
+});
+
+app.post('/api/worker/monitoring/:id/failed', requireWorker, async (req, res) => {
+  let updated = false;
+  const error = sanitizeMonitoringMessage(req.body?.error, 'Falha ao entregar o alerta.');
+  await updateStore((data) => {
+    updated = failMonitoringAlert(data, req.params.id, error);
+  });
+  return res.json({ ok: true, updated });
+});
 
 /*
  * ==========================================================
@@ -9739,7 +9929,9 @@ cron.schedule(
 // Não devolva stack traces, caminhos locais ou mensagens de serviços externos
 // ao navegador. O detalhe fica apenas no log do servidor, já redigido.
 app.use((error, _req, res, _next) => {
-  console.error('Erro interno:', safeErrorMessage(error));
+  const detail = safeErrorMessage(error);
+  console.error('Erro interno:', detail);
+  void addLog(`Erro interno: ${detail}`, error?.status === 413 ? 'warning' : 'error').catch(() => {});
   if (res.headersSent) return;
   res.status(error?.status === 413 ? 413 : 500).json({ error: error?.status === 413 ? 'A solicitação excede o limite permitido.' : 'Não foi possível concluir a solicitação.' });
 });
@@ -9750,6 +9942,8 @@ app.use((error, _req, res, _next) => {
  * ==========================================================
  */
 
+let serverHeartbeatTimer = null;
+
 const httpServer = app.listen(
   port,
   () => {
@@ -9759,6 +9953,16 @@ const httpServer = app.listen(
     console.log(
       `Limite de memória do servidor: ${Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024)} MB.`
     );
+
+    void recordServerLifecycle().catch((error) => {
+      console.error('Não foi possível registrar o início do servidor:', safeErrorMessage(error));
+    });
+    serverHeartbeatTimer = setInterval(() => {
+      recordServerHeartbeat().catch((error) => {
+        console.error('Não foi possível atualizar o monitoramento do servidor:', safeErrorMessage(error));
+      });
+    }, 2 * 60_000);
+    serverHeartbeatTimer.unref?.();
 
     setTimeout(
       async () => {
@@ -9817,16 +10021,38 @@ function shutdownServer(signal) {
   serverShutdownPromise = (async () => {
     console.log(`Encerrando PromoShop com segurança (${signal}).`);
     whatsappStopRequested = true;
+    if (serverHeartbeatTimer) clearInterval(serverHeartbeatTimer);
     const closeHttp = new Promise((resolve) => httpServer.close(resolve));
     const timeout = new Promise((resolve) => setTimeout(resolve, 10_000));
     await Promise.race([
-      Promise.allSettled([stopWhatsappWorkerProcess(), closeHttp]),
+      Promise.allSettled([recordServerStopping(signal), stopWhatsappWorkerProcess(), closeHttp]),
       timeout
     ]);
     process.exit(0);
   })();
   return serverShutdownPromise;
 }
+
+let fatalErrorScheduled = false;
+process.on('unhandledRejection', (reason) => {
+  const detail = sanitizeMonitoringMessage(reason?.message || reason, 'Rejeição de promessa sem tratamento.');
+  console.error('Rejeição de promessa sem tratamento:', detail);
+  void addLog(`Rejeição de promessa sem tratamento: ${detail}`, 'error').catch(() => {});
+});
+process.on('uncaughtException', (error) => {
+  const detail = safeErrorMessage(error, 'Exceção não tratada.');
+  console.error('Exceção não tratada:', detail, error?.stack || '');
+  if (fatalErrorScheduled) return;
+  fatalErrorScheduled = true;
+  // Dê uma janela curta para persistir o alerta antes de encerrar o processo.
+  // Se o armazenamento também estiver indisponível, o limite garante que o
+  // servidor ainda seja reiniciado pelo provedor de hospedagem.
+  const persistFatalAlert = addLog(`Falha crítica do servidor: ${detail}`, 'error').catch(() => {});
+  void Promise.race([
+    persistFatalAlert,
+    new Promise((resolve) => setTimeout(resolve, 1500))
+  ]).finally(() => process.exit(1));
+});
 
 process.once('SIGTERM', () => { void shutdownServer('SIGTERM'); });
 process.once('SIGINT', () => { void shutdownServer('SIGINT'); });

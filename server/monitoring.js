@@ -1,0 +1,220 @@
+const MAX_ALERTS = 200;
+const MAX_RECENT_KEYS = 300;
+const DEFAULT_COOLDOWN_MINUTES = 5;
+const STALE_SENDING_MS = 10 * 60 * 1000;
+
+const LEVELS = new Set(['info', 'success', 'warning', 'error']);
+
+function compactText(value, maximum = 600) {
+  return String(value ?? '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maximum);
+}
+
+function redact(value) {
+  return compactText(value)
+    .replace(/(bearer\s+)[^\s]+/gi, '$1[redacted]')
+    .replace(/(["']?(?:api[-_ ]?key|client[-_ ]?secret|access[-_ ]?token|refresh[-_ ]?token|password|cookie|csrf|authorization)["']?\s*[:=]\s*["']?)([^"',; }\]]+)(["']?)/gi, '$1[redacted]$3')
+    .replace(/([?&](?:token|key|secret|password|access_token|refresh_token)=)[^&#\s]+/gi, '$1[redacted]');
+}
+
+export function sanitizeMonitoringMessage(value, fallback = 'Evento operacional sem detalhes.') {
+  const sanitized = redact(value);
+  return sanitized || fallback;
+}
+
+export function normalizeMonitoringRecipient(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^[a-z0-9_-]{8,80}@[a-z.]+$/i.test(raw) && /@(c\.us|g\.us|newsletter)$/i.test(raw)) return raw.toLowerCase();
+  const digits = raw.replace(/\D/g, '');
+  if (/^\d{10,15}$/.test(digits)) return `${digits}@c.us`;
+  return '';
+}
+
+export function monitoringRecipientForConfig(config = {}, environment = process.env) {
+  return normalizeMonitoringRecipient(
+    config.monitoringWhatsappRecipient || environment.MONITORING_WHATSAPP_RECIPIENT || ''
+  );
+}
+
+export function monitoringEnabledForConfig(config = {}, environment = process.env) {
+  return config.monitoringWhatsappEnabled === true && Boolean(monitoringRecipientForConfig(config, environment));
+}
+
+function shouldNotify(config = {}, type, level) {
+  if (type === 'test') return true;
+  if (type === 'deploy') return config.monitoringWhatsappDeployAlerts !== false;
+  if (['server', 'recovery'].includes(type)) return config.monitoringWhatsappServerAlerts !== false;
+  if (level === 'info' || level === 'success') return config.monitoringWhatsappIncludeInfo === true;
+  return ['warning', 'error'].includes(level);
+}
+
+function pruneRecent(recent, now) {
+  for (const [key, timestamp] of Object.entries(recent || {})) {
+    if (!Number.isFinite(Number(timestamp)) || now - Number(timestamp) > 24 * 60 * 60 * 1000) delete recent[key];
+  }
+  const keys = Object.keys(recent || {});
+  if (keys.length > MAX_RECENT_KEYS) {
+    keys.sort((left, right) => Number(recent[left] || 0) - Number(recent[right] || 0));
+    keys.slice(0, keys.length - MAX_RECENT_KEYS).forEach((key) => delete recent[key]);
+  }
+}
+
+function eventKey(type, level, message, dedupeKey = '') {
+  if (dedupeKey) return compactText(dedupeKey, 180);
+  return `${type}:${level}:${compactText(message, 220).toLocaleLowerCase('pt-BR')}`;
+}
+
+function initializeMonitoring(data) {
+  data.meta ||= {};
+  data.meta.monitoring ||= {};
+  const monitoring = data.meta.monitoring;
+  monitoring.alerts = Array.isArray(monitoring.alerts) ? monitoring.alerts : [];
+  monitoring.recent = monitoring.recent && typeof monitoring.recent === 'object' ? monitoring.recent : {};
+  return monitoring;
+}
+
+export function enqueueMonitoringAlert(data, {
+  type = 'log',
+  level = 'error',
+  message = '',
+  dedupeKey = '',
+  force = false,
+  createdAt = new Date().toISOString(),
+  metadata = null
+} = {}) {
+  const config = data?.config || {};
+  const normalizedType = ['log', 'deploy', 'server', 'recovery', 'test'].includes(type) ? type : 'log';
+  const normalizedLevel = LEVELS.has(level) ? level : 'info';
+  const text = sanitizeMonitoringMessage(message);
+  if (!monitoringEnabledForConfig(config)) return null;
+  if (!shouldNotify(config, normalizedType, normalizedLevel)) return null;
+
+  const monitoring = initializeMonitoring(data);
+  const now = Date.now();
+  pruneRecent(monitoring.recent, now);
+  const key = eventKey(normalizedType, normalizedLevel, text, dedupeKey);
+  const cooldownMs = Math.max(1, Number(config.monitoringWhatsappCooldownMinutes || DEFAULT_COOLDOWN_MINUTES)) * 60_000;
+  if (!force && Number(monitoring.recent[key] || 0) + cooldownMs > now) return null;
+  monitoring.recent[key] = now;
+
+  const alert = {
+    id: `monitor_${now}_${Math.random().toString(16).slice(2, 10)}`,
+    type: normalizedType,
+    level: normalizedLevel,
+    message: text,
+    metadata: metadata && typeof metadata === 'object' ? metadata : undefined,
+    status: 'pending',
+    attempts: 0,
+    createdAt,
+    availableAt: new Date(now).toISOString(),
+    sentAt: null,
+    lastError: null
+  };
+  monitoring.alerts.push(alert);
+  monitoring.alerts = monitoring.alerts.slice(-MAX_ALERTS);
+  return alert;
+}
+
+function reclaimStaleSending(alert, now) {
+  if (alert?.status !== 'sending') return false;
+  const claimedAt = new Date(alert.claimedAt || 0).getTime();
+  if (!Number.isFinite(claimedAt) || now - claimedAt < STALE_SENDING_MS) return false;
+  alert.status = 'pending';
+  alert.availableAt = new Date(now).toISOString();
+  alert.claimedAt = null;
+  return true;
+}
+
+export function hasMonitoringAlertReady(data, now = Date.now()) {
+  const alerts = Array.isArray(data?.meta?.monitoring?.alerts) ? data.meta.monitoring.alerts : [];
+  return alerts.some((alert) => {
+    if (alert?.status === 'pending') {
+      const availableAt = new Date(alert.availableAt || alert.createdAt || 0).getTime();
+      return Number.isFinite(availableAt) && availableAt <= now;
+    }
+    if (alert?.status === 'sending') {
+      const claimedAt = new Date(alert.claimedAt || 0).getTime();
+      return !Number.isFinite(claimedAt) || now - claimedAt >= STALE_SENDING_MS;
+    }
+    return false;
+  });
+}
+
+export function claimMonitoringAlert(data, now = Date.now()) {
+  const monitoring = initializeMonitoring(data);
+  for (const alert of monitoring.alerts) reclaimStaleSending(alert, now);
+  const alert = monitoring.alerts.find((entry) => (
+    entry?.status === 'pending' &&
+    new Date(entry.availableAt || entry.createdAt || 0).getTime() <= now
+  ));
+  if (!alert) return null;
+  alert.status = 'sending';
+  alert.attempts = Number(alert.attempts || 0) + 1;
+  alert.claimedAt = new Date(now).toISOString();
+  return { ...alert };
+}
+
+export function markMonitoringAlertSent(data, id, now = new Date()) {
+  const monitoring = initializeMonitoring(data);
+  const alert = monitoring.alerts.find((entry) => entry.id === String(id));
+  if (!alert) return false;
+  alert.status = 'sent';
+  alert.sentAt = now.toISOString();
+  alert.claimedAt = null;
+  alert.lastError = null;
+  return true;
+}
+
+export function failMonitoringAlert(data, id, error, now = Date.now()) {
+  const monitoring = initializeMonitoring(data);
+  const alert = monitoring.alerts.find((entry) => entry.id === String(id));
+  if (!alert) return false;
+  const attempts = Number(alert.attempts || 0);
+  alert.lastError = sanitizeMonitoringMessage(error, 'Falha ao entregar o alerta.').slice(0, 240);
+  alert.claimedAt = null;
+  if (attempts >= 3) {
+    alert.status = 'failed';
+    alert.availableAt = null;
+  } else {
+    alert.status = 'pending';
+    alert.availableAt = new Date(now + Math.min(15 * 60_000, 30_000 * (2 ** Math.max(0, attempts - 1)))).toISOString();
+  }
+  return true;
+}
+
+export function formatMonitoringAlert(alert = {}, context = {}) {
+  const labels = {
+    log: 'Registro do servidor',
+    deploy: 'Novo deploy',
+    server: 'Servidor iniciado',
+    recovery: 'Servidor recuperado',
+    test: 'Teste de monitoramento'
+  };
+  const levelLabels = { info: 'informação', success: 'sucesso', warning: 'atenção', error: 'erro' };
+  const date = new Date(alert.createdAt || Date.now()).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const lines = [
+    '🔔 PromoShop · monitoramento',
+    `Tipo: ${labels[alert.type] || 'Evento operacional'}${alert.level ? ` (${levelLabels[alert.level] || alert.level})` : ''}`,
+    `Horário: ${date}`,
+    `Mensagem: ${sanitizeMonitoringMessage(alert.message, 'Sem detalhes.')}`
+  ];
+  if (context.service) lines.push(`Serviço: ${compactText(context.service, 100)}`);
+  if (context.deployKey) lines.push(`Versão: ${compactText(context.deployKey, 100)}`);
+  if (context.downtimeMinutes != null) lines.push(`Indisponibilidade estimada: ${Math.max(0, Math.round(Number(context.downtimeMinutes) || 0))} min`);
+  return lines.join('\n').slice(0, 3500);
+}
+
+export function monitoringQueueSummary(data = {}) {
+  const alerts = Array.isArray(data.meta?.monitoring?.alerts) ? data.meta.monitoring.alerts : [];
+  return {
+    pending: alerts.filter((alert) => ['pending', 'sending'].includes(alert?.status)).length,
+    sent: alerts.filter((alert) => alert?.status === 'sent').length,
+    failed: alerts.filter((alert) => alert?.status === 'failed').length,
+    total: alerts.length,
+    lastSentAt: alerts.filter((alert) => alert?.status === 'sent').sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0))[0]?.sentAt || null
+  };
+}

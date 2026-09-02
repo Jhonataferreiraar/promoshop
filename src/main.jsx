@@ -69,6 +69,12 @@ const fallbackConfig = {
   monitoringWhatsappMinutes: 5,
   monitoringCollectionHours: 6,
   monitoringFailedQueueLimit: 10,
+  monitoringWhatsappEnabled: false,
+  monitoringWhatsappRecipient: '',
+  monitoringWhatsappIncludeInfo: false,
+  monitoringWhatsappDeployAlerts: true,
+  monitoringWhatsappServerAlerts: true,
+  monitoringWhatsappCooldownMinutes: 5,
   legalResponsibleName: 'Jhonata Ferreira de Araujo',
   legalResponsibleType: 'pessoa física',
   legalCityState: 'Brasília/DF',
@@ -1525,7 +1531,7 @@ function AdminApp() {
   const [token, setToken] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
@@ -2242,6 +2248,17 @@ function AdminApp() {
       setMessage(`Não foi possível alterar o grupo: ${error.message}`);
     } finally {
       setQueueAudienceSaving('');
+    }
+  }
+  async function testMonitoringWhatsapp() {
+    setMessage('Colocando um alerta de teste na fila do WhatsApp…');
+    try {
+      await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
+      await authApi('/admin/monitoring/whatsapp/test', { method: 'POST', body: '{}' });
+      setMessage('Teste colocado na fila. Ele será enviado assim que o WhatsApp estiver conectado.');
+      await load({ preserveConfig: true });
+    } catch (error) {
+      setMessage(error.message);
     }
   }
   function clearFailedQueue() {
@@ -3813,13 +3830,23 @@ function AdminApp() {
       </section>
 
       <section className="panel settings-section">
-        <div className="section-title"><div><span className="section-step">MONITORAMENTO</span><h2>Limites de atenção</h2><p>Parâmetros usados para destacar problemas operacionais no painel.</p></div></div>
+        <div className="section-title"><div><span className="section-step">MONITORAMENTO</span><h2>Limites de atenção</h2><p>Parâmetros usados para destacar problemas operacionais no painel e, se você quiser, avisar pelo WhatsApp.</p></div></div>
         <div className="settings-grid">
           <label>E-mail para alertas<input type="email" value={data.config.monitoringEmail ?? ''} onChange={(event) => setConfigField('monitoringEmail', event.target.value)} /></label>
           <label>WhatsApp sem resposta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappMinutes', Number(event.target.value))} /></label>
           <label>Coleta atrasada (horas)<input type="number" min="1" max="168" value={data.config.monitoringCollectionHours ?? 6} onChange={(event) => setConfigField('monitoringCollectionHours', Number(event.target.value))} /></label>
           <label>Falhas toleradas na fila<input type="number" min="1" max="500" value={data.config.monitoringFailedQueueLimit ?? 10} onChange={(event) => setConfigField('monitoringFailedQueueLimit', Number(event.target.value))} /></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringEnabled !== false} onChange={(event) => setConfigField('monitoringEnabled', event.target.checked)} /><span><strong>Monitoramento ativo</strong><small>Exibe avisos quando os limites forem ultrapassados.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappEnabled === true} onChange={(event) => setConfigField('monitoringWhatsappEnabled', event.target.checked)} /><span><strong>Enviar alertas para o WhatsApp</strong><small>Erros, falhas importantes, reinícios, recuperação e novos deploys.</small></span></label>
+          <label>Número que receberá os alertas<input inputMode="tel" autoComplete="tel" value={String(data.config.monitoringWhatsappRecipient || '').replace(/@c\.us$/i, '')} onChange={(event) => setConfigField('monitoringWhatsappRecipient', event.target.value.replace(/\D/g, ''))} placeholder="5561999999999" /><small>Use código do país + DDD + número, somente dígitos. O WhatsApp precisa estar conectado para entregar.</small></label>
+          <label>Intervalo para repetir o mesmo alerta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappCooldownMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappCooldownMinutes', Number(event.target.value))} /><small>Evita mensagens repetidas quando um erro aparece muitas vezes.</small></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappIncludeInfo === true} onChange={(event) => setConfigField('monitoringWhatsappIncludeInfo', event.target.checked)} /><span><strong>Incluir registros informativos</strong><small>Desativado por padrão para não transformar o WhatsApp em um fluxo de logs.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappDeployAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappDeployAlerts', event.target.checked)} /><span><strong>Avisar sobre deploys</strong><small>Identifica o commit do Render quando essa informação estiver disponível.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappServerAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappServerAlerts', event.target.checked)} /><span><strong>Avisar sobre início e recuperação</strong><small>Informa quando o servidor inicia ou volta depois de uma pausa.</small></span></label>
+        </div>
+        <div className="monitoring-whatsapp-actions">
+          <button className="button subtle" type="button" onClick={testMonitoringWhatsapp}>Enviar alerta de teste</button>
+          <small>{data.meta?.monitoring?.pending ? `${data.meta.monitoring.pending} alerta(s) aguardando entrega.` : 'Nenhum alerta aguardando entrega.'} Salve as configurações antes de usar o teste.</small>
         </div>
       </section>
 

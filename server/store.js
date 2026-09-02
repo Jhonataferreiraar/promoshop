@@ -9,6 +9,7 @@ import { DEFAULT_INSTAGRAM_THEMES, sanitizeInstagramThemes } from './instagramTh
 import { DEFAULT_INSTAGRAM_HIGHLIGHTS, sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createPostgresStateBackend } from './postgresStore.js';
 import { recordSentSourceInLedger } from './whatsappDedup.js';
+import { enqueueMonitoringAlert } from './monitoring.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -204,6 +205,12 @@ const initialData = {
     monitoringWhatsappMinutes: 5,
     monitoringCollectionHours: 6,
     monitoringFailedQueueLimit: 10,
+    monitoringWhatsappEnabled: false,
+    monitoringWhatsappRecipient: '',
+    monitoringWhatsappIncludeInfo: false,
+    monitoringWhatsappDeployAlerts: true,
+    monitoringWhatsappServerAlerts: true,
+    monitoringWhatsappCooldownMinutes: 5,
     legalResponsibleName: 'Jhonata Ferreira de Araujo',
     legalResponsibleType: 'pessoa física',
     legalCityState: 'Brasília/DF',
@@ -404,7 +411,20 @@ const initialData = {
     visitors: {},
     daily: {}
   },
-  meta: { lastCollectionAt: null, whatsapp: { status: 'offline', lastSeenAt: null, qrDataUrl: null, pairingCode: null, groups: [], message: 'Publicador ainda não iniciado.' } }
+  meta: {
+    lastCollectionAt: null,
+    whatsapp: { status: 'offline', lastSeenAt: null, qrDataUrl: null, pairingCode: null, groups: [], message: 'Publicador ainda não iniciado.' },
+    monitoring: {
+      alerts: [],
+      recent: {},
+      serverStatus: 'unknown',
+      serverHeartbeatAt: null,
+      serverStartedAt: null,
+      serverReadyAt: null,
+      lastDeployKey: '',
+      instanceId: ''
+    }
+  }
 };
 
 let writeChain = Promise.resolve();
@@ -431,6 +451,14 @@ function scheduleBufferedLogFlush(delay = 250) {
         data.logs ||= [];
         data.logs.unshift(...[...batch].reverse());
         data.logs = data.logs.slice(0, 200);
+        for (const entry of batch) {
+          enqueueMonitoringAlert(data, {
+            type: 'log',
+            level: entry.level,
+            message: entry.message,
+            createdAt: entry.createdAt
+          });
+        }
       });
     } catch (error) {
       bufferedLogs.unshift(...batch);
@@ -584,7 +612,17 @@ function normalizeStoreData(data) {
   ) {
     data.config.aiModel = 'gemini-3.5-flash-lite';
   }
-  data.meta = { ...initialData.meta, ...(data.meta || {}), whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) } };
+  data.meta = {
+    ...initialData.meta,
+    ...(data.meta || {}),
+    whatsapp: { ...initialData.meta.whatsapp, ...(data.meta?.whatsapp || {}) },
+    monitoring: {
+      ...initialData.meta.monitoring,
+      ...(data.meta?.monitoring || {}),
+      alerts: Array.isArray(data.meta?.monitoring?.alerts) ? data.meta.monitoring.alerts : [],
+      recent: data.meta?.monitoring?.recent && typeof data.meta.monitoring.recent === 'object' ? data.meta.monitoring.recent : {}
+    }
+  };
   data.offers ||= [];
   data.coupons ||= [];
   data.inbox ||= [];
@@ -796,8 +834,11 @@ export function createId(prefix = 'item') {
 
 export async function addLog(message, level = 'info') {
   return updateStore((data) => {
-    data.logs.unshift({ id: createId('log'), message, level, createdAt: new Date().toISOString() });
+    const createdAt = new Date().toISOString();
+    const normalizedMessage = String(message || '').slice(0, 2000);
+    data.logs.unshift({ id: createId('log'), message: normalizedMessage, level, createdAt });
     data.logs = data.logs.slice(0, 200);
+    enqueueMonitoringAlert(data, { type: 'log', level, message: normalizedMessage, createdAt });
   });
 }
 
@@ -815,6 +856,14 @@ export async function addLogs(entries = []) {
     data.logs ||= [];
     data.logs.unshift(...[...logs].reverse());
     data.logs = data.logs.slice(0, 200);
+    for (const entry of logs) {
+      enqueueMonitoringAlert(data, {
+        type: 'log',
+        level: entry.level,
+        message: entry.message,
+        createdAt: entry.createdAt
+      });
+    }
   });
 }
 

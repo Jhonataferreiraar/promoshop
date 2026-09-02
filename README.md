@@ -121,6 +121,21 @@ O publicador usa `whatsapp-web.js` e Chromium. A sessão é persistida para que 
 
 > Automação no WhatsApp pode estar sujeita aos termos e limites da plataforma. Use apenas grupos administrados por você e participantes que aceitaram receber as ofertas.
 
+### Alertas operacionais no WhatsApp
+
+O painel pode enviar para um número do WhatsApp os principais eventos do servidor. A fila de alertas é gravada junto com o estado operacional, então uma mensagem que surgir durante uma reinicialização fica pendente e é entregue quando o publicador voltar a conectar.
+
+Para ativar:
+
+1. Conecte o WhatsApp no painel.
+2. Em **Sistema → Configurações → Monitoramento**, ative **Enviar alertas para o WhatsApp**.
+3. Informe o número com código do país, DDD e número, somente dígitos (por exemplo, `5561999999999`).
+4. Salve as configurações e use **Enviar alerta de teste**.
+
+Por padrão, o sistema avisa erros e advertências registrados na atividade, início ou recuperação do servidor e novos deploys identificados pelo Render. Registros informativos podem ser ativados separadamente; o intervalo de repetição evita que o mesmo erro gere uma sequência de mensagens. O destinatário também pode ser definido pela variável opcional `MONITORING_WHATSAPP_RECIPIENT`.
+
+O alerta de “servidor recuperado” só pode ser enviado depois que a aplicação voltar a executar: um processo totalmente parado não consegue enviar mensagens enquanto está fora do ar. Para monitorar uma indisponibilidade que ainda não terminou, é necessário combinar este recurso com um monitor externo ou webhook do provedor de hospedagem.
+
 ## Instagram
 
 O Instagram usa a API oficial da Meta. O PromoShop não solicita nem armazena a senha da conta.
@@ -425,6 +440,7 @@ Se uma credencial real for enviada ao Git, removê-la do arquivo não basta: rev
 | `npm run test:whatsapp-dedup` | Bloqueio de duplicatas. |
 | `npm run test:whatsapp-media` | Download e envio de mídia. |
 | `npm run test:whatsapp-process` | Processo do worker. |
+| `npm run test:monitoring` | Fila, redaction e entrega dos alertas operacionais. |
 | `npm run test:instagram` | Filas e limites do Instagram. |
 | `npm run test:extension` | Entrada das duas extensões. |
 

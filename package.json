@@ -31,6 +31,7 @@
     "test:whatsapp-store-priority": "node scripts/test-whatsapp-store-priority.mjs",
     "test:whatsapp-mentions": "node scripts/test-whatsapp-mentions.mjs",
     "test:whatsapp-dedup": "node scripts/test-whatsapp-dedup.mjs",
+    "test:monitoring": "node scripts/test-monitoring.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",
     "test:store": "node scripts/test-store-compaction.mjs",
     "test:postgres": "node scripts/test-postgres-store.mjs",

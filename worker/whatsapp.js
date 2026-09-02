@@ -156,6 +156,7 @@ let authenticationReadyProbe = null;
 let authenticationReadyProbeRunning = false;
 let shuttingDown = false;
 let shutdownPromise = null;
+let monitoringProcessing = false;
 const groupParticipantCache = new Map();
 const GROUP_PARTICIPANT_CACHE_MS = 5 * 60 * 1000;
 
@@ -484,9 +485,13 @@ async function startConnectedServices() {
   await refreshConfig().catch((error) => console.error('Não foi possível carregar as configurações:', error.message));
   await syncGroups();
   processQueue();
+  processMonitoringQueue();
   setInterval(() => {
     processQueue();
   }, 10_000);
+  setInterval(() => {
+    processMonitoringQueue();
+  }, 5_000);
   setInterval(() => {
     if (!whatsappReady) {
       return;
@@ -835,6 +840,31 @@ async function processQueue() {
     console.error(error.message);
     if (item) await request(`/api/worker/queue/${item.id}/fail`, { method: 'POST', body: JSON.stringify({ error: error.message }) }).catch(() => { });
   } finally { processing = false; }
+}
+
+async function processMonitoringQueue() {
+  if (!whatsappReady || processing || monitoringProcessing) return;
+  monitoringProcessing = true;
+  let alert = null;
+  try {
+    alert = await request('/api/worker/monitoring/next');
+    if (!alert?.id || !alert.text || !alert.recipient) return;
+    await client.sendMessage(alert.recipient, alert.text, { sendSeen: false });
+    await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/sent`, {
+      method: 'POST',
+      body: '{}'
+    });
+  } catch (error) {
+    if (alert?.id) {
+      await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/failed`, {
+        method: 'POST',
+        body: JSON.stringify({ error: String(error?.message || error || 'Falha desconhecida').slice(0, 240) })
+      }).catch(() => {});
+    }
+    console.error('Falha ao enviar alerta operacional:', error?.message || error);
+  } finally {
+    monitoringProcessing = false;
+  }
 }
 
 client.on('qr', async (code) => {

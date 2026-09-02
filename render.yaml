@@ -41,6 +41,9 @@ services:
         value: "true"
       - key: WHATSAPP_AUTOSTART
         value: "true"
+      # Opcional: destinatário dos alertas operacionais do servidor.
+      - key: MONITORING_WHATSAPP_RECIPIENT
+        sync: false
       # O WhatsApp usa uma sessão única no disco persistente.
       # Mais de um processo causa disputa pelo Chromium e pela sessão.
       - key: WEB_CONCURRENCY
