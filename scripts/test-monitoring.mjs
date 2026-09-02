@@ -7,6 +7,8 @@ import {
   markMonitoringAlertSent,
   monitoringEnabledForConfig,
   normalizeMonitoringRecipient,
+  monitoringQueueSummary,
+  retryFailedMonitoringAlerts,
   sanitizeMonitoringMessage
 } from '../server/monitoring.js';
 
@@ -19,6 +21,7 @@ const config = {
   monitoringWhatsappCooldownMinutes: 5
 };
 assert.equal(normalizeMonitoringRecipient('5561999999999'), '5561999999999@c.us');
+assert.equal(normalizeMonitoringRecipient('(61) 99999-9999'), '5561999999999@c.us');
 assert.equal(normalizeMonitoringRecipient('120363000000000000-1234567890@g.us'), '120363000000000000-1234567890@g.us');
 assert.equal(normalizeMonitoringRecipient('not-a-number'), '');
 assert.equal(monitoringEnabledForConfig(config), true);
@@ -42,6 +45,17 @@ const failed = claimMonitoringAlert(data);
 assert.ok(failed?.id);
 assert.equal(failMonitoringAlert(data, failed.id, 'Falha temporária'), true);
 assert.equal(data.meta.monitoring.alerts.find((entry) => entry.id === failed.id)?.status, 'pending');
+const retryData = { config, meta: { monitoring: { alerts: [], recent: {} } } };
+const retryAlert = enqueueMonitoringAlert(retryData, { type: 'log', level: 'error', message: 'Falha final', force: true });
+assert.ok(retryAlert?.id);
+const failedForRetry = claimMonitoringAlert(retryData);
+assert.ok(failedForRetry?.id);
+retryData.meta.monitoring.alerts.find((entry) => entry.id === failedForRetry.id).attempts = 3;
+assert.equal(failMonitoringAlert(retryData, failedForRetry.id, 'Falha final'), true);
+assert.equal(retryData.meta.monitoring.alerts.find((entry) => entry.id === failedForRetry.id)?.status, 'failed');
+assert.equal(retryFailedMonitoringAlerts(retryData, Date.parse('2026-09-02T12:05:00.000Z')), 1);
+assert.equal(retryData.meta.monitoring.alerts.find((entry) => entry.id === failedForRetry.id)?.status, 'pending');
+assert.equal(monitoringQueueSummary(retryData).lastFailure, null);
 
 const text = formatMonitoringAlert({ type: 'deploy', level: 'success', message: 'Deploy com apiKey=oculta', createdAt: '2026-09-02T12:00:00.000Z' }, { service: 'PromoShop', deployKey: 'abc123' });
 assert.match(text, /Novo deploy/);

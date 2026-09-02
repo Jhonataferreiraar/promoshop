@@ -157,6 +157,11 @@ let authenticationReadyProbeRunning = false;
 let shuttingDown = false;
 let shutdownPromise = null;
 let monitoringProcessing = false;
+let monitoringRecipientResolution = {
+  key: '',
+  ids: [],
+  expiresAt: 0
+};
 const groupParticipantCache = new Map();
 const GROUP_PARTICIPANT_CACHE_MS = 5 * 60 * 1000;
 
@@ -857,7 +862,7 @@ async function processMonitoringQueue() {
     alert = await request('/api/worker/monitoring/next');
     if (!alert?.id || !alert.text || !alert.recipient) return;
     handled = true;
-    await client.sendMessage(alert.recipient, alert.text, { sendSeen: false });
+    await sendMonitoringMessage(alert.recipient, alert.text);
     await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/sent`, {
       method: 'POST',
       body: '{}'
@@ -874,6 +879,78 @@ async function processMonitoringQueue() {
     monitoringProcessing = false;
   }
   return handled;
+}
+
+function serializedWhatsappId(value) {
+  if (typeof value === 'string') return value.trim().toLowerCase();
+  return String(value?._serialized || '').trim().toLowerCase();
+}
+
+function uniqueWhatsappIds(values) {
+  return [...new Set(values.map((value) => serializedWhatsappId(value)).filter(Boolean))];
+}
+
+/**
+ * O WhatsApp pode representar o próprio número com um identificador LID em
+ * sessões multi-dispositivo. O número digitado no painel continua sendo um
+ * endereço @c.us, então resolvemos o JID atual antes de enviar o alerta.
+ */
+async function resolveMonitoringRecipientIds(recipient) {
+  const configured = serializedWhatsappId(recipient);
+  const own = serializedWhatsappId(client.info?.wid);
+  const cacheKey = `${configured}|${own}`;
+  const now = Date.now();
+  if (monitoringRecipientResolution.key === cacheKey && monitoringRecipientResolution.expiresAt > now) {
+    return monitoringRecipientResolution.ids;
+  }
+
+  const candidates = [];
+  const configuredUser = configured.split('@')[0];
+  const ownUser = own.split('@')[0];
+  const configuredIsOwnNumber = Boolean(own && configuredUser && configuredUser === ownUser);
+
+  if (configuredIsOwnNumber) candidates.push(own);
+
+  // getNumberId() returns the canonical WID for phone numbers. This is the
+  // important conversion for accounts that now expose the personal chat as
+  // @lid instead of @c.us.
+  if (/@c\.us$/i.test(configured)) {
+    try {
+      const resolved = await client.getNumberId(configured);
+      if (resolved?._serialized) candidates.push(resolved._serialized);
+    } catch (error) {
+      console.warn('Não foi possível resolver o destinatário do monitoramento:', error?.message || error);
+    }
+  }
+
+  candidates.push(configured);
+  const ids = uniqueWhatsappIds(candidates);
+  monitoringRecipientResolution = {
+    key: cacheKey,
+    ids,
+    expiresAt: now + 5 * 60_000
+  };
+  return ids;
+}
+
+async function sendMonitoringMessage(recipient, text) {
+  const candidates = await resolveMonitoringRecipientIds(recipient);
+  if (!candidates.length) throw new Error('Destinatário de monitoramento inválido.');
+
+  const errors = [];
+  for (const chatId of candidates) {
+    try {
+      const chat = await client.getChatById(chatId);
+      if (!chat) throw new Error('o WhatsApp não encontrou o chat do destinatário');
+      const sent = await chat.sendMessage(text, { sendSeen: false });
+      if (!sent) throw new Error('o WhatsApp não confirmou o envio da mensagem');
+      return sent;
+    } catch (error) {
+      errors.push(String(error?.message || error || 'falha desconhecida'));
+    }
+  }
+
+  throw new Error(`Não foi possível enviar o alerta pelo WhatsApp: ${errors.join(' | ').slice(0, 600)}`);
 }
 
 client.on('qr', async (code) => {

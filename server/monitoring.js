@@ -29,7 +29,10 @@ export function normalizeMonitoringRecipient(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
   if (/^[a-z0-9_-]{8,80}@[a-z.]+$/i.test(raw) && /@(c\.us|g\.us|newsletter)$/i.test(raw)) return raw.toLowerCase();
-  const digits = raw.replace(/\D/g, '');
+  let digits = raw.replace(/\D/g, '');
+  // O painel é brasileiro e muitos usuários informam o celular apenas com
+  // DDD. Complete o código do país nesse caso para evitar um JID inválido.
+  if ((digits.length === 10 || digits.length === 11) && !digits.startsWith('55')) digits = `55${digits}`;
   if (/^\d{10,15}$/.test(digits)) return `${digits}@c.us`;
   return '';
 }
@@ -155,6 +158,7 @@ export function claimMonitoringAlert(data, now = Date.now()) {
   alert.status = 'sending';
   alert.attempts = Number(alert.attempts || 0) + 1;
   alert.claimedAt = new Date(now).toISOString();
+  alert.lastAttemptAt = alert.claimedAt;
   return { ...alert };
 }
 
@@ -175,6 +179,7 @@ export function failMonitoringAlert(data, id, error, now = Date.now()) {
   if (!alert) return false;
   const attempts = Number(alert.attempts || 0);
   alert.lastError = sanitizeMonitoringMessage(error, 'Falha ao entregar o alerta.').slice(0, 240);
+  alert.failedAt = new Date(now).toISOString();
   alert.claimedAt = null;
   if (attempts >= 3) {
     alert.status = 'failed';
@@ -184,6 +189,28 @@ export function failMonitoringAlert(data, id, error, now = Date.now()) {
     alert.availableAt = new Date(now + Math.min(15 * 60_000, 30_000 * (2 ** Math.max(0, attempts - 1)))).toISOString();
   }
   return true;
+}
+
+/**
+ * Recoloca somente os alertas que já esgotaram as tentativas na fila.
+ * Alertas pendentes não são alterados, para não mudar a ordem de entrega.
+ */
+export function retryFailedMonitoringAlerts(data, now = Date.now()) {
+  const monitoring = initializeMonitoring(data);
+  let retried = 0;
+  for (const alert of monitoring.alerts) {
+    if (alert?.status !== 'failed') continue;
+    alert.status = 'pending';
+    alert.attempts = 0;
+    alert.availableAt = new Date(now).toISOString();
+    alert.claimedAt = null;
+    alert.sentAt = null;
+    alert.failedAt = null;
+    alert.lastAttemptAt = null;
+    alert.lastError = null;
+    retried += 1;
+  }
+  return retried;
 }
 
 export function formatMonitoringAlert(alert = {}, context = {}) {
@@ -210,11 +237,22 @@ export function formatMonitoringAlert(alert = {}, context = {}) {
 
 export function monitoringQueueSummary(data = {}) {
   const alerts = Array.isArray(data.meta?.monitoring?.alerts) ? data.meta.monitoring.alerts : [];
+  const latestFailure = alerts
+    .filter((alert) => alert?.lastError)
+    .sort((a, b) => new Date(b.failedAt || b.lastAttemptAt || b.createdAt || 0) - new Date(a.failedAt || a.lastAttemptAt || a.createdAt || 0))[0];
   return {
     pending: alerts.filter((alert) => ['pending', 'sending'].includes(alert?.status)).length,
     sent: alerts.filter((alert) => alert?.status === 'sent').length,
     failed: alerts.filter((alert) => alert?.status === 'failed').length,
     total: alerts.length,
-    lastSentAt: alerts.filter((alert) => alert?.status === 'sent').sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0))[0]?.sentAt || null
+    lastSentAt: alerts.filter((alert) => alert?.status === 'sent').sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0))[0]?.sentAt || null,
+    lastFailure: latestFailure
+      ? {
+        message: sanitizeMonitoringMessage(latestFailure.lastError, 'Falha ao entregar o alerta.'),
+        status: latestFailure.status || 'pending',
+        attempts: Number(latestFailure.attempts || 0),
+        at: latestFailure.failedAt || latestFailure.lastAttemptAt || latestFailure.createdAt || null
+      }
+      : null
   };
 }

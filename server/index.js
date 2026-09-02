@@ -107,6 +107,7 @@ import {
   monitoringQueueSummary,
   monitoringRecipientForConfig,
   normalizeMonitoringRecipient,
+  retryFailedMonitoringAlerts,
   sanitizeMonitoringMessage
 } from './monitoring.js';
 import {
@@ -4342,6 +4343,17 @@ app.post('/api/admin/monitoring/whatsapp/test', requireAdmin, async (_req, res) 
   }
   if (!alert) return res.status(400).json({ error: 'Não foi possível criar o alerta de teste.' });
   return res.status(202).json({ ok: true, message: 'Teste colocado na fila. Ele será enviado quando o WhatsApp estiver conectado.' });
+});
+
+app.post('/api/admin/monitoring/whatsapp/retry-failed', requireAdmin, async (_req, res) => {
+  let retried = 0;
+  await updateStore((data) => {
+    retried = retryFailedMonitoringAlerts(data);
+  });
+  if (retried > 0) {
+    await addLog(`Monitoramento: ${retried} alerta(s) com falha retornaram para a fila.`, 'success');
+  }
+  return res.json({ ok: true, retried });
 });
 
 app.put(

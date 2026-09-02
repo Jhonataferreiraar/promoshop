@@ -2267,6 +2267,16 @@ function AdminApp() {
       setMessage(error.message);
     }
   }
+  async function retryFailedMonitoring() {
+    setMessage('Recolocando os alertas com falha na fila…');
+    try {
+      const result = await authApi('/admin/monitoring/whatsapp/retry-failed', { method: 'POST', body: '{}' });
+      await load({ preserveConfig: true });
+      setMessage(result.retried ? `${result.retried} alerta(s) retornaram para a fila.` : 'Nenhum alerta com falha para tentar novamente.');
+    } catch (error) {
+      setMessage(`Não foi possível tentar os alertas novamente: ${error.message}`);
+    }
+  }
   function clearFailedQueue() {
     const failedCount = Number(queuePage.summary?.failed || data.queueSummary?.failed || 0);
     if (!failedCount) return;
@@ -3760,11 +3770,16 @@ function AdminApp() {
         <div><span><i>↗</i>Estado</span><strong>{data.meta?.monitoring?.enabled ? 'Ativo' : 'Inativo'}</strong><small>{data.meta?.monitoring?.recipientConfigured ? 'Destinatário configurado' : 'Configure um número'}</small></div>
       </div>
 
+      {data.meta?.monitoring?.lastFailure && <section className="panel monitoring-failure" role="status">
+        <div><span className="section-step">ÚLTIMA FALHA DE ENTREGA</span><strong>{data.meta.monitoring.lastFailure.message}</strong><small>{data.meta.monitoring.lastFailure.at ? new Date(data.meta.monitoring.lastFailure.at).toLocaleString('pt-BR') : 'Agora'} · {Number(data.meta.monitoring.lastFailure.attempts || 0)} tentativa(s) · {data.meta.monitoring.lastFailure.status === 'failed' ? 'encerrada' : 'aguardando nova tentativa'}</small></div>
+        {Number(data.meta?.monitoring?.failed || 0) > 0 && <button className="button subtle" type="button" onClick={retryFailedMonitoring}>Tentar falhas novamente</button>}
+      </section>}
+
       <section className="panel settings-section">
         <div className="section-title"><div><span className="section-step">DESTINO E PRIORIDADE</span><h2>Entrega pelo WhatsApp</h2><p>Os alertas são enviados individualmente e têm prioridade sobre a fila de promoções.</p></div></div>
         <div className="settings-grid">
           <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappEnabled === true} onChange={(event) => setConfigField('monitoringWhatsappEnabled', event.target.checked)} /><span><strong>Enviar alertas para o WhatsApp</strong><small>Ativa a fila de alertas operacionais.</small></span></label>
-          <label>Número que receberá os alertas<input inputMode="tel" autoComplete="tel" value={String(data.config.monitoringWhatsappRecipient || '').replace(/@c\.us$/i, '')} onChange={(event) => setConfigField('monitoringWhatsappRecipient', event.target.value.replace(/\D/g, ''))} placeholder="5561999999999" /><small>Use código do país + DDD + número, somente dígitos.</small></label>
+          <label>Número que receberá os alertas<input inputMode="tel" autoComplete="tel" value={String(data.config.monitoringWhatsappRecipient || '').replace(/@c\.us$/i, '')} onChange={(event) => setConfigField('monitoringWhatsappRecipient', event.target.value.replace(/\D/g, ''))} placeholder="5561999999999" /><small>Informe o número com código do país; números brasileiros só com DDD também são completados automaticamente.</small></label>
           <label>Intervalo para repetir o mesmo alerta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappCooldownMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappCooldownMinutes', Number(event.target.value))} /><small>Evita mensagens repetidas quando o mesmo erro persiste.</small></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappIncludeInfo === true} onChange={(event) => setConfigField('monitoringWhatsappIncludeInfo', event.target.checked)} /><span><strong>Incluir registros informativos</strong><small>Desativado por padrão para não gerar excesso de mensagens.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappDeployAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappDeployAlerts', event.target.checked)} /><span><strong>Avisar sobre deploys</strong><small>Detecta a versão informada pelo Render.</small></span></label>

@@ -5383,6 +5383,11 @@ button {
 .monitoring-live-status small { margin-top: 3px; font-size: 11px; line-height: 1.35; opacity: .85; }
 .monitoring-stats { margin: 0; }
 .monitoring-stats > div strong { font-size: 25px; }
+.monitoring-failure { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 22px; border: 1px solid #fecdca; background: #fff7f6; }
+.monitoring-failure > div { min-width: 0; display: grid; gap: 5px; }
+.monitoring-failure .section-step { color: #b42318; }
+.monitoring-failure strong { color: #7a271a; overflow-wrap: anywhere; }
+.monitoring-failure small { color: #b54708; line-height: 1.4; }
 .monitoring-note { padding: 18px 22px; border: 1px solid #d0d5dd; background: #f9fafb; }
 .monitoring-note strong { display: block; color: #1849a9; margin-bottom: 5px; }
 .monitoring-note p { margin: 0; color: #475467; line-height: 1.6; }
@@ -5398,6 +5403,7 @@ button {
   .backup-panel { align-items: stretch; flex-direction: column; }
   .monitoring-hero { align-items: stretch; flex-direction: column; }
   .monitoring-live-status { min-width: 0; }
+  .monitoring-failure { align-items: stretch; flex-direction: column; }
   .extension-grid { grid-template-columns: 1fr; }
   .extension-hero { align-items: flex-start; flex-direction: column; }
   .extension-install-card { grid-template-columns: 1fr; }
