@@ -31,14 +31,22 @@ export function sanitizeInstagramHighlights(value) {
     while (ids.has(id)) id = `${id}-${index + 1}`;
     ids.add(id);
     const icon = INSTAGRAM_HIGHLIGHT_ICONS.includes(String(entry?.icon)) ? String(entry.icon) : 'star';
-    const marketplace = INSTAGRAM_HIGHLIGHT_MARKETPLACES.some((store) => store.id === String(entry?.marketplace || ''))
-      ? String(entry.marketplace)
-      : '';
+    const marketplaceDefinition = INSTAGRAM_HIGHLIGHT_MARKETPLACES.find((store) => store.id === String(entry?.marketplace || ''));
+    const marketplace = marketplaceDefinition?.id || '';
+    const existingDescription = cleanText(entry?.description, 180);
+    const legacyMarketplaceDescriptions = [
+      'Ofertas e cupons selecionados do Mercado Livre.',
+      'Achados e promoções selecionadas da Shopee.',
+      'Ofertas selecionadas do AliExpress.',
+      'Ofertas selecionadas do Magalu.'
+    ];
     const sanitized = {
       id,
       name: cleanText(entry?.name, 30) || `Destaque ${index + 1}`,
       icon,
-      description: cleanText(entry?.description, 180),
+      description: marketplaceDefinition && (!existingDescription || legacyMarketplaceDescriptions.includes(existingDescription))
+        ? marketplaceDefinition.description
+        : existingDescription,
       enabled: entry?.enabled !== false
     };
     if (marketplace) sanitized.marketplace = marketplace;

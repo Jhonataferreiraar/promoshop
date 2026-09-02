@@ -31,6 +31,7 @@ assert.ok(sanitizeInstagramThemes([{ id: 'default', name: 'PromoShop' }]).some((
 assert.equal(sanitizeInstagramThemes([{ id: 'x', name: 'X', background: 'invalid' }])[0].background, '#1269f3');
 assert.equal(sanitizeInstagramHighlights([{ id: 'offers', name: 'Ofertas', icon: 'invalid', description: 'Teste' }])[0].icon, 'star');
 assert.equal(sanitizeInstagramHighlights([{ id: 'marketplace-shopee', name: 'Shopee', icon: 'store', marketplace: 'shopee', description: 'Teste' }])[0].marketplace, 'shopee');
+assert.equal(sanitizeInstagramHighlights([{ id: 'marketplace-shopee', name: 'Shopee', icon: 'store', marketplace: 'shopee', description: 'Achados e promoções selecionadas da Shopee.' }])[0].description, 'Ofertas selecionadas da Shopee todos os dias.');
 assert.equal(sanitizeInstagramHighlights([{ id: 'marketplace-unknown', name: 'Loja', icon: 'store', marketplace: 'unknown', description: 'Teste' }])[0].marketplace, undefined);
 
 const signedPayload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: '123' })).toString('base64url');
