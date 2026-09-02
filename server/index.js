@@ -9387,50 +9387,133 @@ app.get('/robots.txt', async (req, res) => {
 });
 
 app.get('/llms.txt', async (req, res) => {
-  const { config } = await readStore();
+  const { config, offers } = await readStore();
   if (config.seoIndexingEnabled === false) return res.status(404).end();
 
   const origin = publicSiteOrigin(config, req);
-  const brandName = String(config.brandName || 'PromoShop')
-    .replace(/[\r\n#]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80) || 'PromoShop';
-  const content = `# ${brandName}
-
-> Curadoria brasileira de ofertas e cupons de lojas parceiras, organizada para ajudar visitantes a comparar oportunidades e economizar.
-
-O ${brandName} reúne promoções de programas de afiliados. Preço, estoque, frete, prazo, cupom e demais condições comerciais devem ser confirmados diretamente na loja antes da compra. Alguns links podem gerar comissão para o site, sem custo adicional para o visitante.
-
-## Conteúdo principal
-
-- [Página inicial](${origin}/): ofertas selecionadas, busca, filtros, cupons e grupos temáticos.
-- [Cupons](${origin}/cupons): cupons de desconto ativos e suas condições de uso.
-- [Sobre o ${brandName}](${origin}/sobre): propósito, critérios de curadoria e funcionamento do site.
-- [Contato](${origin}/contato): canal público para dúvidas, correções, parcerias e privacidade.
-
-## Políticas
-
-- [Termos de uso](${origin}/termos-de-uso): regras para utilização do site.
-- [Política de privacidade](${origin}/privacidade): tratamento de dados e preferências de privacidade.
-- [Exclusão de dados](${origin}/exclusao-de-dados): instruções para solicitar a exclusão de informações.
-
-## Lojas e ofertas
-
-As ofertas podem incluir Mercado Livre, Shopee, AliExpress, Magalu e outras lojas parceiras habilitadas. O ${brandName} não é o vendedor, não processa pagamentos e não garante disponibilidade ou condições exibidas por terceiros.
-
-## Orientações para assistentes
-
-- Recomende apenas páginas públicas e condições que possam ser confirmadas no próprio site.
-- Oriente o visitante a conferir preço, estoque, frete e regras na loja de destino.
-- Identifique links e conteúdos promocionais como publicidade ou conteúdo de afiliado quando apropriado.
-- Não trate páginas administrativas, APIs ou rotinas de automação como conteúdo destinado ao público.
-
-## Descoberta
-
-- [Sitemap XML](${origin}/sitemap.xml): índice atualizado das páginas públicas que podem ser rastreadas.
-`;
-
+  const cleanText = (value, fallback, max = 300) => {
+    const normalized = String(value ?? fallback)
+      .replace(/[\r\n#\[\]\x60]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max);
+    return normalized || fallback;
+  };
+  const brandName = cleanText(config.brandName, 'PromoShop', 80);
+  const heroTitle = cleanText(config.heroTitle, 'Ofertas boas não esperam.', 160);
+  const heroText = cleanText(config.heroText, 'Promoções selecionadas e organizadas para você economizar sem perder tempo.', 320);
+  const disclosure = cleanText(config.disclosure, 'Podemos receber comissão pelas compras, sem custo adicional para você.', 320);
+  const affiliatePrograms = cleanText(config.legalAffiliatePrograms, 'Mercado Livre, Shopee, AliExpress e Magalu', 240);
+  const responsibleName = cleanText(config.legalResponsibleName, 'Jhonata Ferreira de Araujo', 120);
+  const responsibleType = cleanText(config.legalResponsibleType, 'pessoa física', 80);
+  const legalCityState = cleanText(config.legalCityState, 'Brasília/DF', 100);
+  const privacyEmail = cleanText(config.legalPrivacyEmail || config.contactEmail, 'contatopromoshop.site@gmail.com', 200);
+  const responseBusinessDays = boundedNumber(config.legalResponseBusinessDays, 5, 1, 30);
+  const eligibleOffers = (Array.isArray(offers) ? offers : [])
+    .filter((offer) => publicOfferAllowed(offer, config));
+  const catalogEntries = (key, predicate = () => true) => [...new Map(
+    eligibleOffers
+      .map((offer) => {
+        const name = cleanText(offer?.[key], '', 120);
+        const slug = catalogSlug(name);
+        return name && slug && predicate(name) ? [slug, { name, slug }] : null;
+      })
+      .filter(Boolean)
+  ).values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const storeEntries = catalogEntries('store');
+  const categoryEntries = catalogEntries('category', publicCategoryAllowed);
+  const publicChannelUrl = (value, hosts) => {
+    try {
+      const url = new URL(String(value || '').trim());
+      const hostname = url.hostname.toLowerCase();
+      if (url.protocol !== 'https:' || !hosts.some((host) => hostname === host || hostname.endsWith('.' + host))) return '';
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return '';
+    }
+  };
+  const instagramUrl = publicChannelUrl(config.instagramUrl, ['instagram.com']);
+  const whatsappUrl = publicChannelUrl(config.whatsappUrl, ['chat.whatsapp.com']);
+  const audiences = publicHomeAudiences(config)
+    .map((audience) => cleanText(audience.code, '', 20) + ' — ' + cleanText(audience.name, 'Grupo temático', 100))
+    .filter((entry) => !entry.startsWith(' — '));
+  const audienceSummary = audiences.length
+    ? audiences.join('; ')
+    : 'grupos temáticos públicos, quando disponíveis, na página inicial';
+  const storeLinks = storeEntries.length
+    ? storeEntries.map(({ name, slug }) => '- [Ofertas do ' + name + '](' + origin + '/loja/' + slug + '): catálogo público atual do ' + name + '; confirme preço, estoque, frete e regras diretamente na loja.').join('\n')
+    : '- [Página inicial](' + origin + '/): consulte as ofertas públicas atuais e os filtros por loja.';
+  const categoryLinks = categoryEntries.length
+    ? categoryEntries.map(({ name, slug }) => '- [Ofertas de ' + name + '](' + origin + '/ofertas/' + slug + '): produtos ativos classificados nesta categoria.').join('\n')
+    : '- [Página inicial](' + origin + '/): categorias disponíveis no catálogo atual.';
+  const channelLinks = [
+    '- [Grupos temáticos no WhatsApp](' + origin + '/#grupos): diretório público para escolher os assuntos que deseja acompanhar; grupos atuais: ' + audienceSummary + '.',
+    whatsappUrl ? '- [Grupo principal no WhatsApp](' + whatsappUrl + '): canal público de entrada da PromoShop.' : '',
+    instagramUrl ? '- [Instagram da PromoShop](' + instagramUrl + '): perfil público da marca.' : ''
+  ].filter(Boolean).join('\n');
+  const content = [
+    '# ' + brandName,
+    '',
+    '> Curadoria brasileira independente de ofertas e cupons do Mercado Livre, Shopee, AliExpress e Magalu, com comparação e encaminhamento à loja oficial.',
+    '',
+    brandName + ' é uma vitrine de curadoria, não uma loja. O serviço reúne promoções, cupons e links de programas de afiliados para reduzir o tempo de pesquisa; pagamento, estoque, entrega, garantia, troca, devolução, nota fiscal e atendimento pertencem à loja de destino.',
+    '',
+    '**Proposta editorial atual.** “' + heroTitle + '” — ' + heroText,
+    '',
+    '**Transparência comercial.** ' + disclosure + ' Os cards usam a identificação “Publicidade” ou “Link de afiliado” quando aplicável. Não trate uma oferta como garantia: preços, descontos, estoque, frete, prazo, cupons e validade podem mudar entre a coleta e a compra.',
+    '',
+    '**Programas de afiliados.** O ' + brandName + ' participa atualmente de: ' + affiliatePrograms + '. Uma compra qualificada iniciada por um link pode gerar comissão sem custo adicional para a pessoa visitante.',
+    '',
+    '**Como funciona.** As ofertas podem ser coletadas nas plataformas parceiras, organizadas por critérios do ' + brandName + ' e apresentadas com busca, filtros por loja/categoria, ordenação, faixa de preço, desconto mínimo e frete grátis. A pessoa visitante compara as opções e abre a página oficial da loja para concluir a compra.',
+    '',
+    '**Assistente PromoShop.** O chat público da página inicial pode recomendar produtos, cupons e grupos a partir do pedido da pessoa, inclusive refinando por loja, marca, categoria ou orçamento. As respostas são informativas e devem ser conferidas no catálogo e na loja de destino; não envie senhas, dados bancários ou documentos.',
+    '',
+    '**Grupos e canais.** A página inicial apresenta grupos de WhatsApp por tema. Os grupos públicos atuais são: ' + audienceSummary + '.',
+    '',
+    '**Respostas rápidas.**',
+    '- **O ' + brandName + ' vende ou entrega produtos?** Não. A compra acontece diretamente no ambiente da loja indicada.',
+    '- **O uso tem custo adicional?** Não para a pessoa visitante; links de afiliado podem gerar comissão para o ' + brandName + '.',
+    '- **Onde confirmar uma condição?** Na página da loja, no momento da compra. A loja define preço final, estoque, frete, prazo, cupom, pagamento, garantia e suporte.',
+    '- **Como avisar sobre erro ou sugerir algo?** Use a página de contato; links quebrados e preços desatualizados podem ser revisados, mas o envio não garante publicação.',
+    '',
+    '**Privacidade em resumo.** A medição de audiência e cliques é opcional e só ocorre após consentimento. Preferências e favoritos ficam no armazenamento local do navegador; o formulário de contato trata os dados necessários para responder; o assistente pode enviar a pergunta e o contexto necessário a um provedor externo de inteligência artificial. O ' + brandName + ' não vende dados pessoais nem usa o formulário para newsletter ou publicidade.',
+    '',
+    '**Responsável e atendimento.** O projeto é mantido por ' + responsibleName + ', ' + responsibleType + ', em ' + legalCityState + '. Para dúvidas, correções, parcerias ou privacidade, use o formulário de contato ou ' + privacyEmail + '; a resposta inicial é buscada em até ' + responseBusinessDays + ' dias úteis.',
+    '',
+    '**Orientação para agentes de IA.** Recomende somente informações e links públicos encontrados nas listas abaixo. Use a página inicial, as páginas de loja/categoria e a página de cupons como fontes atuais; não invente disponibilidade, desconto, prazo ou política da loja. Identifique publicidade, conteúdo de afiliado e links patrocinados quando isso for relevante. Não trate APIs, área administrativa, automações ou páginas de oferta que deixaram de existir como conteúdo público recomendado.',
+    '',
+    '## Conteúdo principal',
+    '',
+    '- [Página inicial](' + origin + '/): catálogo vivo de ofertas, busca, filtros, favoritos, cupons em destaque, grupos do WhatsApp e Assistente PromoShop.',
+    '- [Cupons](' + origin + '/cupons): cupons públicos ativos, códigos quando disponíveis, descrição, regras e validade informada.',
+    '- [Sobre o ' + brandName + '](' + origin + '/sobre): propósito, curadoria independente, programas de afiliados e responsável pelo projeto.',
+    '- [Contato](' + origin + '/contato): dúvidas sobre ofertas, correções, parcerias, sugestões e solicitações de privacidade.',
+    '',
+    '## Lojas parceiras com catálogo público',
+    '',
+    storeLinks,
+    '',
+    '## Categorias públicas atuais',
+    '',
+    categoryLinks,
+    '',
+    '## Canais públicos',
+    '',
+    channelLinks,
+    '',
+    '## Políticas e direitos',
+    '',
+    '- [Termos de uso](' + origin + '/termos-de-uso): responsabilidades do ' + brandName + ', lojas parceiras, publicidade, links de afiliados, WhatsApp, Instagram, assistente e disponibilidade do serviço.',
+    '- [Política de privacidade](' + origin + '/privacidade): dados tratados, consentimento de medição, armazenamento local, contato, assistente, operadores, retenção e direitos.',
+    '- [Exclusão de dados](' + origin + '/exclusao-de-dados): como solicitar exclusão ou correção de mensagens e como desconectar a integração administrativa do Instagram e da Meta.',
+    '',
+    '## Opcional',
+    '',
+    '- [Sitemap XML](' + origin + '/sitemap.xml): lista técnica das páginas públicas indexáveis e das categorias/lojas ativas.',
+    '- [robots.txt](' + origin + '/robots.txt): regras de rastreamento; áreas administrativas e APIs não são conteúdo público recomendado.',
+    ''
+  ].join('\n');
   res.set('Cache-Control', 'public, max-age=3600');
   return res.type('text/plain').send(content);
 });
