@@ -101,31 +101,72 @@ function csrfValid(req, cookies = parseCookies(req.headers.cookie)) {
   return Boolean(cookieToken) && cookieToken.length === headerToken.length && crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
 }
 
-export function createToken(username, sessionVersion = 0) {
-  const payload = base64url(JSON.stringify({ username, sessionVersion: Number(sessionVersion || 0), expiresAt: Date.now() + 12 * 60 * 60 * 1000 }));
+export function createToken(username, sessionVersion = 0, role = 'owner') {
+  const safeRole = ['owner', 'editor', 'viewer'].includes(String(role)) ? String(role) : 'owner';
+  const payload = base64url(JSON.stringify({ username, role: safeRole, sessionVersion: Number(sessionVersion || 0), expiresAt: Date.now() + 12 * 60 * 60 * 1000 }));
   return `${payload}.${signature(payload)}`;
 }
 
-export function validateToken(token, expectedSessionVersion = 0) {
+export function readTokenPayload(token, expectedSessionVersion = 0) {
   if (!token?.includes('.')) return false;
   const [payload, provided] = token.split('.');
   const expected = signature(payload);
   if (provided.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) return false;
   try {
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return decoded.expiresAt > Date.now() && Number(decoded.sessionVersion || 0) === Number(expectedSessionVersion || 0);
+    if (!(decoded.expiresAt > Date.now()) || Number(decoded.sessionVersion || 0) !== Number(expectedSessionVersion || 0)) return false;
+    return {
+      username: String(decoded.username || ''),
+      role: ['owner', 'editor', 'viewer'].includes(String(decoded.role)) ? String(decoded.role) : 'owner',
+      sessionVersion: Number(decoded.sessionVersion || 0),
+      expiresAt: Number(decoded.expiresAt)
+    };
   }
   catch { return false; }
+}
+
+export function validateToken(token, expectedSessionVersion = 0) {
+  return Boolean(readTokenPayload(token, expectedSessionVersion));
 }
 
 export async function requireAdmin(req, res, next) {
   const session = sessionTokenFromRequest(req);
   const secrets = await readSecrets();
-  if (!validateToken(session.token, secrets.adminSessionVersion)) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  const payload = readTokenPayload(session.token, secrets.adminSessionVersion);
+  if (!payload) return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  // Revalida o usuário adicional em cada requisição. Assim, desativar uma
+  // conta ou reduzir sua permissão invalida o acesso imediatamente, sem
+  // depender da expiração do cookie.
+  const ownerUsername = String(process.env.ADMIN_USER || secrets.adminUser || '').trim();
+  const tokenUsername = payload.username.trim().toLocaleLowerCase('pt-BR');
+  const ownerToken = payload.role === 'owner' && tokenUsername === ownerUsername.toLocaleLowerCase('pt-BR');
+  const additionalUser = !ownerToken && Array.isArray(secrets.adminUsers)
+    ? secrets.adminUsers.find((user) => String(user?.username || '').trim().toLocaleLowerCase('pt-BR') === tokenUsername)
+    : null;
+  if (additionalUser) {
+    if (additionalUser.active === false) return res.status(401).json({ error: 'Este usuário administrativo foi desativado.' });
+    payload.role = ['editor', 'viewer'].includes(String(additionalUser.role)) ? String(additionalUser.role) : 'viewer';
+    payload.username = String(additionalUser.username);
+  } else if (!ownerToken) {
+    return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  } else {
+    payload.role = 'owner';
+    payload.username = ownerUsername;
+  }
   if (session.fromCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !csrfValid(req, session.cookies)) {
     return res.status(403).json({ error: 'Proteção CSRF inválida. Atualize a página e tente novamente.' });
   }
+  if (payload.role === 'viewer' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return res.status(403).json({ error: 'Este usuário tem acesso somente para consulta.' });
+  }
+  req.adminUsername = payload.username;
+  req.adminRole = payload.role;
   req.adminUser = session.token;
+  next();
+}
+
+export function requireOwner(req, res, next) {
+  if (req.adminRole !== 'owner') return res.status(403).json({ error: 'Somente o proprietário pode executar esta ação.' });
   next();
 }
 

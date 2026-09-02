@@ -384,6 +384,13 @@ const initialData = {
     extensionAudienceCodes: ['G01'],
     extensionMaxCouponsPerRequest: 10,
 
+    // Organização segura de campanhas, calendário editorial e acompanhamento
+    // de preço. Esses controles nunca substituem a confirmação na loja.
+    campaignsEnabled: true,
+    priceMonitoringEnabled: true,
+    automaticBackupEnabled: true,
+    automaticBackupRetention: 7,
+
     // Slug público da vitrine Magazine Você. A busca automática do Magalu
     // pode ser protegida por captcha; este endereço é usado para abrir a
     // busca da sua própria loja no painel.
@@ -394,6 +401,8 @@ const initialData = {
   },
   offers: [],
   coupons: [],
+  campaigns: [],
+  priceMonitors: [],
   inbox: [],
   privacyConsents: {},
   queue: [],
@@ -423,6 +432,11 @@ const initialData = {
       serverReadyAt: null,
       lastDeployKey: '',
       instanceId: ''
+    },
+    backup: {
+      lastAutomaticAt: null,
+      lastManualAt: null,
+      files: []
     }
   }
 };
@@ -533,6 +547,10 @@ function normalizeStoreData(data) {
     ...initialData.config,
     ...(data.config || {})
   };
+  data.config.campaignsEnabled = data.config.campaignsEnabled !== false;
+  data.config.priceMonitoringEnabled = data.config.priceMonitoringEnabled !== false;
+  data.config.automaticBackupEnabled = data.config.automaticBackupEnabled !== false;
+  data.config.automaticBackupRetention = Math.min(30, Math.max(1, Math.trunc(Number(data.config.automaticBackupRetention) || 7)));
   if (/^https:\/\/promoshop\.onrender\.com\/api\/mercadolivre\/callback\/?$/i.test(String(data.config.mercadoLivreRedirectUri || ''))) {
     data.config.mercadoLivreRedirectUri = initialData.config.mercadoLivreRedirectUri;
   }
@@ -621,10 +639,17 @@ function normalizeStoreData(data) {
       ...(data.meta?.monitoring || {}),
       alerts: Array.isArray(data.meta?.monitoring?.alerts) ? data.meta.monitoring.alerts : [],
       recent: data.meta?.monitoring?.recent && typeof data.meta.monitoring.recent === 'object' ? data.meta.monitoring.recent : {}
+    },
+    backup: {
+      ...initialData.meta.backup,
+      ...(data.meta?.backup || {}),
+      files: Array.isArray(data.meta?.backup?.files) ? data.meta.backup.files.slice(-20) : []
     }
   };
   data.offers ||= [];
   data.coupons ||= [];
+  data.campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+  data.priceMonitors = Array.isArray(data.priceMonitors) ? data.priceMonitors : [];
   data.inbox ||= [];
   data.privacyConsents = data.privacyConsents && typeof data.privacyConsents === 'object'
     ? data.privacyConsents

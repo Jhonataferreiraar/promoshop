@@ -69,6 +69,35 @@ export function passwordNeedsRehash(stored) {
   return !String(stored || '').startsWith(`scrypt$v2$${PASSWORD_SCRYPT_N}$${PASSWORD_SCRYPT_R}$${PASSWORD_SCRYPT_P}$`);
 }
 
+const ADMIN_ROLES = new Set(['editor', 'viewer']);
+
+function normalizeAdminUsername(value) {
+  return String(value || '').trim().slice(0, 100);
+}
+
+function normalizeAdminUsers(value, ownerUsername = '') {
+  const owner = normalizeAdminUsername(ownerUsername).toLocaleLowerCase('pt-BR');
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).slice(0, 20).map((user) => {
+    const username = normalizeAdminUsername(user?.username);
+    const key = username.toLocaleLowerCase('pt-BR');
+    if (!/^[^\s]{3,100}$/.test(username) || key === owner || seen.has(key)) return null;
+    if (!String(user?.passwordHash || '').startsWith('scrypt$')) return null;
+    seen.add(key);
+    return {
+      id: /^[a-zA-Z0-9_-]{8,120}$/.test(String(user?.id || ''))
+        ? String(user.id)
+        : `admin_${crypto.createHash('sha256').update(`user\0${key}`).digest('hex').slice(0, 16)}`,
+      username,
+      passwordHash: String(user.passwordHash).slice(0, 500),
+      role: ADMIN_ROLES.has(String(user?.role)) ? String(user.role) : 'viewer',
+      active: user?.active !== false,
+      createdAt: String(user?.createdAt || new Date().toISOString()).slice(0, 40),
+      updatedAt: String(user?.updatedAt || user?.createdAt || new Date().toISOString()).slice(0, 40)
+    };
+  }).filter(Boolean);
+}
+
 function environmentEncryptionKey() {
   const configured = String(process.env.SECRETS_ENCRYPTION_KEY || '').trim();
   if (!configured) return null;
@@ -157,6 +186,7 @@ async function defaults() {
     adminUser: 'admin',
     adminPasswordHash: bootstrapPassword.length >= 12 ? await hashPassword(bootstrapPassword) : '',
     adminSessionVersion: 0,
+    adminUsers: [],
     mercadoLivreClientId: '',
     mercadoLivreClientSecret: '',
     mercadoLivreAccessToken: '',
@@ -217,6 +247,7 @@ export async function readSecrets() {
     try {
       const decrypted = await decrypt(await fs.readFile(vaultPath, FILE_TEXT_ENCODING));
       const value = decrypted.value;
+      value.adminUsers = normalizeAdminUsers(value.adminUsers, process.env.ADMIN_USER || value.adminUser);
       if (decrypted.source === 'file' && environmentEncryptionKey()) {
         await writeSecrets(value);
       }
@@ -246,13 +277,61 @@ export async function readSecrets() {
 async function updateSecretsUnlocked(changes) {
   const current = await readSecrets();
   const next = { ...current };
-  if (changes.adminUser) next.adminUser = String(changes.adminUser).trim();
+  if (changes.adminUser !== undefined) {
+    const username = normalizeAdminUsername(changes.adminUser);
+    if (!/^[^\s]{3,100}$/.test(username)) throw new Error('O usuário proprietário precisa ter entre 3 e 100 caracteres, sem espaços.');
+    if (username !== String(next.adminUser || '').trim()) next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
+    next.adminUser = username;
+  }
   if (changes.adminPassword) {
     next.adminPasswordHash = await hashPassword(String(changes.adminPassword).slice(0, 256));
     next.adminSessionVersion = Number(next.adminSessionVersion || 0) + 1;
   }
   if (changes.rehashAdminPassword) {
     next.adminPasswordHash = await hashPassword(String(changes.rehashAdminPassword).slice(0, 256));
+  }
+  next.adminUsers = normalizeAdminUsers(next.adminUsers, process.env.ADMIN_USER || next.adminUser);
+  if (changes.adminUserAdd && typeof changes.adminUserAdd === 'object' && !Array.isArray(changes.adminUserAdd)) {
+    const requested = changes.adminUserAdd;
+    const username = normalizeAdminUsername(requested.username);
+    const role = String(requested.role || 'viewer');
+    const password = String(requested.password || '');
+    if (!/^[^\s]{3,100}$/.test(username)) throw new Error('O usuário adicional precisa ter entre 3 e 100 caracteres, sem espaços.');
+    if (!ADMIN_ROLES.has(role)) throw new Error('O papel do usuário adicional é inválido.');
+    if (password.length < 12) throw new Error('A senha do usuário adicional precisa ter pelo menos 12 caracteres.');
+    const ownerUsername = process.env.ADMIN_USER || next.adminUser;
+    const duplicate = [ownerUsername, ...next.adminUsers.map((user) => user.username)].some((entry) => String(entry).toLocaleLowerCase('pt-BR') === username.toLocaleLowerCase('pt-BR'));
+    if (duplicate) throw new Error('Já existe um usuário com esse nome.');
+    if (next.adminUsers.length >= 20) throw new Error('O limite seguro de usuários adicionais foi atingido.');
+    next.adminUsers.push({
+      id: `admin_${crypto.randomBytes(8).toString('hex')}`,
+      username,
+      passwordHash: await hashPassword(password.slice(0, 256)),
+      role,
+      active: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+  if (changes.adminUserRemove) {
+    const target = String(changes.adminUserRemove || '').trim().toLocaleLowerCase('pt-BR');
+    next.adminUsers = next.adminUsers.filter((user) => user.id.toLocaleLowerCase('pt-BR') !== target && user.username.toLocaleLowerCase('pt-BR') !== target);
+  }
+  if (changes.adminUserUpdate && typeof changes.adminUserUpdate === 'object' && !Array.isArray(changes.adminUserUpdate)) {
+    const requested = changes.adminUserUpdate;
+    const target = String(requested.id || requested.username || '').trim().toLocaleLowerCase('pt-BR');
+    const user = next.adminUsers.find((entry) => entry.id.toLocaleLowerCase('pt-BR') === target || entry.username.toLocaleLowerCase('pt-BR') === target);
+    if (!user) throw new Error('Usuário adicional não encontrado.');
+    if (requested.role !== undefined) {
+      if (!ADMIN_ROLES.has(String(requested.role))) throw new Error('O papel do usuário adicional é inválido.');
+      user.role = String(requested.role);
+    }
+    if (requested.active !== undefined) user.active = requested.active === true;
+    if (String(requested.password || '').length > 0) {
+      if (String(requested.password).length < 12) throw new Error('A senha do usuário adicional precisa ter pelo menos 12 caracteres.');
+      user.passwordHash = await hashPassword(String(requested.password).slice(0, 256));
+    }
+    user.updatedAt = new Date().toISOString();
   }
   if (typeof changes.mercadoLivreClientId === 'string' && changes.mercadoLivreClientId.trim()) next.mercadoLivreClientId = changes.mercadoLivreClientId.trim();
   if (typeof changes.mercadoLivreClientSecret === 'string' && changes.mercadoLivreClientSecret.trim()) next.mercadoLivreClientSecret = changes.mercadoLivreClientSecret.trim();
@@ -412,6 +491,14 @@ export function secretStatus(secrets) {
     normalizeApiKey(secrets.openaiApiKey);
   return {
     adminUser: secrets.adminUser,
+    adminUsers: normalizeAdminUsers(secrets.adminUsers, process.env.ADMIN_USER || secrets.adminUser).map((user) => ({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      active: user.active !== false,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    })),
     adminSetupRequired: !secrets.adminPasswordHash && !process.env.ADMIN_PASSWORD,
     secretsEncryptionKeyExternal: Boolean(environmentEncryptionKey()),
     googleSearchConsoleClientIdConfigured: Boolean(secrets.googleSearchConsoleClientId),

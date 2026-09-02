@@ -21,7 +21,9 @@ class MemoryPool {
     ['promoshop_queue', new Map()],
     ['promoshop_instagram_queue', new Map()],
     ['promoshop_instagram_feed_queue', new Map()],
-    ['promoshop_logs', new Map()]
+    ['promoshop_logs', new Map()],
+    ['promoshop_campaigns', new Map()],
+    ['promoshop_price_monitors', new Map()]
   ]);
 
   async query(sql, values = []) {
@@ -86,7 +88,9 @@ class MemoryPool {
           queue: 'promoshop_queue',
           instagramQueue: 'promoshop_instagram_queue',
           instagramFeedQueue: 'promoshop_instagram_feed_queue',
-          logs: 'promoshop_logs'
+          logs: 'promoshop_logs',
+          campaigns: 'promoshop_campaigns',
+          priceMonitors: 'promoshop_price_monitors'
         }).find(([, value]) => value === table)?.[0];
         if (normalized.includes(`SELECT '${key}' AS key`)) {
           rows.push({ key, data: [...entries.values()].sort((a, b) => a.position - b.position).map((entry) => structuredClone(entry.data)) });
@@ -131,6 +135,8 @@ initialData.config = { brandName: 'PromoShop' };
 initialData.analytics = { visitors: {} };
 initialData.meta = { imported: true };
 initialData.privacyConsents = {};
+initialData.campaigns = [];
+initialData.priceMonitors = [];
 
 const pool = new MemoryPool();
 const callbacks = {
@@ -179,5 +185,15 @@ await secondProcess.update((data) => {
 assert.deepEqual(pool.row.queue, []);
 assert.equal(pool.entityRows.get('promoshop_queue').get('queue-1').data.status, 'pending');
 assert.equal(pool.row.version, 3);
+
+await secondProcess.update((data) => {
+  data.campaigns.push({ id: 'campaign-1', name: 'Campanha teste', status: 'draft' });
+  data.priceMonitors.push({ id: 'monitor-1', offerId: 'offer-1', targetPrice: 10, status: 'watching' });
+});
+assert.equal(pool.entityRows.get('promoshop_campaigns').get('campaign-1').data.name, 'Campanha teste');
+assert.equal(pool.entityRows.get('promoshop_price_monitors').get('monitor-1').data.targetPrice, 10);
+const growthSlice = await secondProcess.readKeys(['campaigns', 'priceMonitors']);
+assert.equal(growthSlice.campaigns[0].id, 'campaign-1');
+assert.equal(growthSlice.priceMonitors[0].id, 'monitor-1');
 
 console.log('PostgreSQL: importação inicial, atualização transacional e leitura entre processos validadas.');

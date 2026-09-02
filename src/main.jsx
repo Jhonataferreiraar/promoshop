@@ -5,6 +5,7 @@ import InstagramPanel from './InstagramPanel.jsx';
 import InstagramFeedPanel from './InstagramFeedPanel.jsx';
 import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
+import GrowthPanel from './GrowthPanel.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
 import { optimizedProductImage, optimizedProductImageSrcSet } from './imageOptimization.js';
 
@@ -92,7 +93,11 @@ const fallbackConfig = {
   extensionAutoApprove: false,
   extensionStores: ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'],
   extensionAudienceCodes: ['G01'],
-  extensionMaxCouponsPerRequest: 10
+  extensionMaxCouponsPerRequest: 10,
+  campaignsEnabled: true,
+  priceMonitoringEnabled: true,
+  automaticBackupEnabled: true,
+  automaticBackupRetention: 7
 };
 
 function formatSeoPreviewUrl(value) {
@@ -1529,9 +1534,10 @@ function couponFormFromCoupon(coupon) {
 
 function AdminApp() {
   const [token, setToken] = useState(null);
+  const [adminRole, setAdminRole] = useState('owner');
   const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], campaigns: [], priceMonitors: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
@@ -1598,6 +1604,8 @@ function AdminApp() {
   const [productSearchStoreCounts, setProductSearchStoreCounts] = useState({});
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
+  const [backupHistory, setBackupHistory] = useState({ files: [], retention: 7, enabled: true, lastAutomaticAt: null });
+  const [newAdmin, setNewAdmin] = useState({ username: '', password: '', role: 'viewer' });
   const backupInputRef = useRef(null);
   const queueSearchInputRef = useRef(null);
   const queueLoadRequestRef = useRef(0);
@@ -1605,7 +1613,7 @@ function AdminApp() {
   const whatsappStateLoadCountRef = useRef(0);
   useEffect(() => {
     api('/auth/session', { cache: 'no-store' })
-      .then(() => setToken('cookie'))
+      .then((session) => { setAdminRole(session.role || 'owner'); setToken('cookie'); })
       .catch(() => setToken(null))
       .finally(() => setAuthChecking(false));
   }, []);
@@ -1871,10 +1879,20 @@ function AdminApp() {
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {
+    if (!token || tab !== 'growth') return undefined;
+    loadPanelState('campaigns').catch(() => {});
+    return undefined;
+  }, [token, tab]);
+  useEffect(() => {
     if (!token || tab !== 'monitoring') return undefined;
     load();
     const interval = window.setInterval(() => load({ background: true }), 10000);
     return () => window.clearInterval(interval);
+  }, [token, tab]);
+  useEffect(() => {
+    if (!token || tab !== 'health') return undefined;
+    authApi('/admin/backup/history').then(setBackupHistory).catch(() => {});
+    return undefined;
   }, [token, tab]);
   useEffect(() => {
     if (token && tab === 'analytics' && data.secrets?.googleSearchConsoleConnected && !searchConsoleData) loadSearchConsole();
@@ -2090,6 +2108,28 @@ function AdminApp() {
     setSecretForm((current) => ({ ...current, adminPassword: '' }));
     setMessage('Acesso administrativo atualizado. Use os novos dados no próximo login.');
   }
+  async function addAdminUser(event) {
+    event.preventDefault();
+    try {
+      await authApi('/admin/users', { method: 'POST', body: JSON.stringify(newAdmin) });
+      setNewAdmin({ username: '', password: '', role: 'viewer' });
+      await load();
+      setMessage('Usuário adicional criado com segurança.');
+    } catch (error) { setMessage(error.message); }
+  }
+  async function removeAdminUser(user) {
+    if (!window.confirm(`Remover o acesso de ${user.username}?`)) return;
+    try { await authApi(`/admin/users/${user.id}`, { method: 'DELETE' }); await load(); setMessage('Usuário removido.'); }
+    catch (error) { setMessage(error.message); }
+  }
+  async function changeAdminRole(user, role) {
+    try { await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await load(); setMessage('Permissão atualizada.'); }
+    catch (error) { setMessage(error.message); }
+  }
+  async function changeAdminActive(user) {
+    try { await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ active: user.active === false }) }); await load(); setMessage(user.active === false ? 'Usuário reativado.' : 'Usuário desativado.'); }
+    catch (error) { setMessage(error.message); }
+  }
   async function addOffer(event) {
     event.preventDefault();
     try {
@@ -2257,6 +2297,17 @@ function AdminApp() {
       setMessage(`Não foi possível alterar o grupo: ${error.message}`);
     } finally {
       setQueueAudienceSaving('');
+    }
+  }
+
+  async function createAutomaticBackup() {
+    try {
+      await authApi('/admin/backup/create', { method: 'POST', body: '{}' });
+      const history = await authApi('/admin/backup/history');
+      setBackupHistory(history);
+      setMessage('Backup automático criado com segurança.');
+    } catch (error) {
+      setMessage(`Não foi possível criar o backup automático: ${error.message}`);
     }
   }
   async function testMonitoringWhatsapp() {
@@ -2583,11 +2634,11 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', monitoring: 'Monitoramento', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', monitoring: 'Receba alertas prioritários do servidor e acompanhe a fila de entrega.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', monitoring: '!', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', growth: 'Campanhas e calendário', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', monitoring: 'Monitoramento', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', growth: 'Planeje campanhas, acompanhe preços e organize a agenda editorial.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', monitoring: 'Receba alertas prioritários do servidor e acompanhe a fila de entrega.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', growth: '✦', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', monitoring: '!', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
-    { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
+    { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue', 'growth'] },
     { label: 'Automação', items: ['sources', 'whatsapp', 'groupDirectory', 'instagram', 'instagramFeed', 'instagramShare', 'instagramHighlights', 'extensionCoupons', 'extensionMercadoLivre'] },
     { label: 'Sistema', items: ['analytics', 'health', 'monitoring', 'settings', 'security', 'logs'] }
   ];
@@ -3130,6 +3181,7 @@ function AdminApp() {
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
+    {tab === 'growth' && <GrowthPanel data={data} authApi={authApi} setMessage={setMessage} load={load} />}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -3793,6 +3845,7 @@ function AdminApp() {
       <section className={`panel health-summary ${data.systemHealth?.status || 'attention'}`}><div><span className="section-step">DIAGNÓSTICO</span><h2>{data.systemHealth?.status === 'healthy' ? 'Sistema funcionando normalmente' : data.systemHealth?.status === 'critical' ? 'O sistema precisa de atenção imediata' : 'Há itens para revisar'}</h2><p>Verificação atualizada em {data.systemHealth?.checkedAt ? new Date(data.systemHealth.checkedAt).toLocaleString('pt-BR') : '—'}.</p></div><button className="button subtle" type="button" onClick={() => load()}>Verificar novamente</button></section>
       <div className="health-check-grid">{(data.systemHealth?.checks || []).map((check) => <article className={`panel health-check ${check.ok ? 'ok' : 'warning'}`} key={check.id}><span>{check.ok ? '✓' : '!'}</span><div><h3>{check.label}</h3><p>{check.detail}</p></div></article>)}</div>
       <section className="panel backup-panel"><div><span className="section-step">MANUTENÇÃO SEGURA</span><h2>Links, configurações e cupons</h2><p>Verifique os links conhecidos em pequenos lotes ou baixe uma cópia operacional. Por privacidade e segurança, o backup não inclui senhas, chaves de API, sessão do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.</p></div><div className="backup-actions"><button className="button subtle" type="button" onClick={checkOfferLinks}>Verificar links</button><button className="button primary" type="button" onClick={downloadBackup}>Baixar backup</button><button className="button subtle" type="button" onClick={() => backupInputRef.current?.click()}>Restaurar backup</button><input ref={backupInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={restoreBackup} /></div></section>
+      <section className="panel backup-auto-panel"><div className="panel-heading"><div><span className="section-step">BACKUP AUTOMÁTICO</span><h2>Proteja o planejamento</h2><p>Uma cópia operacional diária guarda configurações, campanhas, monitoramentos e cupons. Credenciais e dados pessoais ficam fora do arquivo.</p></div><button className="button primary" type="button" onClick={createAutomaticBackup}>Criar agora</button></div><div className="settings-grid backup-auto-settings"><label className="toggle-card"><input type="checkbox" checked={data.config.automaticBackupEnabled !== false} onChange={(event) => setConfigField('automaticBackupEnabled', event.target.checked)} /><span><strong>Backup diário ativo</strong><small>Executado automaticamente às 02:10 (horário de Brasília).</small></span></label><label>Reter por (dias)<select value={data.config.automaticBackupRetention ?? 7} onChange={(event) => setConfigField('automaticBackupRetention', Number(event.target.value))}>{[1, 3, 7, 14, 30].map((days) => <option key={days} value={days}>{days} dias</option>)}</select></label><button className="button subtle" type="button" onClick={() => saveConfig({ preventDefault() {} })}>Salvar preferência</button></div><div className="backup-history"><strong>{backupHistory.lastAutomaticAt ? `Último backup: ${new Date(backupHistory.lastAutomaticAt).toLocaleString('pt-BR')}` : 'Nenhum backup automático criado ainda.'}</strong>{backupHistory.files?.length > 0 && <><small>{backupHistory.files.length} arquivo(s) mantido(s) · retenção de {backupHistory.retention || data.config.automaticBackupRetention || 7} dias</small><div className="backup-file-list">{backupHistory.files.slice(0, 8).map((file) => <a key={file.name} href={`/api/admin/backup/automatic/${encodeURIComponent(file.name)}`} download={file.name}>{file.name} · {(Number(file.size || 0) / 1024).toFixed(1)} KB</a>)}</div></>}</div></section>
       <section className="panel health-privacy-note"><strong>Importante</strong><p>O disco persistente do Render conserva os dados entre reinícios. Durante uma nova publicação, esse tipo de disco pode causar uma breve indisponibilidade; o painel diferencia isso de falhas permanentes.</p></section>
     </div>}
     {tab === 'monitoring' && <form className="site-settings-layout monitoring-page" onSubmit={saveConfig}>
@@ -3946,7 +3999,7 @@ function AdminApp() {
 
       <div className="settings-save-bar"><div><strong>Revise antes de salvar</strong><span>As alterações públicas entram em vigor imediatamente.</span></div><button className="button primary">Salvar site e políticas</button></div>
     </form>}
-    {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
+    {tab === 'security' && <div className="security-layout"><section className="panel settings-form narrow-panel"><h2>Acesso administrativo</h2><p className="panel-intro">Seu papel atual: <strong>{adminRole === 'owner' ? 'proprietário' : adminRole === 'editor' ? 'editor' : 'consulta'}</strong>. Credenciais e permissões ficam criptografadas no servidor.</p>{adminRole === 'owner' ? <form onSubmit={saveSecurity}><div className="settings-grid"><label>Usuário proprietário<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form> : <p className="panel-intro">Somente o proprietário pode alterar o acesso principal.</p>}</section>{adminRole === 'owner' && <section className="panel admin-users-panel"><div className="panel-heading"><div><span className="section-step">PERMISSÕES</span><h2>Usuários adicionais</h2><p>Editor pode operar o painel; consulta pode apenas visualizar. Nenhum deles vê chaves secretas.</p></div></div><form className="admin-user-form" onSubmit={addAdminUser}><label>Usuário<input required minLength="3" maxLength="100" value={newAdmin.username} onChange={(event) => setNewAdmin({ ...newAdmin, username: event.target.value })} autoComplete="off" /></label><label>Senha temporária<input required minLength="12" type="password" value={newAdmin.password} onChange={(event) => setNewAdmin({ ...newAdmin, password: event.target.value })} autoComplete="new-password" /></label><label>Papel<select value={newAdmin.role} onChange={(event) => setNewAdmin({ ...newAdmin, role: event.target.value })}><option value="viewer">Consulta</option><option value="editor">Editor</option></select></label><button className="button primary" type="submit">Adicionar usuário</button></form>{data.secrets?.adminUsers?.length ? <div className="admin-users-list">{data.secrets.adminUsers.map((user) => <div key={user.id}><span><strong>{user.username}</strong><small>{user.active === false ? 'Desativado' : user.role === 'editor' ? 'Editor' : 'Consulta'}</small></span><select value={user.role} disabled={user.active === false} onChange={(event) => changeAdminRole(user, event.target.value)}><option value="viewer">Consulta</option><option value="editor">Editor</option></select><button className="text-button" type="button" onClick={() => changeAdminActive(user)}>{user.active === false ? 'Reativar' : 'Desativar'}</button><button className="text-button danger-text" type="button" onClick={() => removeAdminUser(user)}>Remover</button></div>)}</div> : <div className="empty"><strong>Nenhum usuário adicional</strong><p>O acesso proprietário continua sendo o único ativo.</p></div>}</section>}</div>}
     {tab === 'logs' && <section className="panel activity-panel">
       <div className="panel-heading activity-heading">
         <div><span className="section-step">HISTÓRICO DO SISTEMA</span><h2>Registro de atividades</h2><p>{filteredActivityLogs.length} de {activitySummary.total} registro(s) exibido(s). Os filtros só alteram a visualização.</p></div>
@@ -4093,6 +4146,13 @@ function AnalyticsDashboard({ analytics = {}, config = {}, secrets = {}, secretF
       <div><span><i>◷</i>Sessões</span><strong>{Number(analytics.totalSessions || 0).toLocaleString('pt-BR')}</strong><small>Períodos de até 30 minutos</small></div>
       <div><span><i>◎</i>Cliques medidos</span><strong>{Number(analytics.totalClicks || 0).toLocaleString('pt-BR')}</strong><small>Interações autorizadas</small></div>
     </div>
+
+    <section className="panel analytics-funnel-panel">
+      <div className="panel-heading"><div><span className="section-step">FUNIL DE INTERESSE</span><h2>Do acesso à ação</h2><p>Indicadores agregados para entender onde as pessoas avançam. Não identifica visitantes.</p></div></div>
+      <div className="analytics-funnel">
+        {[['Acessos', Number(analytics.totalPageViews || 0)], ['Cliques em ofertas', Number(analytics.clicksByType?.offer || 0)], ['Cliques em cupons', Number(analytics.clicksByType?.coupon || 0)], ['Entradas no WhatsApp', Number(analytics.clicksByType?.whatsapp || 0)]].map(([label, value], index) => <div key={label} className="analytics-funnel-step"><span>{String(index + 1).padStart(2, '0')}</span><strong>{value.toLocaleString('pt-BR')}</strong><small>{label}</small>{index < 3 && <i aria-hidden="true">→</i>}</div>)}
+      </div>
+    </section>
 
     <section className="panel search-console-panel"><div className="panel-heading"><div><span className="section-step">GOOGLE SEARCH CONSOLE</span><h2>Desempenho na pesquisa Google</h2><p>{secrets.googleSearchConsoleConnected ? 'A conexão está pronta. Atualize para buscar os últimos dados disponíveis.' : 'Conecte a propriedade verificada para acompanhar cliques, impressões e termos pesquisados.'}</p></div><div className="review-actions">{secrets.googleSearchConsoleConnected && <button className="button subtle" type="button" onClick={onRefreshSearchConsole}>Atualizar dados</button>}<button className="button primary" type="button" onClick={onConnect}>{secrets.googleSearchConsoleConnected ? 'Reconectar Google' : 'Conectar Google'}</button></div></div><div className="settings-grid"><label>Propriedade<input value={config.searchConsoleSiteUrl || ''} onChange={(event) => setConfigField('searchConsoleSiteUrl', event.target.value)} placeholder="sc-domain:jhonatafaraujo.com.br" /></label><label>URL de retorno<input value={config.searchConsoleRedirectUri || ''} onChange={(event) => setConfigField('searchConsoleRedirectUri', event.target.value)} /></label><label>ID do cliente OAuth<input value={secretForm.googleSearchConsoleClientId || ''} onChange={(event) => setSecretForm({ ...secretForm, googleSearchConsoleClientId: event.target.value.trim() })} placeholder={secrets.googleSearchConsoleClientIdConfigured ? 'ID configurado — deixe vazio para manter' : '...apps.googleusercontent.com'} /></label><label>Chave secreta OAuth<input type="password" value={secretForm.googleSearchConsoleClientSecret || ''} onChange={(event) => setSecretForm({ ...secretForm, googleSearchConsoleClientSecret: event.target.value })} placeholder={secrets.googleSearchConsoleClientSecretConfigured ? 'Chave configurada — deixe vazio para manter' : 'Cole a chave secreta'} /></label></div>{searchConsole && <><div className="stats search-console-stats"><div><span>Cliques no Google</span><strong>{Number(searchConsole.totals?.clicks || 0).toLocaleString('pt-BR')}</strong></div><div><span>Impressões</span><strong>{Number(searchConsole.totals?.impressions || 0).toLocaleString('pt-BR')}</strong></div><div><span>CTR</span><strong>{(Number(searchConsole.totals?.ctr || 0) * 100).toFixed(1)}%</strong></div><div><span>Posição média</span><strong>{Number(searchConsole.totals?.position || 0).toFixed(1)}</strong></div></div><div className="analytics-detail-grid"><div className="analytics-ranking-list">{searchConsole.queries?.map((row) => <div key={row.keys?.[0]}><span>{row.keys?.[0]}</span><strong>{Number(row.clicks || 0)} clique(s)</strong></div>)}</div><div className="analytics-ranking-list">{searchConsole.pages?.map((row) => <div key={row.keys?.[0]}><span>{String(row.keys?.[0] || '').replace(/^https?:\/\/[^/]+/, '') || '/'}</span><strong>{Number(row.clicks || 0)} clique(s)</strong></div>)}</div></div></>}</section>
 

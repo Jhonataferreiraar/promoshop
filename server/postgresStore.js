@@ -29,7 +29,9 @@ const ENTITY_TABLES = Object.freeze({
   queue: 'promoshop_queue',
   instagramQueue: 'promoshop_instagram_queue',
   instagramFeedQueue: 'promoshop_instagram_feed_queue',
-  logs: 'promoshop_logs'
+  logs: 'promoshop_logs',
+  campaigns: 'promoshop_campaigns',
+  priceMonitors: 'promoshop_price_monitors'
 });
 
 function serialize(value) {
@@ -221,6 +223,8 @@ function emptyPersistedState() {
     instagramQueue: [],
     instagramFeedQueue: [],
     logs: [],
+    campaigns: [],
+    priceMonitors: [],
     analytics: { visitors: {} },
     meta: {}
   };
@@ -564,7 +568,9 @@ export function createPostgresStateBackend({
   }
 
   async function readKeys(requestedKeys = []) {
-    const keys = [...new Set(requestedKeys)].filter((key) => STATE_KEYS.includes(key)).sort();
+    const keys = [...new Set(requestedKeys)]
+      .filter((key) => STATE_KEYS.includes(key) || Object.hasOwn(ENTITY_TABLES, key))
+      .sort();
     await ensureDatabase();
     if (!keys.length || keys.length === STATE_KEYS.length || !relationalReady) {
       const data = await read();
@@ -611,7 +617,11 @@ export function createPostgresStateBackend({
         const mutatorResult = await mutator(data);
         compactData(data);
 
-        const changedKeys = STATE_KEYS.filter((key) => serialize(before[key]) !== serialize(data[key]));
+        const changedKeys = [...STATE_KEYS, ...Object.keys(ENTITY_TABLES)]
+          .filter((key) => serialize(before[key]) !== serialize(data[key]));
+        if (!useRelationalStore && changedKeys.some((key) => ['campaigns', 'priceMonitors'].includes(key))) {
+          throw new Error('O armazenamento relacional do PostgreSQL ainda não está disponível para salvar campanhas e monitoramentos. Tente novamente em instantes.');
+        }
         const persistedKeys = restored.requiresReencrypt
           ? [...new Set([...changedKeys, 'inbox', 'privacyConsents', 'analytics'])]
           : changedKeys;
@@ -630,10 +640,11 @@ export function createPostgresStateBackend({
               'UPDATE promoshop_state SET version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version'
             );
           } else {
-            const assignments = persistedKeys.map((key, index) => `${STATE_COLUMNS[key]} = $${index + 1}::jsonb`);
-            const values = persistedKeys.map((key) => serialize(protectedAfter[key]));
+            const statePersistedKeys = STATE_KEYS.filter((key) => persistedKeys.includes(key));
+            const assignments = statePersistedKeys.map((key, index) => `${STATE_COLUMNS[key]} = $${index + 1}::jsonb`);
+            const values = statePersistedKeys.map((key) => serialize(protectedAfter[key]));
             updated = await client.query(
-              `UPDATE promoshop_state SET ${assignments.join(', ')}, version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version`,
+              `UPDATE promoshop_state SET ${assignments.length ? `${assignments.join(', ')}, ` : ''}version = version + 1, updated_at = NOW() WHERE id = 1 RETURNING version`,
               values
             );
           }

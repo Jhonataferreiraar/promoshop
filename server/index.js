@@ -28,6 +28,7 @@ import {
   createToken,
   hashSecurityIdentifier,
   requireAdmin,
+  requireOwner,
   requireWorker,
   setSessionCookies
 } from './auth.js';
@@ -116,6 +117,13 @@ import {
   turnstilePublicConfig,
   verifyTurnstileToken
 } from './turnstile.js';
+import {
+  campaignCalendar,
+  campaignMatchesOffer,
+  normalizeCampaign,
+  normalizePriceMonitor,
+  queueItemIsDue
+} from './campaigns.js';
 
 const app = express();
 
@@ -3790,16 +3798,13 @@ app.post(
       }
     }
 
-    const expectedUser =
-      process.env
-        .ADMIN_USER ||
-      secrets.adminUser;
-
-    const userOk =
-      String(
-        username ||
-        ''
-      ) === expectedUser;
+    const ownerUser = process.env.ADMIN_USER || secrets.adminUser;
+    const ownerMatches = String(username || '') === ownerUser;
+    const additionalUser = !ownerMatches && Array.isArray(secrets.adminUsers)
+      ? secrets.adminUsers.find((user) => user.active !== false && String(user.username).toLocaleLowerCase('pt-BR') === username.toLocaleLowerCase('pt-BR'))
+      : null;
+    const expectedUser = additionalUser?.username || ownerUser;
+    const userOk = ownerMatches || Boolean(additionalUser && String(username || '') === expectedUser);
 
     const environmentPassword =
       String(
@@ -3822,14 +3827,10 @@ app.post(
         });
     }
 
-    const passOk =
-      secrets
-        .adminPasswordHash
-        ? await verifyPassword(
-            password,
-            secrets
-              .adminPasswordHash
-          )
+    const passOk = additionalUser
+      ? await verifyPassword(password, additionalUser.passwordHash)
+      : secrets.adminPasswordHash
+        ? await verifyPassword(password, secrets.adminPasswordHash)
         : (
             environmentPassword &&
             password.length ===
@@ -3870,14 +3871,14 @@ app.post(
       secrets = await updateSecrets({ rehashAdminPassword: password });
     }
 
-    const token = createToken(expectedUser, secrets.adminSessionVersion);
+    const token = createToken(expectedUser, secrets.adminSessionVersion, additionalUser?.role || 'owner');
     setSessionCookies(res, token);
-    res.json({ authenticated: true });
+    res.json({ authenticated: true, role: additionalUser?.role || 'owner' });
   }
 );
 
-app.get('/api/auth/session', requireAdmin, (_req, res) => {
-  res.json({ authenticated: true });
+app.get('/api/auth/session', requireAdmin, (req, res) => {
+  res.json({ authenticated: true, username: req.adminUsername, role: req.adminRole || 'owner' });
 });
 
 app.post('/api/auth/logout', requireAdmin, (_req, res) => {
@@ -3904,9 +3905,68 @@ function adminQueueItem(item = {}) {
     attempts: Number(item.attempts || 0),
     createdAt: item.createdAt || null,
     sentAt: item.sentAt || null,
+    scheduledFor: item.scheduledFor || null,
+    campaignId: item.campaignId || null,
     error: item.error || null,
     force: Boolean(item.force)
   };
+}
+
+function adminCampaignPayload(campaign = {}, data = {}) {
+  const offerIds = Array.isArray(campaign.offerIds) ? campaign.offerIds : [];
+  const targetCodes = Array.isArray(campaign.targetAudienceCodes) ? campaign.targetAudienceCodes : [];
+  const queued = (Array.isArray(data.queue) ? data.queue : []).filter((item) => item?.campaignId === campaign.id);
+  return {
+    id: String(campaign.id || ''),
+    name: String(campaign.name || ''),
+    description: String(campaign.description || ''),
+    status: String(campaign.status || 'draft'),
+    scheduledFor: campaign.scheduledFor || null,
+    store: String(campaign.store || ''),
+    category: String(campaign.category || ''),
+    minDiscount: Number(campaign.minDiscount || 0),
+    maxItems: Number(campaign.maxItems || 20),
+    offerIds: offerIds.slice(0, 200),
+    targetAudienceCodes: targetCodes.slice(0, 20),
+    createdAt: campaign.createdAt || null,
+    updatedAt: campaign.updatedAt || null,
+    queuedAt: campaign.queuedAt || null,
+    queuedCount: queued.length,
+    pendingCount: queued.filter((item) => item.status === 'pending').length,
+    sentCount: queued.filter((item) => item.status === 'sent').length
+  };
+}
+
+function adminPriceMonitorPayload(monitor = {}, data = {}) {
+  const offer = (Array.isArray(data.offers) ? data.offers : []).find((item) => item.id === monitor.offerId);
+  return {
+    id: String(monitor.id || ''),
+    offerId: String(monitor.offerId || ''),
+    offerTitle: String(offer?.title || monitor.offerTitle || 'Oferta removida'),
+    store: String(offer?.store || monitor.store || ''),
+    image: String(offer?.image || ''),
+    currentPrice: Number(offer?.price || monitor.lastPrice || 0),
+    targetPrice: Number(monitor.targetPrice || 0),
+    lastPrice: Number(monitor.lastPrice || 0),
+    status: String(monitor.status || 'watching'),
+    enabled: monitor.enabled !== false,
+    alertOnDrop: monitor.alertOnDrop !== false,
+    alertOnTarget: monitor.alertOnTarget !== false,
+    lastCheckedAt: monitor.lastCheckedAt || null,
+    lastAlertAt: monitor.lastAlertAt || null,
+    history: Array.isArray(monitor.history) ? monitor.history.slice(-30) : [],
+    createdAt: monitor.createdAt || null,
+    updatedAt: monitor.updatedAt || null
+  };
+}
+
+function campaignTargetCodes(rawCodes, audiences = []) {
+  const active = new Set((Array.isArray(audiences) ? audiences : [])
+    .filter((audience) => audience?.enabled !== false)
+    .map((audience) => String(audience.code || '').toUpperCase()));
+  return [...new Set((Array.isArray(rawCodes) ? rawCodes : [])
+    .map((code) => String(code || '').trim().toUpperCase())
+    .filter((code) => active.has(code)))].slice(0, 20);
 }
 
 function summarizeQueue(queue = [], historicalSent = 0) {
@@ -3999,6 +4059,8 @@ app.get(
       inbox: _inbox,
       instagramQueue: _instagramQueue,
       instagramFeedQueue: _instagramFeedQueue,
+      campaigns: _campaigns,
+      priceMonitors: _priceMonitors,
       meta: dashboardMeta,
       ...dashboardPayload
     } = dashboardData;
@@ -4015,8 +4077,16 @@ app.get(
         serverStatus: dashboardMeta?.monitoring?.serverStatus || 'unknown',
         serverHeartbeatAt: dashboardMeta?.monitoring?.serverHeartbeatAt || null,
         lastDeployKey: dashboardMeta?.monitoring?.lastDeployKey || ''
+      },
+      backup: {
+        lastAutomaticAt: dashboardMeta?.backup?.lastAutomaticAt || null,
+        lastManualAt: dashboardMeta?.backup?.lastManualAt || null,
+        files: Array.isArray(dashboardMeta?.backup?.files) ? dashboardMeta.backup.files.slice(-20) : []
       }
     };
+
+    const dashboardSecrets = secretStatus(secrets);
+    if (req.adminRole !== 'owner') dashboardSecrets.adminUsers = [];
 
     res.json({
       ...dashboardPayload,
@@ -4050,6 +4120,8 @@ app.get(
         shortCode: couponShortCode(coupon),
         shortUrl: couponShortUrl(coupon, req)
       })),
+      campaigns: (Array.isArray(dashboardData.campaigns) ? dashboardData.campaigns : []).map((campaign) => adminCampaignPayload(campaign, dashboardData)),
+      priceMonitors: (Array.isArray(dashboardData.priceMonitors) ? dashboardData.priceMonitors : []).map((monitor) => adminPriceMonitorPayload(monitor, dashboardData)),
 
       analytics:
         summarizeAnalytics(
@@ -4061,10 +4133,7 @@ app.get(
           dashboardData
         ),
 
-      secrets:
-        secretStatus(
-          secrets
-        )
+      secrets: dashboardSecrets
     });
   }
 );
@@ -4175,7 +4244,8 @@ app.put(
           instagramFeedDuplicateDays: [7, 1, 365],
           instagramFeedCarouselSize: [4, 2, 10],
           instagramFeedCarouselsPerDay: [1, 1, 10],
-          instagramFeedCarouselsPerWeek: [3, 1, 21]
+          instagramFeedCarouselsPerWeek: [3, 1, 21],
+          automaticBackupRetention: [7, 1, 30]
         };
         for (const [key, [fallback, minimum, maximum]] of Object.entries(numericRules)) {
           data.config[key] = boundedNumber(data.config[key], fallback, minimum, maximum);
@@ -4325,6 +4395,302 @@ app.put(
   }
 );
 
+/*
+ * ==========================================================
+ * CAMPANHAS, CALENDÁRIO E MONITORAMENTO DE PREÇO
+ * ==========================================================
+ *
+ * Estas rotas usam a mesma fila e o mesmo roteamento das publicações
+ * normais. Assim, uma campanha não cria um segundo fluxo de envio e continua
+ * sujeita às validações de oferta, link, grupos e deduplicação existentes.
+ */
+
+function campaignOffersForData(campaign, data, requestedIds = null) {
+  const offers = Array.isArray(data.offers) ? data.offers : [];
+  const requested = Array.isArray(requestedIds) && requestedIds.length
+    ? new Set(requestedIds.map((id) => String(id)))
+    : new Set(Array.isArray(campaign.offerIds) ? campaign.offerIds : []);
+  return offers
+    .filter((offer) => offer?.status === 'active' && offer?.affiliateUrl && Number(offer?.price) > 0)
+    .filter((offer) => safeAffiliateDestination(offer.affiliateUrl))
+    .filter((offer) => requested.size ? requested.has(String(offer.id)) : campaignMatchesOffer(campaign, offer))
+    .filter((offer) => requested.size ? true : campaignMatchesOffer(campaign, offer))
+    .slice(0, Math.max(1, Math.min(200, Number(campaign.maxItems) || 20)));
+}
+
+function normalizeCampaignForWrite(body, current, data) {
+  const normalized = normalizeCampaign(body || {}, current || {}, new Date().toISOString());
+  if (!normalized.id) throw new Error('A campanha precisa de um identificador válido.');
+  if (!normalized.name) throw new Error('Informe um nome para a campanha.');
+  if (body && body.scheduledFor && !normalized.scheduledFor) throw new Error('Informe uma data válida para o agendamento.');
+  const activeCodes = campaignTargetCodes(normalized.targetAudienceCodes, data.config?.whatsappAudiences);
+  if (normalized.targetAudienceCodes.length && !activeCodes.length) throw new Error('Selecione pelo menos um grupo ativo para a campanha.');
+  normalized.targetAudienceCodes = activeCodes;
+  const validOfferIds = new Set((data.offers || []).map((offer) => String(offer.id)));
+  normalized.offerIds = normalized.offerIds.filter((id) => validOfferIds.has(String(id))).slice(0, 200);
+  if (normalized.scheduledFor && new Date(normalized.scheduledFor).getTime() > Date.now()) {
+    normalized.status = normalized.status === 'paused' ? 'paused' : 'scheduled';
+  } else if (normalized.status === 'scheduled') {
+    normalized.status = 'draft';
+  }
+  return normalized;
+}
+
+async function runPriceMonitorChecks() {
+  const checkedAt = new Date().toISOString();
+  const events = [];
+  let checked = 0;
+  await updateStore((data) => {
+    const monitors = Array.isArray(data.priceMonitors) ? data.priceMonitors : [];
+    for (const monitor of monitors) {
+      if (monitor?.enabled === false) continue;
+      checked += 1;
+      const offer = (data.offers || []).find((entry) => entry.id === monitor.offerId);
+      if (!offer || offer.status !== 'active' || !(Number(offer.price) > 0)) {
+        monitor.status = 'unavailable';
+        monitor.lastCheckedAt = checkedAt;
+        monitor.updatedAt = checkedAt;
+        continue;
+      }
+      const currentPrice = Number(offer.price);
+      const previousPrice = Number(monitor.lastPrice || 0);
+      const previousStatus = String(monitor.status || 'watching');
+      monitor.history = [...(Array.isArray(monitor.history) ? monitor.history : []), { price: currentPrice, checkedAt }].slice(-30);
+      monitor.lastPrice = currentPrice;
+      monitor.lastCheckedAt = checkedAt;
+      monitor.updatedAt = checkedAt;
+      let nextStatus = 'watching';
+      let eventType = '';
+      if (monitor.alertOnTarget !== false && currentPrice <= Number(monitor.targetPrice || 0)) {
+        nextStatus = 'below-target';
+        if (previousStatus !== 'below-target') eventType = 'target';
+      } else if (monitor.alertOnDrop !== false && previousPrice > currentPrice && previousPrice > 0) {
+        nextStatus = 'changed';
+        if (previousStatus !== 'changed') eventType = 'drop';
+      }
+      monitor.status = nextStatus;
+      const lastAlert = new Date(monitor.lastAlertAt || 0).getTime();
+      const cooldownElapsed = !Number.isFinite(lastAlert) || Date.now() - lastAlert >= 24 * 60 * 60 * 1000;
+      if (eventType && cooldownElapsed) {
+        monitor.lastAlertAt = checkedAt;
+        const alertMessage = eventType === 'target'
+          ? `Monitoramento: ${offer.title} chegou a ${currentPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}, abaixo do alvo de ${Number(monitor.targetPrice || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
+          : `Monitoramento: o preço de ${offer.title} caiu para ${currentPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`;
+        data.logs.unshift({ id: createId('log'), message: alertMessage, level: 'warning', createdAt: checkedAt });
+        data.logs = data.logs.slice(0, 200);
+        events.push({
+          monitorId: monitor.id,
+          offerId: offer.id,
+          title: offer.title,
+          store: offer.store,
+          currentPrice,
+          targetPrice: Number(monitor.targetPrice || 0),
+          type: eventType
+        });
+        if (monitoringEnabledForConfig(data.config) && monitoringRecipientForConfig(data.config)) {
+          enqueueMonitoringAlert(data, {
+            type: 'price-monitor',
+            level: 'warning',
+            message: alertMessage,
+            dedupeKey: `price-monitor:${monitor.id}:${eventType}:${checkedAt.slice(0, 10)}`
+          });
+        }
+      }
+    }
+  });
+  return { checked, events };
+}
+
+app.get('/api/admin/campaigns-state', requireAdmin, async (_req, res) => {
+  const data = await readStore();
+  const campaigns = (data.campaigns || []).map((campaign) => adminCampaignPayload(campaign, data));
+  const priceMonitors = (data.priceMonitors || []).map((monitor) => adminPriceMonitorPayload(monitor, data));
+  const stores = [...new Set((data.offers || []).map((offer) => String(offer.store || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const categories = [...new Set((data.offers || []).map((offer) => String(offer.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    campaigns,
+    priceMonitors,
+    calendar: campaignCalendar(data.campaigns, data.queue),
+    stores,
+    categories,
+    stats: {
+      campaigns: campaigns.length,
+      active: campaigns.filter((item) => item.status === 'active').length,
+      scheduled: campaigns.filter((item) => item.status === 'scheduled').length,
+      monitored: priceMonitors.filter((item) => item.enabled).length,
+      belowTarget: priceMonitors.filter((item) => item.status === 'below-target').length,
+      scheduledPublications: (data.queue || []).filter((item) => item.scheduledFor && item.status === 'pending').length
+    }
+  });
+});
+
+app.post('/api/admin/campaigns', requireAdmin, async (req, res) => {
+  try {
+    const created = await updateStore((data) => {
+      if (data.config.campaignsEnabled === false) throw new Error('O centro de campanhas está desativado nas configurações.');
+      const campaign = normalizeCampaignForWrite({ ...(req.body || {}), id: createId('campaign') }, {}, data);
+      data.campaigns.push(campaign);
+      return campaign;
+    });
+    await addLog(`Campanha criada: ${created.name}.`, 'success');
+    const data = await readStore();
+    res.status(201).json({ campaign: adminCampaignPayload(data.campaigns.find((item) => item.id === created.id), data) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível criar a campanha.' });
+  }
+});
+
+app.put('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
+  try {
+    let savedId = '';
+    await updateStore((data) => {
+      const campaign = data.campaigns.find((item) => item.id === req.params.id);
+      if (!campaign) throw new Error('Campanha não encontrada.');
+      const normalized = normalizeCampaignForWrite({ ...(req.body || {}), id: campaign.id }, campaign, data);
+      Object.assign(campaign, normalized);
+      savedId = campaign.id;
+    });
+    await addLog('Campanha atualizada pelo painel.', 'success');
+    const data = await readStore();
+    res.json({ campaign: adminCampaignPayload(data.campaigns.find((item) => item.id === savedId), data) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível atualizar a campanha.' });
+  }
+});
+
+app.delete('/api/admin/campaigns/:id', requireAdmin, async (req, res) => {
+  try {
+    let removed = false;
+    await updateStore((data) => {
+      const campaign = data.campaigns.find((item) => item.id === req.params.id);
+      if (!campaign) throw new Error('Campanha não encontrada.');
+      const hasActiveQueue = data.queue.some((item) => item.campaignId === campaign.id && ['pending', 'publishing'].includes(item.status));
+      if (hasActiveQueue) throw new Error('Remova ou aguarde os itens da campanha na fila antes de excluí-la.');
+      data.campaigns = data.campaigns.filter((item) => item.id !== campaign.id);
+      removed = true;
+    });
+    if (removed) await addLog('Campanha excluída pelo painel.', 'warning');
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(409).json({ error: error.message || 'Não foi possível excluir a campanha.' });
+  }
+});
+
+app.post('/api/admin/campaigns/:id/queue', requireAdmin, async (req, res) => {
+  try {
+    let result = { queued: 0, skipped: 0, scheduledFor: null };
+    await updateStore((data) => {
+      if (data.config.campaignsEnabled === false) throw new Error('O centro de campanhas está desativado nas configurações.');
+      const campaign = data.campaigns.find((item) => item.id === req.params.id);
+      if (!campaign) throw new Error('Campanha não encontrada.');
+      if (['paused', 'completed'].includes(campaign.status)) throw new Error('Retome a campanha antes de colocá-la na fila.');
+      const requestedIds = Array.isArray(req.body?.offerIds) ? req.body.offerIds : null;
+      const usesExplicitOffers = Array.isArray(campaign.offerIds) && campaign.offerIds.length > 0;
+      const selected = campaignOffersForData(campaign, data, requestedIds);
+      const campaignCodes = campaignTargetCodes(campaign.targetAudienceCodes, data.config?.whatsappAudiences);
+      const scheduledFor = campaign.scheduledFor && new Date(campaign.scheduledFor).getTime() > Date.now() ? campaign.scheduledFor : null;
+      result.scheduledFor = scheduledFor;
+      const sentSourceIndex = createQueueSourceIndex(data.queue, (item) => item?.status === 'sent');
+      for (const offer of selected) {
+        if (hasSentSourceInStore(data, { offerId: offer.id, offerSnapshot: offer }, sentSourceIndex) || data.queue.some((item) => item.offerId === offer.id && ['pending', 'publishing'].includes(item.status))) {
+          result.skipped += 1;
+          continue;
+        }
+        const item = makeQueueItem(offer, data.config);
+        const targetAudienceCodes = campaignCodes.length ? campaignCodes : getAudienceCodesForOffer(offer, data.config.whatsappAudiences);
+        if (!targetAudienceCodes.length) {
+          result.skipped += 1;
+          continue;
+        }
+        item.campaignId = campaign.id;
+        item.scheduledFor = scheduledFor;
+        item.targetAudienceCodes = targetAudienceCodes;
+        if (item.offerSnapshot) item.offerSnapshot.targetAudienceCodes = targetAudienceCodes;
+        data.queue.push(item);
+        result.queued += 1;
+      }
+      // Campanhas criadas por filtros continuam dinâmicas: uma nova execução
+      // deve poder encontrar ofertas novas. Só preservamos IDs quando o
+      // usuário escolheu ofertas específicas no formulário.
+      if (usesExplicitOffers || requestedIds?.length) {
+        campaign.offerIds = selected.map((offer) => offer.id).slice(0, 200);
+      }
+      campaign.queuedAt = new Date().toISOString();
+      campaign.status = scheduledFor ? 'scheduled' : 'active';
+      campaign.updatedAt = campaign.queuedAt;
+    });
+    await addLog(`Campanha colocada na fila: ${result.queued} item(ns) criado(s), ${result.skipped} ignorado(s).`, result.queued ? 'success' : 'warning');
+    const data = await readStore();
+    res.json({ ...result, campaign: adminCampaignPayload(data.campaigns.find((item) => item.id === req.params.id), data) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível colocar a campanha na fila.' });
+  }
+});
+
+app.post('/api/admin/price-monitors', requireAdmin, async (req, res) => {
+  try {
+    let monitorId = '';
+    await updateStore((data) => {
+      if (data.config.priceMonitoringEnabled === false) throw new Error('O monitoramento de preços está desativado nas configurações.');
+      const offer = (data.offers || []).find((item) => item.id === req.body?.offerId && item.status === 'active');
+      if (!offer) throw new Error('Selecione uma oferta ativa para monitorar.');
+      const target = Number(req.body?.targetPrice);
+      if (!Number.isFinite(target) || target <= 0) throw new Error('Informe um preço-alvo maior que zero.');
+      if (data.priceMonitors.some((item) => item.offerId === offer.id && item.enabled !== false)) throw new Error('Esta oferta já possui um monitoramento ativo.');
+      const monitor = normalizePriceMonitor({ ...(req.body || {}), id: createId('monitor'), offerId: offer.id, targetPrice: target }, {}, new Date().toISOString());
+      data.priceMonitors.push(monitor);
+      monitorId = monitor.id;
+    });
+    await addLog('Monitoramento de preço criado pelo painel.', 'success');
+    const data = await readStore();
+    res.status(201).json({ monitor: adminPriceMonitorPayload(data.priceMonitors.find((item) => item.id === monitorId), data) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível criar o monitoramento.' });
+  }
+});
+
+app.put('/api/admin/price-monitors/:id', requireAdmin, async (req, res) => {
+  try {
+    let monitorId = '';
+    await updateStore((data) => {
+      const monitor = data.priceMonitors.find((item) => item.id === req.params.id);
+      if (!monitor) throw new Error('Monitoramento não encontrado.');
+      const offer = (data.offers || []).find((item) => item.id === (req.body?.offerId || monitor.offerId));
+      if (!offer) throw new Error('A oferta monitorada não está mais disponível.');
+      const normalized = normalizePriceMonitor({ ...(req.body || {}), id: monitor.id, offerId: offer.id }, monitor, new Date().toISOString());
+      Object.assign(monitor, normalized);
+      monitorId = monitor.id;
+    });
+    await addLog('Monitoramento de preço atualizado pelo painel.', 'success');
+    const data = await readStore();
+    res.json({ monitor: adminPriceMonitorPayload(data.priceMonitors.find((item) => item.id === monitorId), data) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível atualizar o monitoramento.' });
+  }
+});
+
+app.delete('/api/admin/price-monitors/:id', requireAdmin, async (req, res) => {
+  try {
+    await updateStore((data) => {
+      if (!data.priceMonitors.some((item) => item.id === req.params.id)) throw new Error('Monitoramento não encontrado.');
+      data.priceMonitors = data.priceMonitors.filter((item) => item.id !== req.params.id);
+    });
+    await addLog('Monitoramento de preço removido pelo painel.', 'warning');
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(404).json({ error: error.message || 'Não foi possível remover o monitoramento.' });
+  }
+});
+
+app.post('/api/admin/price-monitors/check', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ ok: true, ...(await runPriceMonitorChecks()) });
+  } catch (error) {
+    res.status(500).json({ error: 'Não foi possível verificar os preços agora.' });
+  }
+});
+
 app.post('/api/admin/monitoring/whatsapp/test', requireAdmin, async (_req, res) => {
   let alert = null;
   let recipient = '';
@@ -4360,6 +4726,7 @@ app.post('/api/admin/monitoring/whatsapp/retry-failed', requireAdmin, async (_re
 app.put(
   '/api/admin/secrets',
   requireAdmin,
+  requireOwner,
   async (
     req,
     res
@@ -5177,16 +5544,188 @@ app.get(
     const data = await readStore();
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Disposition', `attachment; filename="promoshop-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-    res.json({
-      kind: 'promoshop-safe-backup',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      notice: 'Backup operacional sem senhas, chaves de API, sessões do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.',
-      config: data.config,
-      coupons: Array.isArray(data.coupons) ? data.coupons : []
-    });
+    res.json(safeOperationalBackupPayload(data));
   }
 );
+
+const operationalBackupDir = path.join(
+  process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data'),
+  'backups'
+);
+
+const PRIVATE_BACKUP_CONFIG_KEYS = new Set([
+  'whatsappUrl',
+  'whatsappGroupId',
+  'whatsappGroupName',
+  'whatsappGroups',
+  'whatsappAudiences',
+  'whatsappDirectoryIncludedCodes',
+  'whatsappDirectoryTargetCodes',
+  'monitoringWhatsappRecipient',
+  'inboxInboundWebhookId',
+  'inboxInboundWebhookUrl',
+  'instagramAudienceCodes',
+  'extensionAudienceCodes'
+]);
+
+function safeBackupConfig(config = {}) {
+  return Object.fromEntries(Object.entries(config || {})
+    .filter(([key]) => !PRIVATE_BACKUP_CONFIG_KEYS.has(key))
+    .map(([key, value]) => [key, structuredClone(value)]));
+}
+
+function safeBackupCampaign(campaign = {}) {
+  return {
+    id: String(campaign.id || '').slice(0, 120),
+    name: String(campaign.name || '').slice(0, 120),
+    description: String(campaign.description || '').slice(0, 500),
+    status: String(campaign.status || 'draft').slice(0, 20),
+    scheduledFor: campaign.scheduledFor || null,
+    store: String(campaign.store || '').slice(0, 80),
+    category: String(campaign.category || '').slice(0, 100),
+    minDiscount: Number(campaign.minDiscount || 0),
+    maxItems: Number(campaign.maxItems || 20),
+    offerIds: Array.isArray(campaign.offerIds) ? campaign.offerIds.slice(0, 200).map((id) => String(id).slice(0, 120)) : [],
+    targetAudienceCodes: Array.isArray(campaign.targetAudienceCodes) ? campaign.targetAudienceCodes.slice(0, 20).map((code) => String(code).slice(0, 12)) : [],
+    createdAt: campaign.createdAt || null,
+    updatedAt: campaign.updatedAt || null,
+    queuedAt: campaign.queuedAt || null,
+    completedAt: campaign.completedAt || null
+  };
+}
+
+function safeBackupMonitor(monitor = {}) {
+  return {
+    id: String(monitor.id || '').slice(0, 120),
+    offerId: String(monitor.offerId || '').slice(0, 120),
+    targetPrice: Number(monitor.targetPrice || 0),
+    alertOnDrop: monitor.alertOnDrop !== false,
+    alertOnTarget: monitor.alertOnTarget !== false,
+    enabled: monitor.enabled !== false,
+    status: String(monitor.status || 'watching').slice(0, 20),
+    lastPrice: Number(monitor.lastPrice || 0),
+    lastCheckedAt: monitor.lastCheckedAt || null,
+    lastAlertAt: monitor.lastAlertAt || null,
+    history: Array.isArray(monitor.history) ? monitor.history.slice(-30).map((entry) => ({ price: Number(entry?.price || 0), checkedAt: entry?.checkedAt || null })) : [],
+    createdAt: monitor.createdAt || null,
+    updatedAt: monitor.updatedAt || null
+  };
+}
+
+function safeOperationalBackupPayload(data) {
+  return {
+    kind: 'promoshop-safe-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    notice: 'Backup operacional sem senhas, chaves de API, sessões do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.',
+    config: safeBackupConfig(data.config),
+    coupons: Array.isArray(data.coupons) ? data.coupons : [],
+    campaigns: Array.isArray(data.campaigns) ? data.campaigns.slice(0, 200).map(safeBackupCampaign) : [],
+    priceMonitors: Array.isArray(data.priceMonitors) ? data.priceMonitors.slice(0, 200).map(safeBackupMonitor) : []
+  };
+}
+
+async function listAutomaticBackups() {
+  try {
+    const entries = await fs.readdir(operationalBackupDir, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^promoshop-auto-\d+\.json$/.test(entry.name)) continue;
+      const absolute = path.join(operationalBackupDir, entry.name);
+      const stats = await fs.stat(absolute).catch(() => null);
+      if (!stats) continue;
+      files.push({ name: entry.name, createdAt: stats.mtime.toISOString(), size: stats.size });
+    }
+    return files.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function writeAutomaticBackup() {
+  const data = await readStore();
+  const payload = safeOperationalBackupPayload(data);
+  const serialized = JSON.stringify(payload);
+  if (Buffer.byteLength(serialized, 'utf8') > 2_000_000) throw new Error('O backup automático excede o limite seguro de tamanho.');
+  await fs.mkdir(operationalBackupDir, { recursive: true });
+  const filename = `promoshop-auto-${Date.now()}.json`;
+  const temporary = path.join(operationalBackupDir, `${filename}.tmp`);
+  const absolute = path.join(operationalBackupDir, filename);
+  await fs.writeFile(temporary, serialized, { encoding: 'utf8', mode: 0o600 });
+  try {
+    await fs.rename(temporary, absolute);
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => {});
+    throw error;
+  }
+  const retention = Math.max(1, Math.min(30, Math.trunc(Number(data.config?.automaticBackupRetention) || 7)));
+  const files = await listAutomaticBackups();
+  const cutoff = Date.now() - retention * 24 * 60 * 60 * 1000;
+  for (const [index, file] of files.entries()) {
+    const createdAt = new Date(file.createdAt).getTime();
+    if ((Number.isFinite(createdAt) && createdAt < cutoff) || index >= 30) {
+      await fs.unlink(path.join(operationalBackupDir, file.name)).catch(() => {});
+    }
+  }
+  /*
+   * O limite de 30 arquivos é uma segunda barreira caso o agendamento seja
+   * executado mais de uma vez por dia ou o relógio do servidor seja ajustado.
+   */
+  for (const file of (await listAutomaticBackups()).slice(30)) {
+    await fs.unlink(path.join(operationalBackupDir, file.name)).catch(() => {});
+  }
+  const remaining = await listAutomaticBackups();
+  await updateStore((store) => {
+    store.meta.backup = {
+      ...(store.meta?.backup || {}),
+      lastAutomaticAt: new Date().toISOString(),
+      files: remaining.slice(0, 20)
+    };
+  });
+  return { name: filename, files: remaining.slice(0, 20) };
+}
+
+app.get('/api/admin/backup/history', requireAdmin, async (_req, res) => {
+  try {
+    const files = await listAutomaticBackups();
+    const data = await readStore();
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      enabled: data.config.automaticBackupEnabled !== false,
+      retention: Number(data.config.automaticBackupRetention || 7),
+      lastAutomaticAt: data.meta?.backup?.lastAutomaticAt || null,
+      files: files.slice(0, 20)
+    });
+  } catch {
+    res.status(500).json({ error: 'Não foi possível carregar o histórico de backups.' });
+  }
+});
+
+app.get('/api/admin/backup/automatic/:name', requireAdmin, async (req, res) => {
+  const name = String(req.params.name || '');
+  if (!/^promoshop-auto-\d+\.json$/.test(name)) return res.status(400).json({ error: 'Arquivo de backup inválido.' });
+  const absolute = path.join(operationalBackupDir, name);
+  try {
+    const stats = await fs.stat(absolute);
+    if (!stats.isFile() || stats.size > 2_000_000) return res.status(404).json({ error: 'Backup não encontrado.' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.type('application/json').send(await fs.readFile(absolute, 'utf8'));
+  } catch (error) {
+    res.status(error?.code === 'ENOENT' ? 404 : 500).json({ error: 'Não foi possível abrir o backup solicitado.' });
+  }
+});
+
+app.post('/api/admin/backup/create', requireAdmin, async (_req, res) => {
+  try {
+    const result = await writeAutomaticBackup();
+    await addLog('Backup automático criado pelo painel.', 'success');
+    res.status(201).json({ ok: true, ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Não foi possível criar o backup automático.' });
+  }
+});
 
 function sanitizedBackupConfig(candidate, current) {
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return {};
@@ -5217,6 +5756,7 @@ function sanitizedBackupConfig(candidate, current) {
 app.post(
   '/api/admin/backup/restore',
   requireAdmin,
+  requireOwner,
   async (req, res) => {
     const backup = req.body;
     if (!backup || backup.kind !== 'promoshop-safe-backup' || Number(backup.version) !== 1) {
@@ -5240,6 +5780,19 @@ app.post(
       }).filter(Boolean)
       : null;
 
+    const restoredCampaigns = Array.isArray(backup.campaigns)
+      ? backup.campaigns.slice(0, 200).map((campaign) => {
+        if (!campaign || typeof campaign !== 'object' || Array.isArray(campaign)) return null;
+        return campaign;
+      }).filter(Boolean)
+      : null;
+    const restoredMonitors = Array.isArray(backup.priceMonitors)
+      ? backup.priceMonitors.slice(0, 200).map((monitor) => {
+        if (!monitor || typeof monitor !== 'object' || Array.isArray(monitor)) return null;
+        return monitor;
+      }).filter(Boolean)
+      : null;
+
     await updateStore((data) => {
       if (backup.config && typeof backup.config === 'object' && !Array.isArray(backup.config)) {
         const restoredConfig = sanitizedBackupConfig(backup.config, data.config || {});
@@ -5253,6 +5806,29 @@ app.post(
           seenCodes.add(shortCode);
           return { ...coupon, shortCode, shortUrl: '' };
         });
+      }
+      if (restoredCampaigns) {
+        data.campaigns = restoredCampaigns.map((campaign) => {
+          try {
+            return normalizeCampaignForWrite({ ...campaign, id: String(campaign.id || createId('campaign')) }, {}, data);
+          } catch {
+            return null;
+          }
+        }).filter(Boolean);
+      }
+      if (restoredMonitors) {
+        const seenOffers = new Set();
+        data.priceMonitors = restoredMonitors.map((monitor) => {
+          const offer = (data.offers || []).find((entry) => entry.id === monitor.offerId);
+          if (!offer || seenOffers.has(offer.id)) return null;
+          try {
+            const normalized = normalizePriceMonitor({ ...monitor, id: String(monitor.id || createId('monitor')), offerId: offer.id }, {}, new Date().toISOString());
+            seenOffers.add(offer.id);
+            return normalized;
+          } catch {
+            return null;
+          }
+        }).filter(Boolean);
       }
     });
 
@@ -7078,6 +7654,7 @@ app.get(
           item.status ===
             'pending' &&
           item.force &&
+          queueItemIsDue(item, now.getTime()) &&
           !hasSentSourceInStore(store, item, sentSourceIndex) &&
           !hasBlockingPendingSource(queue, item, pendingSourceIndex)
       );
@@ -8058,7 +8635,8 @@ app.get(
         (item) =>
           item.status ===
             'pending' &&
-          !item.force
+          !item.force &&
+          queueItemIsDue(item, now.getTime())
       );
     /*
      * Enquanto existirem públicos
@@ -8742,6 +9320,41 @@ app.post(
     });
   }
 );
+
+app.get('/api/admin/users', requireAdmin, requireOwner, async (_req, res) => {
+  const secrets = await readSecrets();
+  res.json({ users: secretStatus(secrets).adminUsers || [] });
+});
+
+app.post('/api/admin/users', requireAdmin, requireOwner, async (req, res) => {
+  try {
+    const updated = await updateSecrets({ adminUserAdd: { username: req.body?.username, password: req.body?.password, role: req.body?.role } });
+    await addLog(`Usuário administrativo adicional criado: ${String(req.body?.username || '').trim()}.`, 'success');
+    res.status(201).json({ users: secretStatus(updated).adminUsers || [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível criar o usuário.' });
+  }
+});
+
+app.patch('/api/admin/users/:id', requireAdmin, requireOwner, async (req, res) => {
+  try {
+    const updated = await updateSecrets({ adminUserUpdate: { id: req.params.id, role: req.body?.role, active: req.body?.active, password: req.body?.password } });
+    await addLog('Permissões de usuário administrativo atualizadas.', 'success');
+    res.json({ users: secretStatus(updated).adminUsers || [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível atualizar o usuário.' });
+  }
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, requireOwner, async (req, res) => {
+  try {
+    const updated = await updateSecrets({ adminUserRemove: req.params.id });
+    await addLog('Usuário administrativo adicional removido.', 'warning');
+    res.json({ users: secretStatus(updated).adminUsers || [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Não foi possível remover o usuário.' });
+  }
+});
 
 /*
  * ==========================================================
@@ -9879,6 +10492,27 @@ cron.schedule('15 3 * * *', async () => {
     await updateStore((data) => pruneInboxEntries(data));
   } catch (error) {
     console.error('Falha ao aplicar a retenção da caixa de entrada:', error.message);
+  }
+});
+
+// O backup automático é diário, atômico e retido apenas pelo período definido
+// no painel. Ele não inclui credenciais, sessões ou dados pessoais.
+cron.schedule('10 2 * * *', async () => {
+  try {
+    const { config } = await readStore();
+    if (config.automaticBackupEnabled !== false) await writeAutomaticBackup();
+  } catch (error) {
+    console.error('Falha ao criar backup automático:', error.message);
+    await addLog(`Backup automático não concluído: ${error.message}`, 'error').catch(() => {});
+  }
+}, { timezone: 'America/Sao_Paulo' });
+
+cron.schedule('45 * * * *', async () => {
+  try {
+    const { config } = await readStore();
+    if (config.priceMonitoringEnabled !== false) await runPriceMonitorChecks();
+  } catch (error) {
+    console.error('Falha ao verificar monitoramentos de preço:', error.message);
   }
 });
 
