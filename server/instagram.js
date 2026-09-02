@@ -10,6 +10,7 @@ import { readTextLimited } from './httpBody.js';
 
 import { addBufferedLog, createId, readStore, updateStore } from './store.js';
 import { readSecrets, updateSecrets } from './secrets.js';
+import { INSTAGRAM_HIGHLIGHT_MARKETPLACES } from './instagramHighlights.js';
 import { selectInstagramTheme } from './instagramThemes.js';
 
 // O servidor também atende o site e mantém o WhatsApp no mesmo serviço.
@@ -36,6 +37,9 @@ function highlightIconSvg(icon, color = '#1269f3') {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const mediaDir = path.join(dataDir, 'instagram-stories');
+const marketplaceAssetsDir = path.join(root, 'server', 'assets', 'marketplaces');
+const marketplaceAssetIds = new Set(INSTAGRAM_HIGHLIGHT_MARKETPLACES.map((store) => store.id));
+const marketplaceLogoCache = new Map();
 const MEDIA_FILE = /^[a-z0-9][a-z0-9._-]{5,100}\.jpe?g$/i;
 const DAY = 24 * 60 * 60 * 1000;
 const META_REQUEST_TIMEOUT_MS = 90_000;
@@ -244,6 +248,20 @@ async function logoBuffer(size = 118) {
   return null;
 }
 
+async function marketplaceLogoBuffer(marketplace, width = 320, height = 180) {
+  const id = String(marketplace || '').trim().toLowerCase();
+  if (!marketplaceAssetIds.has(id)) return null;
+  const cacheKey = `${id}:${width}x${height}`;
+  if (marketplaceLogoCache.has(cacheKey)) return marketplaceLogoCache.get(cacheKey);
+  const promise = sharp(path.join(marketplaceAssetsDir, `${id}.png`))
+    .resize(width, height, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+    .png({ compressionLevel: 9 })
+    .toBuffer()
+    .catch(() => null);
+  marketplaceLogoCache.set(cacheKey, promise);
+  return promise;
+}
+
 async function independenceFlagBuffer() {
   if (!independenceFlagPromise) {
     const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="620" height="363">
@@ -436,12 +454,15 @@ export async function generateInstagramHighlightAsset(highlight = {}, config = {
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const iconColor = variant === 'cover' ? theme.background2 : '#1269f3';
   const centerY = variant === 'cover' ? 960 : 650;
+  const markCenterY = variant === 'cover' ? centerY - 30 : centerY;
+  const marketplaceLogo = await marketplaceLogoBuffer(highlight.marketplace);
+  const visualMark = marketplaceLogo ? '' : `<g transform="translate(420 ${markCenterY - 120})">${highlightIconSvg(highlight.icon, iconColor)}</g>`;
   const safeGuide = variant === 'cover'
     ? `<circle cx="540" cy="960" r="390" fill="#ffffff" opacity=".08"/><circle cx="540" cy="960" r="310" fill="#ffffff" filter="url(#shadow)"/>`
     : `<rect x="80" y="310" width="920" height="1260" rx="64" fill="#ffffff" filter="url(#shadow)"/>`;
   const body = variant === 'cover'
-    ? `<circle cx="540" cy="${centerY - 30}" r="170" fill="#edf3ff"/><g transform="translate(420 ${centerY - 150})">${highlightIconSvg(highlight.icon, iconColor)}</g><text x="540" y="${centerY + 245}" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.background2}">${escapeXml(name)}</text><text x="540" y="${centerY + 310}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#667085">PROMOSHOP</text>`
-    : `<circle cx="540" cy="${centerY}" r="170" fill="#edf3ff"/><g transform="translate(420 ${centerY - 120})">${highlightIconSvg(highlight.icon, iconColor)}</g><text x="540" y="910" text-anchor="middle" font-family="Arial,sans-serif" font-size="78" font-weight="900" fill="#101828">${escapeXml(name)}</text><text x="540" y="1040" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="600" fill="#475467">${descriptionMarkup}</text><rect x="150" y="1310" width="780" height="112" rx="34" fill="${theme.accent}"/><text x="540" y="1380" text-anchor="middle" font-family="Arial,sans-serif" font-size="35" font-weight="900" fill="#111827">Veja este Destaque no perfil  →</text>`;
+    ? `<circle cx="540" cy="${centerY - 30}" r="170" fill="#edf3ff"/>${visualMark}<text x="540" y="${centerY + 245}" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.background2}">${escapeXml(name)}</text><text x="540" y="${centerY + 310}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#667085">PROMOSHOP</text>`
+    : `<circle cx="540" cy="${centerY}" r="170" fill="#edf3ff"/>${visualMark}<text x="540" y="910" text-anchor="middle" font-family="Arial,sans-serif" font-size="78" font-weight="900" fill="#101828">${escapeXml(name)}</text><text x="540" y="1040" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="600" fill="#475467">${descriptionMarkup}</text><rect x="150" y="1310" width="780" height="112" rx="34" fill="${theme.accent}"/><text x="540" y="1380" text-anchor="middle" font-family="Arial,sans-serif" font-size="35" font-weight="900" fill="#111827">Veja este Destaque no perfil  →</text>`;
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-opacity=".22"/></filter></defs>
     <rect width="1080" height="1920" fill="url(#bg)"/>
@@ -453,9 +474,11 @@ export async function generateInstagramHighlightAsset(highlight = {}, config = {
     <text x="540" y="1810" text-anchor="middle" font-family="Arial,sans-serif" font-size="27" font-weight="700" fill="${theme.text}">${escapeXml(domain)}</text>
   </svg>`);
   const logo = await logoBuffer(90);
+  const composites = logo ? [{ input: logo, left: 495, top: 188 }] : [];
+  if (marketplaceLogo) composites.push({ input: marketplaceLogo, left: 380, top: markCenterY - 90 });
   const fileName = `highlight-${variant}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.jpg`;
   const filePath = path.join(mediaDir, fileName);
-  await sharp(svg).composite(logo ? [{ input: logo, left: 495, top: 188 }] : []).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
+  await sharp(svg).composite(composites).jpeg({ quality: 90, chromaSubsampling: '4:4:4' }).toFile(filePath);
   return { fileName, filePath, themeId: theme.id, width: 1080, height: 1920, variant };
 }
 

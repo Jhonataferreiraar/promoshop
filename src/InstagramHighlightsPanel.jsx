@@ -12,6 +12,13 @@ const ICONS = [
   ['info', 'i', 'Informação'], ['message', '✉', 'Mensagem'], ['star', '★', 'Estrela'], ['heart', '♥', 'Coração']
 ];
 
+const MARKETPLACES = [
+  { id: 'mercado-livre', name: 'Mercado Livre', short: 'ML', description: 'Ofertas e cupons selecionados do Mercado Livre.' },
+  { id: 'shopee', name: 'Shopee', short: 'S', description: 'Achados e promoções selecionadas da Shopee.' },
+  { id: 'aliexpress', name: 'AliExpress', short: 'AE', description: 'Ofertas selecionadas do AliExpress.' },
+  { id: 'magalu', name: 'Magalu', short: 'M', description: 'Ofertas selecionadas do Magalu.' }
+];
+
 function uniqueId() {
   return `highlight-${crypto.randomUUID()}`;
 }
@@ -93,6 +100,26 @@ export default function InstagramHighlightsPanel({ data, setData, authApi, setMe
     setPreview(null);
   }
 
+  function addMarketplaceItems() {
+    const existingIds = new Set(items.map((item) => String(item.id || '')));
+    const existingStores = new Set(items.map((item) => String(item.marketplace || '')));
+    const missing = MARKETPLACES
+      .filter((store) => !existingStores.has(store.id) && !existingIds.has(`marketplace-${store.id}`))
+      .map((store) => ({
+        id: `marketplace-${store.id}`,
+        name: store.name,
+        icon: 'store',
+        marketplace: store.id,
+        description: store.description,
+        enabled: true
+      }));
+    if (!missing.length) return setMessage('Os destaques das lojas já estão adicionados.');
+    setItems((current) => [...current, ...missing]);
+    setSelectedId(missing[0].id);
+    setPreview(null);
+    setMessage(`${missing.length} destaque(s) de loja adicionado(s). Salve as categorias para confirmar.`);
+  }
+
   function removeItem(id) {
     if (items.length <= 1) return setMessage('Mantenha pelo menos um Destaque.');
     const next = items.filter((item) => item.id !== id);
@@ -109,15 +136,16 @@ export default function InstagramHighlightsPanel({ data, setData, authApi, setMe
 
     <div className="highlights-workspace">
       <section className="panel highlights-editor">
-        <div className="panel-heading"><div><h2>Categorias</h2><p>Edite o nome, símbolo e texto de cada Destaque.</p></div><button className="button subtle" type="button" onClick={addItem}>+ Novo Destaque</button></div>
+        <div className="panel-heading"><div><h2>Categorias</h2><p>Edite o nome, símbolo, logo e texto de cada Destaque.</p></div><div className="highlight-heading-actions"><button className="button subtle" type="button" onClick={addMarketplaceItems}>+ Adicionar lojas</button><button className="button subtle" type="button" onClick={addItem}>+ Novo Destaque</button></div></div>
         <div className="highlight-tabs" role="tablist">
           {items.map((item) => <button type="button" role="tab" aria-selected={selected?.id === item.id} className={selected?.id === item.id ? 'active' : ''} key={item.id} onClick={() => { setSelectedId(item.id); setPreview(null); }}>
-            <span>{ICONS.find(([id]) => id === item.icon)?.[1] || '★'}</span>{item.name}<i className={item.enabled === false ? 'off' : ''}></i>
+            <span>{MARKETPLACES.find((store) => store.id === item.marketplace)?.short || ICONS.find(([id]) => id === item.icon)?.[1] || '★'}</span>{item.name}<i className={item.enabled === false ? 'off' : ''}></i>
           </button>)}
         </div>
         {selected && <div className="highlight-form">
           <label>Nome do Destaque<input maxLength="30" value={selected.name} onChange={(event) => updateItem(selected.id, 'name', event.target.value)} /></label>
           <label>Ícone<select value={selected.icon} onChange={(event) => updateItem(selected.id, 'icon', event.target.value)}>{ICONS.map(([id, symbol, label]) => <option key={id} value={id}>{symbol} {label}</option>)}</select></label>
+          <label>Logo da loja<select value={selected.marketplace || ''} onChange={(event) => updateItem(selected.id, 'marketplace', event.target.value)}><option value="">Nenhuma — usar ícone</option>{MARKETPLACES.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select><small className="highlight-field-help">A logo aparece na capa e no Story deste Destaque.</small></label>
           <label className="wide">Texto do Story<textarea maxLength="180" rows="3" value={selected.description} onChange={(event) => updateItem(selected.id, 'description', event.target.value)} /><small>{selected.description.length}/180 caracteres</small></label>
           <label className="highlight-switch"><input type="checkbox" checked={selected.enabled !== false} onChange={(event) => updateItem(selected.id, 'enabled', event.target.checked)} /><span><strong>Mostrar esta categoria</strong><small>Desative sem apagar a configuração.</small></span></label>
           <label>Tema visual<select value={themeId} onChange={(event) => setThemeId(event.target.value)}>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select></label>
@@ -138,5 +166,6 @@ export default function InstagramHighlightsPanel({ data, setData, authApi, setMe
     </div>
 
     <section className="panel highlight-steps"><div><span>1</span><strong>Gere e baixe a capa</strong><p>A arte já respeita o recorte circular do Instagram.</p></div><div><span>2</span><strong>Publique o Story</strong><p>Use a fila para publicar automaticamente no horário configurado.</p></div><div><span>3</span><strong>Finalize no Instagram</strong><p>Abra o Story arquivado, toque em “Destacar” e escolha a capa baixada.</p></div></section>
+    <p className="highlight-legal-note">As logos são usadas somente para identificar as lojas nas seleções da PromoShop e não indicam patrocínio ou vínculo oficial.</p>
   </div>;
 }

@@ -1,5 +1,14 @@
 export const INSTAGRAM_HIGHLIGHT_ICONS = ['bolt', 'ticket', 'users', 'info', 'store', 'message', 'star', 'heart'];
 
+// Logos are used only as visual identifiers inside PromoShop's own
+// promotional creatives. They do not imply an official partnership.
+export const INSTAGRAM_HIGHLIGHT_MARKETPLACES = [
+  { id: 'mercado-livre', name: 'Mercado Livre', short: 'ML', description: 'Ofertas e cupons selecionados do Mercado Livre.' },
+  { id: 'shopee', name: 'Shopee', short: 'S', description: 'Achados e promoções selecionadas da Shopee.' },
+  { id: 'aliexpress', name: 'AliExpress', short: 'AE', description: 'Ofertas selecionadas do AliExpress.' },
+  { id: 'magalu', name: 'Magalu', short: 'M', description: 'Ofertas selecionadas do Magalu.' }
+];
+
 export const DEFAULT_INSTAGRAM_HIGHLIGHTS = [
   { id: 'offers', name: 'Ofertas', icon: 'bolt', description: 'Achados e promoções selecionadas todos os dias.', enabled: true },
   { id: 'coupons', name: 'Cupons', icon: 'ticket', description: 'Cupons ativos para você economizar ainda mais.', enabled: true },
@@ -22,12 +31,17 @@ export function sanitizeInstagramHighlights(value) {
     while (ids.has(id)) id = `${id}-${index + 1}`;
     ids.add(id);
     const icon = INSTAGRAM_HIGHLIGHT_ICONS.includes(String(entry?.icon)) ? String(entry.icon) : 'star';
-    return {
+    const marketplace = INSTAGRAM_HIGHLIGHT_MARKETPLACES.some((store) => store.id === String(entry?.marketplace || ''))
+      ? String(entry.marketplace)
+      : '';
+    const sanitized = {
       id,
       name: cleanText(entry?.name, 30) || `Destaque ${index + 1}`,
       icon,
       description: cleanText(entry?.description, 180),
       enabled: entry?.enabled !== false
     };
+    if (marketplace) sanitized.marketplace = marketplace;
+    return sanitized;
   });
 }

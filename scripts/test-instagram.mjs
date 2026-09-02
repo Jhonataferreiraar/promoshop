@@ -30,6 +30,8 @@ assert.equal(selectInstagramTheme(config, new Date('2026-09-07T12:00:00-03:00'))
 assert.ok(sanitizeInstagramThemes([{ id: 'default', name: 'PromoShop' }]).some((theme) => theme.id === 'independence'), 'temas sazonais novos devem aparecer em configurações antigas');
 assert.equal(sanitizeInstagramThemes([{ id: 'x', name: 'X', background: 'invalid' }])[0].background, '#1269f3');
 assert.equal(sanitizeInstagramHighlights([{ id: 'offers', name: 'Ofertas', icon: 'invalid', description: 'Teste' }])[0].icon, 'star');
+assert.equal(sanitizeInstagramHighlights([{ id: 'marketplace-shopee', name: 'Shopee', icon: 'store', marketplace: 'shopee', description: 'Teste' }])[0].marketplace, 'shopee');
+assert.equal(sanitizeInstagramHighlights([{ id: 'marketplace-unknown', name: 'Loja', icon: 'store', marketplace: 'unknown', description: 'Teste' }])[0].marketplace, undefined);
 
 const signedPayload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: '123' })).toString('base64url');
 const signingKey = crypto.randomBytes(32).toString('hex');
@@ -185,6 +187,18 @@ for (const variant of ['cover', 'story']) {
     assert.equal(highlightAsset.variant, variant);
   } finally {
     await fs.unlink(highlightAsset.filePath).catch(() => {});
+  }
+}
+
+for (const marketplace of ['mercado-livre', 'shopee', 'aliexpress', 'magalu']) {
+  const marketplaceAsset = await generateInstagramHighlightAsset({ name: marketplace, icon: 'store', marketplace, description: 'Ofertas selecionadas na loja.' }, config, 'default', 'story');
+  try {
+    const metadata = await sharp(marketplaceAsset.filePath).metadata();
+    assert.equal(metadata.format, 'jpeg');
+    assert.equal(metadata.width, 1080);
+    assert.equal(metadata.height, 1920);
+  } finally {
+    await fs.unlink(marketplaceAsset.filePath).catch(() => {});
   }
 }
 
