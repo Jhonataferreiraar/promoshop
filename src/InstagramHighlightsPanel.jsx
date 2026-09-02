@@ -23,6 +23,14 @@ function uniqueId() {
   return `highlight-${crypto.randomUUID()}`;
 }
 
+function normalizedLabel(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 export default function InstagramHighlightsPanel({ data, setData, authApi, setMessage, load }) {
   const [items, setItems] = useState(() => data.config.instagramHighlights?.length ? data.config.instagramHighlights : DEFAULT_ITEMS);
   const [selectedId, setSelectedId] = useState(() => (data.config.instagramHighlights?.[0] || DEFAULT_ITEMS[0]).id);
@@ -102,22 +110,50 @@ export default function InstagramHighlightsPanel({ data, setData, authApi, setMe
 
   function addMarketplaceItems() {
     const existingIds = new Set(items.map((item) => String(item.id || '')));
-    const existingStores = new Set(items.map((item) => String(item.marketplace || '')));
-    const missing = MARKETPLACES
-      .filter((store) => !existingStores.has(store.id) && !existingIds.has(`marketplace-${store.id}`))
-      .map((store) => ({
-        id: `marketplace-${store.id}`,
-        name: store.name,
-        icon: 'store',
-        marketplace: store.id,
-        description: store.description,
-        enabled: true
-      }));
-    if (!missing.length) return setMessage('Os destaques das lojas já estão adicionados.');
-    setItems((current) => [...current, ...missing]);
-    setSelectedId(missing[0].id);
+    const next = [...items];
+    const usedIndexes = new Set();
+    let firstMarketplaceId = '';
+    let added = 0;
+    let updated = 0;
+    const legacyDescriptions = new Set([
+      'Ofertas e cupons selecionados do Mercado Livre.',
+      'Achados e promoções selecionadas da Shopee.',
+      'Ofertas selecionadas do AliExpress.',
+      'Ofertas selecionadas do Magalu.',
+      'Ofertas das melhores lojas reunidas em um só lugar.'
+    ]);
+
+    for (const store of MARKETPLACES) {
+      let index = next.findIndex((item, itemIndex) => !usedIndexes.has(itemIndex) && String(item.marketplace || '').toLowerCase() === store.id);
+      if (index < 0) index = next.findIndex((item, itemIndex) => !usedIndexes.has(itemIndex) && normalizedLabel(item.name) === normalizedLabel(store.name));
+      if (index >= 0) {
+        usedIndexes.add(index);
+        const current = next[index];
+        const description = String(current.description || '').trim();
+        const upgraded = current.marketplace !== store.id || current.icon !== 'store' || (legacyDescriptions.has(description) && description !== store.description);
+        next[index] = {
+          ...current,
+          icon: 'store',
+          marketplace: store.id,
+          description: legacyDescriptions.has(description) || !description ? store.description : current.description
+        };
+        if (upgraded) updated += 1;
+        if (!firstMarketplaceId) firstMarketplaceId = next[index].id;
+        continue;
+      }
+      let id = `marketplace-${store.id}`;
+      let suffix = 2;
+      while (existingIds.has(id)) id = `marketplace-${store.id}-${suffix++}`;
+      next.push({ id, name: store.name, icon: 'store', marketplace: store.id, description: store.description, enabled: true });
+      existingIds.add(id);
+      firstMarketplaceId ||= id;
+      added += 1;
+    }
+    if (!added && !updated) return setMessage('Os destaques das lojas já estão atualizados.');
+    setItems(next);
+    if (firstMarketplaceId) setSelectedId(firstMarketplaceId);
     setPreview(null);
-    setMessage(`${missing.length} destaque(s) de loja adicionado(s). Salve as categorias para confirmar.`);
+    setMessage(`${added ? `${added} destaque(s) de loja adicionado(s)` : 'Destaques das lojas atualizados'}${updated ? ` e ${updated} ajustado(s)` : ''}. Salve as categorias para confirmar.`);
   }
 
   function removeItem(id) {
