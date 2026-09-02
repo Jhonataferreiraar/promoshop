@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 
 const previous = {
   TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,
@@ -8,8 +9,9 @@ const previous = {
 const originalFetch = globalThis.fetch;
 
 try {
+  const testTurnstileSecret = randomBytes(18).toString('hex');
   process.env.TURNSTILE_SITE_KEY = 'turnstile-example-site-key';
-  process.env.TURNSTILE_SECRET_KEY = 'turnstile-example-secret';
+  process.env.TURNSTILE_SECRET_KEY = testTurnstileSecret;
   delete process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY;
 
   const turnstile = await import(`../server/turnstile.js?test=${Date.now()}`);
@@ -39,7 +41,7 @@ try {
   assert.equal(request.url, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
   assert.equal(request.options.method, 'POST');
   assert.equal(request.options.headers['Content-Type'], 'application/json');
-  assert.match(request.options.body, /"secret":"turnstile-example-secret"/);
+  assert.ok(request.options.body.includes(`"secret":"${testTurnstileSecret}"`));
   assert.match(request.options.body, /"response":"token-for-test"/);
   assert.match(request.options.body, /"remoteip":"127\.0\.0\.1"/);
   assert.match(request.options.body, /"idempotency_key":"[^"]+"/);

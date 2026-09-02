@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PromoShop — Lote Mercado Livre</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img class="brand-logo" src="icons/promoshop-48.png" alt="PromoShop" />
+      <div>
+        <strong>PromoShop</strong>
+        <small>Captura em lote · Mercado Livre</small>
+      </div>
+    </header>
+
+    <details>
+      <summary>Conexão com o painel</summary>
+      <label>URL do PromoShop
+        <input id="endpoint" type="url" placeholder="https://promoshop.jhonatafaraujo.com.br" />
+      </label>
+      <label>Token da extensão
+        <input id="token" type="password" placeholder="Cole o token gerado no painel" />
+      </label>
+      <button id="save" class="secondary full">Salvar conexão</button>
+    </details>
+
+    <div class="notice">
+      Abra uma página de busca, categoria ou ofertas do Mercado Livre com a Barra de Afiliados ativa. A extensão abrirá cada produto individualmente para gerar o link oficial <strong>meli.la</strong>.
+    </div>
+
+    <div class="toolbar">
+      <button id="scan" class="secondary">Ler página</button>
+      <label class="limit-label">Lote
+        <select id="limit">
+          <option value="5">5 produtos</option>
+          <option value="10" selected>10 produtos</option>
+          <option value="20">20 produtos</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="status" role="status">Leia a página aberta para encontrar produtos.</div>
+    <div id="selection" class="selection" hidden>
+      <div class="selection-header">
+        <label class="select-all"><input id="selectAll" type="checkbox" checked /> Selecionar o lote</label>
+        <small id="selectedCount">0 selecionados</small>
+      </div>
+      <div id="results"></div>
+    </div>
+
+    <div class="progress-wrap" hidden>
+      <div class="progress-label"><span id="progressText">Preparando…</span><span id="progressCount">0/0</span></div>
+      <progress id="progress" max="1" value="0"></progress>
+    </div>
+
+    <div class="actions">
+      <button id="start" class="primary" disabled>Capturar lote</button>
+      <button id="cancel" class="secondary" hidden>Cancelar</button>
+    </div>
+    <div id="report" class="report" hidden></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

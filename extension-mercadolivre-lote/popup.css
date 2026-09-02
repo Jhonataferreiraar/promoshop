@@ -1,0 +1,30 @@
+* { box-sizing: border-box; }
+body { width: 410px; max-height: 620px; overflow-y: auto; margin: 0; padding: 16px; color: #172033; background: #f7f9fc; font: 13px Arial, sans-serif; }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.brand-logo { width: 36px; height: 36px; border-radius: 11px; object-fit: cover; box-shadow: 0 3px 10px rgba(5, 31, 94, .22); }
+header strong { display: block; font-size: 17px; } header small { display: block; margin-top: 3px; color: #667085; font-size: 11px; }
+details { padding: 10px; border: 1px solid #e4e7ec; border-radius: 10px; background: #fff; }
+summary { cursor: pointer; font-weight: 800; }
+label { display: grid; gap: 5px; margin-top: 9px; color: #475467; font-size: 11px; font-weight: 700; }
+input, select { min-height: 36px; padding: 8px; border: 1px solid #d0d5dd; border-radius: 8px; color: #172033; background: #fff; font: inherit; }
+button { min-height: 38px; padding: 0 12px; border: 0; border-radius: 9px; font: inherit; font-weight: 800; cursor: pointer; }
+button.primary { color: #fff; background: #1269f3; } button.secondary { color: #344054; border: 1px solid #d0d5dd; background: #fff; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.full { width: 100%; margin-top: 10px; }
+.notice { margin: 13px 0 10px; padding: 10px; border: 1px solid #c9dcff; border-radius: 9px; color: #344054; background: #eef4ff; font-size: 11px; line-height: 1.45; }
+.toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: end; }
+.toolbar button { margin-top: 0; } .limit-label { margin: 0; } .limit-label select { width: 100%; }
+#status { margin: 12px 0 8px; padding: 10px; border-radius: 9px; color: #475467; background: #eef4ff; font-size: 11px; line-height: 1.45; }
+.selection { padding: 9px; border: 1px solid #e4e7ec; border-radius: 10px; background: #fff; }
+.selection-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 7px; border-bottom: 1px solid #eef0f3; }
+.select-all { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; } .select-all input { width: 16px; min-height: 16px; }
+.selection-header small { color: #667085; font-size: 10px; font-weight: 700; }
+.candidate { display: grid; grid-template-columns: 17px 48px 1fr; gap: 8px; align-items: center; margin: 7px 0 0; padding: 7px; border: 1px solid #eef0f3; border-radius: 8px; background: #fff; }
+.candidate input { width: 16px; min-height: 16px; } .candidate img { width: 48px; height: 48px; border-radius: 7px; object-fit: contain; background: #f8fafc; }
+.candidate strong { display: -webkit-box; overflow: hidden; font-size: 10px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.candidate small { display: block; margin-top: 4px; color: #667085; font-size: 10px; }
+.actions { display: grid; grid-template-columns: 1fr 110px; gap: 8px; margin-top: 10px; } .actions button { margin: 0; }
+.progress-wrap { margin-top: 12px; padding: 10px; border: 1px solid #d9e5ff; border-radius: 9px; background: #fff; }
+.progress-label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 7px; color: #475467; font-size: 10px; font-weight: 700; }
+progress { width: 100%; height: 8px; accent-color: #1269f3; }
+.report { max-height: 120px; overflow-y: auto; margin-top: 10px; padding: 9px; border-radius: 9px; color: #475467; background: #f2f4f7; font-size: 10px; line-height: 1.45; white-space: pre-line; }

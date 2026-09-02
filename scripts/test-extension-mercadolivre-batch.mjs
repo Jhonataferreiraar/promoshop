@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const extensionRoot = path.join(projectRoot, 'extension-mercadolivre-lote');
+const manifest = JSON.parse(await fs.readFile(path.join(extensionRoot, 'manifest.json'), 'utf8'));
+const popup = await fs.readFile(path.join(extensionRoot, 'popup.js'), 'utf8');
+const content = await fs.readFile(path.join(extensionRoot, 'mercadolivre.js'), 'utf8');
+const background = await fs.readFile(path.join(extensionRoot, 'background.js'), 'utf8');
+
+assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.name, 'PromoShop — Lote Mercado Livre');
+assert.deepEqual(manifest.background, { service_worker: 'background.js' });
+assert.deepEqual(manifest.permissions, ['storage', 'activeTab']);
+assert.match(content, /SCAN_ML_PRODUCTS/);
+assert.match(content, /CAPTURE_ML_OFFER/);
+assert.match(popup, /START_ML_BATCH/);
+assert.match(popup, /CANCEL_ML_BATCH/);
+assert.match(background, /MAX_BATCH_SIZE/);
+assert.match(background, /UPLOAD_CHUNK_SIZE/);
+assert.match(background, /api\/extension\/mercadolivre\/offers/);
+assert.doesNotMatch(background, /(?:secret|password|api[_ -]?key)\s*[:=]\s*["']/i);
+console.log('Extensão Mercado Livre em lote: manifest, captura, processamento e envio validados.');

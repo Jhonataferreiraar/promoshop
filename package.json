@@ -35,6 +35,7 @@
     "test:store": "node scripts/test-store-compaction.mjs",
     "test:postgres": "node scripts/test-postgres-store.mjs",
     "test:extension": "node scripts/test-extension.mjs",
+    "test:extension-batch": "node scripts/test-extension-mercadolivre-batch.mjs",
     "test:collector-visibility": "node scripts/test-collector-visibility.mjs",
     "preview": "vite preview",
     "start": "node --max-old-space-size=768 server/index.js",

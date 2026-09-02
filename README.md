@@ -153,7 +153,7 @@ O guia completo está em [docs/INSTAGRAM-STORIES.md](docs/INSTAGRAM-STORIES.md).
 
 ## Extensões do navegador
 
-O repositório contém duas extensões independentes. Elas não devem ser carregadas como se fossem a mesma extensão.
+O repositório contém três extensões independentes. Elas não devem ser carregadas como se fossem a mesma extensão.
 
 ### Extensão de cupons
 
@@ -167,6 +167,12 @@ Pasta: [`extension-mercadolivre/`](extension-mercadolivre/)
 
 Captura uma oferta individual do Mercado Livre com o link criado pela Barra de Afiliados oficial. A extensão não lê cookies, senha ou dados privados da conta.
 
+### Extensão Mercado Livre — captura em lote
+
+Pasta: [`extension-mercadolivre-lote/`](extension-mercadolivre-lote/)
+
+É uma versão independente para selecionar até 20 produtos de uma página de resultados. Ela abre cada produto individualmente, gera o link oficial `meli.la` e envia os itens confirmados em lotes ao painel. A extensão individual continua disponível para capturas pontuais.
+
 ### Instalação no Chrome ou Edge
 
 1. Abra `chrome://extensions` ou `edge://extensions`.
@@ -176,7 +182,7 @@ Captura uma oferta individual do Mercado Livre com o link criado pela Barra de A
 5. No painel, abra a aba correspondente e gere o token.
 6. Informe na extensão o endereço do PromoShop e o token.
 
-Consulte [`extension/README.md`](extension/README.md) e [`extension-mercadolivre/README.md`](extension-mercadolivre/README.md).
+Consulte [`extension/README.md`](extension/README.md), [`extension-mercadolivre/README.md`](extension-mercadolivre/README.md) e [`extension-mercadolivre-lote/README.md`](extension-mercadolivre-lote/README.md).
 
 ## Inteligência artificial
 
