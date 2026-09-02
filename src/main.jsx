@@ -1576,6 +1576,9 @@ function AdminApp() {
   const [queueSearchOpen, setQueueSearchOpen] = useState(false);
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [queueAudienceSaving, setQueueAudienceSaving] = useState('');
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logLevelFilter, setLogLevelFilter] = useState('all');
+  const [logPeriodFilter, setLogPeriodFilter] = useState('all');
   const [dialog, setDialog] = useState(null);
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
@@ -2555,6 +2558,22 @@ function AdminApp() {
     catch (error) { setMessage(error.message); }
   }
 
+  function exportActivityLogs() {
+    const levelLabels = { info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' };
+    const rows = [['data', 'nivel', 'mensagem'], ...filteredActivityLogs.map((log) => [
+      log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : '',
+      levelLabels[log.level] || log.level || 'Informação',
+      log.message || ''
+    ])];
+    const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `promoshop-atividades-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function connectSearchConsole() {
     try {
       await authApi('/admin/config', { method: 'PUT', body: JSON.stringify(data.config) });
@@ -2580,6 +2599,33 @@ function AdminApp() {
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
+  const activityLogs = Array.isArray(data.logs) ? data.logs : [];
+  const filteredActivityLogs = useMemo(() => {
+    const query = String(logSearchQuery || '').trim().toLocaleLowerCase('pt-BR');
+    const periodMs = logPeriodFilter === '24h'
+      ? 24 * 60 * 60 * 1000
+      : logPeriodFilter === '7d'
+        ? 7 * 24 * 60 * 60 * 1000
+        : logPeriodFilter === '30d'
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+    const cutoff = periodMs ? Date.now() - periodMs : 0;
+    return activityLogs.filter((log) => {
+      if (logLevelFilter !== 'all' && log.level !== logLevelFilter) return false;
+      if (cutoff) {
+        const createdAt = new Date(log.createdAt || 0).getTime();
+        if (!Number.isFinite(createdAt) || createdAt < cutoff) return false;
+      }
+      if (!query) return true;
+      return `${log.message || ''} ${log.level || ''}`.toLocaleLowerCase('pt-BR').includes(query);
+    });
+  }, [activityLogs, logLevelFilter, logPeriodFilter, logSearchQuery]);
+  const activitySummary = useMemo(() => activityLogs.reduce((summary, log) => {
+    const level = ['info', 'success', 'warning', 'error'].includes(log?.level) ? log.level : 'info';
+    summary.total += 1;
+    summary[level] += 1;
+    return summary;
+  }, { total: 0, info: 0, success: 0, warning: 0, error: 0 }), [activityLogs]);
   const reviewOffers = data.offers.filter((offer) => reviewFilter === 'all' || (reviewFilter === 'stale' ? offer.isStale : reviewFilter === 'low' ? Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) : reviewFilter === 'paused' ? offer.status !== 'active' : (offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) || (offer.qualityIssues || []).length)));
   const setConfigField = (key, value) => setData((current) => ({
     ...current,
@@ -3901,7 +3947,19 @@ function AdminApp() {
       <div className="settings-save-bar"><div><strong>Revise antes de salvar</strong><span>As alterações públicas entram em vigor imediatamente.</span></div><button className="button primary">Salvar site e políticas</button></div>
     </form>}
     {tab === 'security' && <form className="panel settings-form narrow-panel" onSubmit={saveSecurity}><h2>Acesso administrativo</h2><p className="panel-intro">As credenciais são criptografadas no computador e nunca são enviadas ao navegador público.</p><div className="settings-grid"><label>Usuário administrador<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form>}
-    {tab === 'logs' && <section className="panel"><h2>Registro de atividades</h2><div className="logs">{data.logs.map((log) => <div key={log.id}><time>{new Date(log.createdAt).toLocaleString('pt-BR')}</time><span className={log.level}>{log.message}</span></div>)}</div></section>}
+    {tab === 'logs' && <section className="panel activity-panel">
+      <div className="panel-heading activity-heading">
+        <div><span className="section-step">HISTÓRICO DO SISTEMA</span><h2>Registro de atividades</h2><p>{filteredActivityLogs.length} de {activitySummary.total} registro(s) exibido(s). Os filtros só alteram a visualização.</p></div>
+        <div className="activity-summary" aria-label="Resumo dos registros"><span className="info"><b>{activitySummary.info}</b> informações</span><span className="success"><b>{activitySummary.success}</b> sucessos</span><span className="warning"><b>{activitySummary.warning}</b> atenções</span><span className="error"><b>{activitySummary.error}</b> erros</span></div>
+      </div>
+      <div className="activity-toolbar">
+        <label className="activity-search"><span>Pesquisar no histórico</span><input type="search" value={logSearchQuery} onChange={(event) => setLogSearchQuery(event.target.value)} placeholder="Ex.: Mercado Livre, falha, deploy…" /></label>
+        <label><span>Nível</span><select value={logLevelFilter} onChange={(event) => setLogLevelFilter(event.target.value)}><option value="all">Todos</option><option value="error">Erros</option><option value="warning">Atenções</option><option value="success">Sucessos</option><option value="info">Informações</option></select></label>
+        <label><span>Período</span><select value={logPeriodFilter} onChange={(event) => setLogPeriodFilter(event.target.value)}><option value="all">Todo o histórico</option><option value="24h">Últimas 24 horas</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select></label>
+        <button className="button subtle" type="button" onClick={exportActivityLogs} disabled={!filteredActivityLogs.length}>Exportar CSV</button>
+      </div>
+      {filteredActivityLogs.length ? <div className="logs">{filteredActivityLogs.map((log) => <div key={log.id}><time>{log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : 'Data desconhecida'}</time><span className={`activity-entry ${log.level || 'info'}`}><b>{({ info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' })[log.level] || 'Registro'}</b><span>{log.message}</span></span></div>)}</div> : <div className="empty activity-empty"><strong>Nenhum registro encontrado</strong><p>Ajuste a pesquisa, o nível ou o período para consultar outras atividades.</p><button className="text-button" type="button" onClick={() => { setLogSearchQuery(''); setLogLevelFilter('all'); setLogPeriodFilter('all'); }}>Limpar filtros</button></div>}
+    </section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' || dialog.type === 'confirm-action' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>{dialog.offer?.status === 'active' ? 'ATUALIZAR VÍNCULO' : 'VINCULAR OFERTA'}</span><h2 id="modal-title">{dialog.offer?.status === 'active' ? 'Alterar link de afiliado' : 'Adicionar link de afiliado'}</h2><p>{dialog.offer?.status === 'active' ? 'Substitua o link atual pelo novo endereço de afiliado gerado pela ferramenta oficial.' : 'Cole o link gerado pela ferramenta oficial para liberar esta oferta.'}</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>{dialog.offer?.status === 'active' ? 'O link de afiliado atual está preenchido. Substitua-o e confirme para atualizar.' : 'O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.'}</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">{dialog.offer?.status === 'active' ? 'Atualizar link' : 'Confirmar link'}</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{dialog.eyebrow || 'EXCLUIR OFERTA'}</span><h2 id="modal-title">{dialog.title || 'Tem certeza?'}</h2><p>{dialog.body || 'A oferta será removida do painel. Esta ação não poderá ser desfeita.'}</p></div>{dialog.offer && <div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div>}<div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>{dialog.cancelLabel || 'Cancelar'}</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>{dialog.confirmLabel || 'Excluir oferta'}</button></div></div>}</section></div>}</div>;
 }
 
