@@ -93,6 +93,42 @@ try {
   assert.equal(saved.offers[0].status, 'active');
   assert.equal(saved.offers[0].affiliateUrl, 'https://meli.la/oficial987', 'Uma coleta sem link não pode apagar o vínculo da extensão oficial.');
 
+  const oldPending = {
+    ...product,
+    id: 'ml_MLB000000001',
+    externalId: 'MLB000000001',
+    title: 'Oferta antiga aguardando vínculo',
+    productUrl: 'https://www.mercadolivre.com.br/MLB-000000001-oferta-antiga',
+    affiliateUrl: 'https://www.mercadolivre.com.br/MLB-000000001-oferta-antiga',
+    status: 'pending-link'
+  };
+  const recentOffers = Array.from({ length: 500 }, (_, index) => ({
+    ...product,
+    id: `ml_recent_${index}`,
+    externalId: `MLB_RECENT_${index}`,
+    title: `Oferta recente ${index}`,
+    status: 'active',
+    affiliateUrl: `https://meli.la/recent${index}`
+  }));
+  await updateStore((data) => {
+    data.offers = [...recentOffers, oldPending];
+    data.queue = [];
+    data.config.autoQueue = false;
+  });
+
+  await applyCollectedOffers({
+    candidates: [{
+      ...oldPending,
+      affiliateUrl: 'https://meli.la/antiga001',
+      status: 'active'
+    }]
+  });
+
+  saved = await readStore();
+  assert.equal(saved.offers.length, 500, 'O catálogo continua limitado às 500 ofertas.');
+  assert.equal(saved.offers[0].id, oldPending.id, 'Uma oferta antiga ativada deve ser promovida antes da compactação.');
+  assert.equal(saved.offers[0].affiliateUrl, 'https://meli.la/antiga001');
+
   console.log('Coleta: ofertas do Mercado Livre entram na vitrine após o link e preservam vínculos oficiais.');
 } finally {
   await fs.rm(dataDir, { recursive: true, force: true });

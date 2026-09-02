@@ -1095,6 +1095,15 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
           savedOffer.status = 'active';
           activated += 1;
           if (String(savedOffer.store || '').trim() === 'Mercado Livre') activatedMercadoLivre += 1;
+
+          // A lista de ofertas é limitada às 500 mais recentes. Um produto
+          // antigo da fila que acabou de receber o vínculo precisa voltar ao
+          // topo para continuar disponível na vitrine depois da compactação.
+          const savedIndex = data.offers.indexOf(savedOffer);
+          if (savedIndex > 0) {
+            data.offers.splice(savedIndex, 1);
+            data.offers.unshift(savedOffer);
+          }
         }
 
         if (
