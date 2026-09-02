@@ -130,8 +130,11 @@ function renderProgress(state) {
   progressCount.textContent = `${Math.min(completed, total)}/${total}`;
   progressText.textContent = state?.currentTitle ? `Capturando: ${state.currentTitle}` : (state?.message || 'Preparando…');
   const summary = `Capturados: ${Number(state?.capturedCount || 0)} · Falhas: ${Number(state?.failedCount || 0)} · Enviados: ${Number(state?.uploadedCount || 0)}`;
+  const failures = Array.isArray(state?.failures) && state.failures.length
+    ? `\n\n${state.failures.map((failure) => `• ${failure.title}: ${failure.error}`).join('\n')}`
+    : '';
   report.hidden = false;
-  report.textContent = `${summary}${state?.message ? `\n${state.message}` : ''}`;
+  report.textContent = `${summary}${state?.message ? `\n${state.message}` : ''}${failures}`;
 }
 
 async function loadBatchStatus() {

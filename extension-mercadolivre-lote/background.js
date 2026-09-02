@@ -59,6 +59,7 @@ function snapshot(state) {
     currentTitle: state.currentTitle || '',
     capturedCount: state.captured.length,
     failedCount: state.failed.length,
+    failures: state.failed.slice(-20),
     uploadedCount: state.uploadedCount,
     duplicateCount: state.duplicateCount,
     message: state.message || '',
@@ -104,8 +105,8 @@ function waitForTabReady(tabId, timeoutMs = 30000) {
   });
 }
 
-async function captureCandidate(state, candidate) {
-  const tab = await chrome.tabs.create({ url: candidate.url, active: false });
+async function captureCandidateInTab(state, candidate, active) {
+  const tab = await chrome.tabs.create({ url: candidate.url, active });
   state.activeTabId = tab.id;
   try {
     const ready = await waitForTabReady(tab.id, 30000);
@@ -118,6 +119,18 @@ async function captureCandidate(state, candidate) {
   } finally {
     state.activeTabId = null;
     try { await chrome.tabs.remove(tab.id); } catch {}
+  }
+}
+
+async function captureCandidate(state, candidate) {
+  try {
+    return await captureCandidateInTab(state, candidate, false);
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (!/barra de afiliados|não concluiu a geração|não terminou de carregar|receiving end|message port closed/i.test(message)) throw error;
+    // Algumas instalações da Barra de Afiliados só exibem o botão em uma aba visível.
+    // Tente uma vez com foco e feche a aba ao terminar, sem alterar a aba original.
+    return captureCandidateInTab(state, candidate, true);
   }
 }
 

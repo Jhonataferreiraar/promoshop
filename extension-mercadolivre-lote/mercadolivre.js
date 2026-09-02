@@ -58,10 +58,13 @@
       .filter((node) => /\bAfiliados\b/i.test(clean(node.innerText, 1000)));
     for (const region of regions) {
       const button = [...region.querySelectorAll('button')]
-        .find((entry) => visible(entry) && /^Compartilhar$/i.test(clean(entry.innerText || entry.getAttribute('aria-label'), 80)));
+        .find((entry) => visible(entry) && /\bCompartilhar(?:\s+link)?\b/i.test(clean(entry.innerText || entry.getAttribute('aria-label'), 80)));
       if (button) return button;
     }
-    return null;
+    return [...document.querySelectorAll('button, [role="button"], a')]
+      .find((entry) => visible(entry)
+        && /\bCompartilhar(?:\s+link)?\b/i.test(clean(entry.innerText || entry.getAttribute('aria-label'), 80))
+        && /\bAfiliados\b/i.test(clean(entry.closest('nav, [role="navigation"], header, aside')?.innerText || '', 1000))) || null;
   }
 
   async function ensureAffiliateLink() {
