@@ -484,8 +484,8 @@ async function startConnectedServices() {
   }).catch(() => { });
   await refreshConfig().catch((error) => console.error('Não foi possível carregar as configurações:', error.message));
   await syncGroups();
-  processQueue();
   processMonitoringQueue();
+  processQueue();
   setInterval(() => {
     processQueue();
   }, 10_000);
@@ -668,7 +668,13 @@ function confirmReadyAfterAuthentication(attempt = 1) {
 }
 
 async function processQueue() {
-  if (processing) return;
+  // Alertas operacionais têm prioridade sobre uma publicação normal. Uma
+  // publicação que já começou não é interrompida, mas nenhum novo item da
+  // fila comum é reservado enquanto houver um alerta pronto para entrega.
+  if (processing || monitoringProcessing) return;
+  const monitoringSent = await processMonitoringQueue();
+  if (monitoringSent) return;
+  if (monitoringProcessing) return;
   processing = true;
   let item = null;
   try {
@@ -846,9 +852,11 @@ async function processMonitoringQueue() {
   if (!whatsappReady || processing || monitoringProcessing) return;
   monitoringProcessing = true;
   let alert = null;
+  let handled = false;
   try {
     alert = await request('/api/worker/monitoring/next');
     if (!alert?.id || !alert.text || !alert.recipient) return;
+    handled = true;
     await client.sendMessage(alert.recipient, alert.text, { sendSeen: false });
     await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/sent`, {
       method: 'POST',
@@ -865,6 +873,7 @@ async function processMonitoringQueue() {
   } finally {
     monitoringProcessing = false;
   }
+  return handled;
 }
 
 client.on('qr', async (code) => {

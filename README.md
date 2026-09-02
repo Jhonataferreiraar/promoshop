@@ -125,6 +125,8 @@ O publicador usa `whatsapp-web.js` e Chromium. A sessão é persistida para que 
 
 O painel pode enviar para um número do WhatsApp os principais eventos do servidor. A fila de alertas é gravada junto com o estado operacional, então uma mensagem que surgir durante uma reinicialização fica pendente e é entregue quando o publicador voltar a conectar.
 
+O monitoramento fica em uma aba própria do painel, **Sistema → Monitoramento**.
+
 Para ativar:
 
 1. Conecte o WhatsApp no painel.
@@ -132,7 +134,7 @@ Para ativar:
 3. Informe o número com código do país, DDD e número, somente dígitos (por exemplo, `5561999999999`).
 4. Salve as configurações e use **Enviar alerta de teste**.
 
-Por padrão, o sistema avisa erros e advertências registrados na atividade, início ou recuperação do servidor e novos deploys identificados pelo Render. Registros informativos podem ser ativados separadamente; o intervalo de repetição evita que o mesmo erro gere uma sequência de mensagens. O destinatário também pode ser definido pela variável opcional `MONITORING_WHATSAPP_RECIPIENT`.
+Por padrão, o sistema avisa erros e advertências registrados na atividade, início ou recuperação do servidor e novos deploys identificados pelo Render. Alertas operacionais são verificados antes da fila comum e têm prioridade de envio; uma publicação que já começou termina antes do alerta ser transmitido. Registros informativos podem ser ativados separadamente; o intervalo de repetição evita que o mesmo erro gere uma sequência de mensagens. O destinatário também pode ser definido pela variável opcional `MONITORING_WHATSAPP_RECIPIENT`.
 
 O alerta de “servidor recuperado” só pode ser enviado depois que a aplicação voltar a executar: um processo totalmente parado não consegue enviar mensagens enquanto está fora do ar. Para monitorar uma indisponibilidade que ainda não terminou, é necessário combinar este recurso com um monitor externo ou webhook do provedor de hospedagem.
 

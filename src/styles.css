@@ -5372,6 +5372,20 @@ button {
 .health-privacy-note strong { display: block; margin-bottom: 5px; color: #1849a9; }
 .info-custom-note { padding: 20px 22px; border: 1px solid #b2ccff; border-radius: 14px; background: #f5f8ff; }
 .info-custom-note strong { color: #1849a9; }
+.monitoring-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 28px; border: 1px solid #cfe0ff; background: linear-gradient(120deg, #f5f8ff, #ffffff); }
+.monitoring-hero h2 { margin: 8px 0 6px; }
+.monitoring-hero p { max-width: 720px; margin: 0; color: #475467; line-height: 1.6; }
+.monitoring-live-status { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; min-width: 215px; padding: 14px 16px; border-radius: 14px; background: #ecfdf3; color: #067647; }
+.monitoring-live-status.attention { background: #fffaeb; color: #b54708; }
+.monitoring-live-status i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.monitoring-live-status strong, .monitoring-live-status small { grid-column: 2; }
+.monitoring-live-status strong { font-size: 13px; }
+.monitoring-live-status small { margin-top: 3px; font-size: 11px; line-height: 1.35; opacity: .85; }
+.monitoring-stats { margin: 0; }
+.monitoring-stats > div strong { font-size: 25px; }
+.monitoring-note { padding: 18px 22px; border: 1px solid #d0d5dd; background: #f9fafb; }
+.monitoring-note strong { display: block; color: #1849a9; margin-bottom: 5px; }
+.monitoring-note p { margin: 0; color: #475467; line-height: 1.6; }
 .monitoring-whatsapp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #eaecf0; }
 .monitoring-whatsapp-actions small { color: #667085; font-size: 11px; font-weight: 600; line-height: 1.4; }
 .info-custom-note p { margin: 8px 0 0; color: #344054; line-height: 1.65; white-space: pre-wrap; }
@@ -5382,6 +5396,8 @@ button {
   .analytics-detail-grid { grid-template-columns: 1fr; }
   .health-check-grid { grid-template-columns: 1fr; }
   .backup-panel { align-items: stretch; flex-direction: column; }
+  .monitoring-hero { align-items: stretch; flex-direction: column; }
+  .monitoring-live-status { min-width: 0; }
   .extension-grid { grid-template-columns: 1fr; }
   .extension-hero { align-items: flex-start; flex-direction: column; }
   .extension-install-card { grid-template-columns: 1fr; }

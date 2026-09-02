@@ -1868,6 +1868,12 @@ function AdminApp() {
     return () => window.clearInterval(interval);
   }, [token, tab]);
   useEffect(() => {
+    if (!token || tab !== 'monitoring') return undefined;
+    load();
+    const interval = window.setInterval(() => load({ background: true }), 10000);
+    return () => window.clearInterval(interval);
+  }, [token, tab]);
+  useEffect(() => {
     if (token && tab === 'analytics' && data.secrets?.googleSearchConsoleConnected && !searchConsoleData) loadSearchConsole();
   }, [token, tab, data.secrets?.googleSearchConsoleConnected]);
   if (authChecking) return <div className="login-page"><div className="login-card"><Logo name="PromoShop" /><p>Verificando sua sessão segura…</p></div></div>;
@@ -2548,13 +2554,13 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', monitoring: 'Monitoramento', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', monitoring: 'Receba alertas prioritários do servidor e acompanhe a fila de entrega.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', monitoring: '!', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
     { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp', 'groupDirectory', 'instagram', 'instagramFeed', 'instagramShare', 'instagramHighlights', 'extensionCoupons', 'extensionMercadoLivre'] },
-    { label: 'Sistema', items: ['analytics', 'health', 'settings', 'security', 'logs'] }
+    { label: 'Sistema', items: ['analytics', 'health', 'monitoring', 'settings', 'security', 'logs'] }
   ];
   const whatsapp = data.meta?.whatsapp || {};
   const unreadInboxCount = (data.inbox || []).filter((item) => item.status === 'unread').length;
@@ -3733,6 +3739,54 @@ function AdminApp() {
       <section className="panel backup-panel"><div><span className="section-step">MANUTENÇÃO SEGURA</span><h2>Links, configurações e cupons</h2><p>Verifique os links conhecidos em pequenos lotes ou baixe uma cópia operacional. Por privacidade e segurança, o backup não inclui senhas, chaves de API, sessão do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.</p></div><div className="backup-actions"><button className="button subtle" type="button" onClick={checkOfferLinks}>Verificar links</button><button className="button primary" type="button" onClick={downloadBackup}>Baixar backup</button><button className="button subtle" type="button" onClick={() => backupInputRef.current?.click()}>Restaurar backup</button><input ref={backupInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={restoreBackup} /></div></section>
       <section className="panel health-privacy-note"><strong>Importante</strong><p>O disco persistente do Render conserva os dados entre reinícios. Durante uma nova publicação, esse tipo de disco pode causar uma breve indisponibilidade; o painel diferencia isso de falhas permanentes.</p></section>
     </div>}
+    {tab === 'monitoring' && <form className="site-settings-layout monitoring-page" onSubmit={saveConfig}>
+      <section className="panel monitoring-hero">
+        <div>
+          <span className="section-step">MONITORAMENTO OPERACIONAL</span>
+          <h2>Alertas prioritários no WhatsApp</h2>
+          <p>Erros, falhas importantes, reinícios, recuperação e novos deploys entram em uma fila protegida e passam na frente das publicações comuns.</p>
+        </div>
+        <div className={`monitoring-live-status ${data.meta?.monitoring?.serverStatus === 'running' ? 'online' : 'attention'}`}>
+          <i></i>
+          <strong>{data.meta?.monitoring?.serverStatus === 'running' ? 'Servidor ativo' : data.meta?.monitoring?.serverStatus === 'stopping' ? 'Servidor encerrando' : 'Heartbeat não confirmado'}</strong>
+          <small>{data.meta?.monitoring?.serverHeartbeatAt ? `Último sinal: ${new Date(data.meta.monitoring.serverHeartbeatAt).toLocaleString('pt-BR')}` : 'Aguardando o primeiro sinal.'}</small>
+        </div>
+      </section>
+
+      <div className="stats monitoring-stats">
+        <div><span><i>!</i>Alertas pendentes</span><strong>{Number(data.meta?.monitoring?.pending || 0)}</strong><small>Serão enviados primeiro</small></div>
+        <div><span><i>✓</i>Entregues</span><strong>{Number(data.meta?.monitoring?.sent || 0)}</strong><small>Mensagens confirmadas</small></div>
+        <div><span><i>×</i>Com falha</span><strong>{Number(data.meta?.monitoring?.failed || 0)}</strong><small>Após novas tentativas</small></div>
+        <div><span><i>↗</i>Estado</span><strong>{data.meta?.monitoring?.enabled ? 'Ativo' : 'Inativo'}</strong><small>{data.meta?.monitoring?.recipientConfigured ? 'Destinatário configurado' : 'Configure um número'}</small></div>
+      </div>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">DESTINO E PRIORIDADE</span><h2>Entrega pelo WhatsApp</h2><p>Os alertas são enviados individualmente e têm prioridade sobre a fila de promoções.</p></div></div>
+        <div className="settings-grid">
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappEnabled === true} onChange={(event) => setConfigField('monitoringWhatsappEnabled', event.target.checked)} /><span><strong>Enviar alertas para o WhatsApp</strong><small>Ativa a fila de alertas operacionais.</small></span></label>
+          <label>Número que receberá os alertas<input inputMode="tel" autoComplete="tel" value={String(data.config.monitoringWhatsappRecipient || '').replace(/@c\.us$/i, '')} onChange={(event) => setConfigField('monitoringWhatsappRecipient', event.target.value.replace(/\D/g, ''))} placeholder="5561999999999" /><small>Use código do país + DDD + número, somente dígitos.</small></label>
+          <label>Intervalo para repetir o mesmo alerta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappCooldownMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappCooldownMinutes', Number(event.target.value))} /><small>Evita mensagens repetidas quando o mesmo erro persiste.</small></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappIncludeInfo === true} onChange={(event) => setConfigField('monitoringWhatsappIncludeInfo', event.target.checked)} /><span><strong>Incluir registros informativos</strong><small>Desativado por padrão para não gerar excesso de mensagens.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappDeployAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappDeployAlerts', event.target.checked)} /><span><strong>Avisar sobre deploys</strong><small>Detecta a versão informada pelo Render.</small></span></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappServerAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappServerAlerts', event.target.checked)} /><span><strong>Avisar sobre início e recuperação</strong><small>Informa quando o servidor inicia ou volta a responder.</small></span></label>
+        </div>
+        <div className="monitoring-whatsapp-actions"><button className="button subtle" type="button" onClick={testMonitoringWhatsapp}>Enviar alerta de teste</button><small>{data.meta?.monitoring?.pending ? `${data.meta.monitoring.pending} alerta(s) aguardando entrega.` : 'Nenhum alerta aguardando entrega.'} Salve as configurações antes de usar o teste.</small></div>
+      </section>
+
+      <section className="panel settings-section">
+        <div className="section-title"><div><span className="section-step">LIMITES DO SERVIDOR</span><h2>O que deve ser acompanhado</h2><p>Esses limites continuam disponíveis no painel e alimentam os registros de atividade.</p></div></div>
+        <div className="settings-grid">
+          <label>E-mail para alertas<input type="email" value={data.config.monitoringEmail ?? ''} onChange={(event) => setConfigField('monitoringEmail', event.target.value)} /></label>
+          <label>WhatsApp sem resposta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappMinutes', Number(event.target.value))} /></label>
+          <label>Coleta atrasada (horas)<input type="number" min="1" max="168" value={data.config.monitoringCollectionHours ?? 6} onChange={(event) => setConfigField('monitoringCollectionHours', Number(event.target.value))} /></label>
+          <label>Falhas toleradas na fila<input type="number" min="1" max="500" value={data.config.monitoringFailedQueueLimit ?? 10} onChange={(event) => setConfigField('monitoringFailedQueueLimit', Number(event.target.value))} /></label>
+          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringEnabled !== false} onChange={(event) => setConfigField('monitoringEnabled', event.target.checked)} /><span><strong>Monitoramento do painel ativo</strong><small>Exibe avisos quando os limites forem ultrapassados.</small></span></label>
+        </div>
+      </section>
+
+      <section className="panel monitoring-note"><strong>Como funciona a prioridade</strong><p>Antes de reservar uma nova promoção, o publicador verifica a fila operacional. Se existir um alerta pronto, ele é enviado primeiro. Uma publicação que já começou não é interrompida; o próximo alerta será processado assim que o envio atual terminar.</p></section>
+      <div className="settings-save-bar"><div><strong>Revise antes de salvar</strong><span>As alterações do monitoramento entram em vigor imediatamente.</span></div><button className="button primary">Salvar monitoramento</button></div>
+    </form>}
     {tab === 'settings' && <form className="site-settings-layout" onSubmit={saveConfig}>
       <section className="panel settings-section">
         <div className="section-title"><div><span className="section-step">IDENTIDADE</span><h2>Conteúdo e aparência</h2><p>Textos principais exibidos no site público.</p></div></div>
@@ -3826,27 +3880,6 @@ function AdminApp() {
           <label className="wide-field">Texto adicional em Fale Conosco<textarea maxLength={3000} value={data.config.legalContactCustomText ?? ''} onChange={(event) => setConfigField('legalContactCustomText', event.target.value)} /></label>
           <label className="wide-field">Texto adicional nos Termos<textarea maxLength={3000} value={data.config.legalTermsCustomText ?? ''} onChange={(event) => setConfigField('legalTermsCustomText', event.target.value)} /></label>
           <label className="wide-field">Texto adicional em Privacidade<textarea maxLength={3000} value={data.config.legalPrivacyCustomText ?? ''} onChange={(event) => setConfigField('legalPrivacyCustomText', event.target.value)} /><small>Use para informações específicas. As cláusulas essenciais continuam automáticas para evitar omissões legais.</small></label>
-        </div>
-      </section>
-
-      <section className="panel settings-section">
-        <div className="section-title"><div><span className="section-step">MONITORAMENTO</span><h2>Limites de atenção</h2><p>Parâmetros usados para destacar problemas operacionais no painel e, se você quiser, avisar pelo WhatsApp.</p></div></div>
-        <div className="settings-grid">
-          <label>E-mail para alertas<input type="email" value={data.config.monitoringEmail ?? ''} onChange={(event) => setConfigField('monitoringEmail', event.target.value)} /></label>
-          <label>WhatsApp sem resposta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappMinutes', Number(event.target.value))} /></label>
-          <label>Coleta atrasada (horas)<input type="number" min="1" max="168" value={data.config.monitoringCollectionHours ?? 6} onChange={(event) => setConfigField('monitoringCollectionHours', Number(event.target.value))} /></label>
-          <label>Falhas toleradas na fila<input type="number" min="1" max="500" value={data.config.monitoringFailedQueueLimit ?? 10} onChange={(event) => setConfigField('monitoringFailedQueueLimit', Number(event.target.value))} /></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringEnabled !== false} onChange={(event) => setConfigField('monitoringEnabled', event.target.checked)} /><span><strong>Monitoramento ativo</strong><small>Exibe avisos quando os limites forem ultrapassados.</small></span></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappEnabled === true} onChange={(event) => setConfigField('monitoringWhatsappEnabled', event.target.checked)} /><span><strong>Enviar alertas para o WhatsApp</strong><small>Erros, falhas importantes, reinícios, recuperação e novos deploys.</small></span></label>
-          <label>Número que receberá os alertas<input inputMode="tel" autoComplete="tel" value={String(data.config.monitoringWhatsappRecipient || '').replace(/@c\.us$/i, '')} onChange={(event) => setConfigField('monitoringWhatsappRecipient', event.target.value.replace(/\D/g, ''))} placeholder="5561999999999" /><small>Use código do país + DDD + número, somente dígitos. O WhatsApp precisa estar conectado para entregar.</small></label>
-          <label>Intervalo para repetir o mesmo alerta (minutos)<input type="number" min="1" max="120" value={data.config.monitoringWhatsappCooldownMinutes ?? 5} onChange={(event) => setConfigField('monitoringWhatsappCooldownMinutes', Number(event.target.value))} /><small>Evita mensagens repetidas quando um erro aparece muitas vezes.</small></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappIncludeInfo === true} onChange={(event) => setConfigField('monitoringWhatsappIncludeInfo', event.target.checked)} /><span><strong>Incluir registros informativos</strong><small>Desativado por padrão para não transformar o WhatsApp em um fluxo de logs.</small></span></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappDeployAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappDeployAlerts', event.target.checked)} /><span><strong>Avisar sobre deploys</strong><small>Identifica o commit do Render quando essa informação estiver disponível.</small></span></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.monitoringWhatsappServerAlerts !== false} onChange={(event) => setConfigField('monitoringWhatsappServerAlerts', event.target.checked)} /><span><strong>Avisar sobre início e recuperação</strong><small>Informa quando o servidor inicia ou volta depois de uma pausa.</small></span></label>
-        </div>
-        <div className="monitoring-whatsapp-actions">
-          <button className="button subtle" type="button" onClick={testMonitoringWhatsapp}>Enviar alerta de teste</button>
-          <small>{data.meta?.monitoring?.pending ? `${data.meta.monitoring.pending} alerta(s) aguardando entrega.` : 'Nenhum alerta aguardando entrega.'} Salve as configurações antes de usar o teste.</small>
         </div>
       </section>
 
