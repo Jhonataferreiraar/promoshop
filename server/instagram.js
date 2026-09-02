@@ -448,7 +448,8 @@ export async function generateInstagramHighlightAsset(highlight = {}, config = {
   const theme = selectInstagramTheme(config, new Date(), requestedThemeId);
   const variant = requestedVariant === 'story' ? 'story' : 'cover';
   const name = svgText(highlight.name || 'Destaque').slice(0, 30);
-  const description = svgText(highlight.description || 'Confira as novidades da PromoShop.').slice(0, 180);
+  const marketplaceDefinition = INSTAGRAM_HIGHLIGHT_MARKETPLACES.find((store) => store.id === String(highlight.marketplace || '').trim().toLowerCase());
+  const description = svgText(highlight.description || marketplaceDefinition?.description || 'Confira as novidades da PromoShop.').slice(0, 180);
   const descriptionLines = splitLines(description, 38, 4);
   const descriptionMarkup = descriptionLines.map((line, index) => `<tspan x="540" dy="${index ? 54 : 0}">${escapeXml(line)}</tspan>`).join('');
   const domain = String(config.canonicalUrl || 'https://promoshop.jhonatafaraujo.com.br').replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -456,12 +457,20 @@ export async function generateInstagramHighlightAsset(highlight = {}, config = {
   const centerY = variant === 'cover' ? 960 : 650;
   const markCenterY = variant === 'cover' ? centerY - 30 : centerY;
   const marketplaceLogo = await marketplaceLogoBuffer(highlight.marketplace);
+  const coverDescriptionLines = marketplaceLogo ? splitLines(description, 46, 2) : [];
+  const coverDescriptionMarkup = coverDescriptionLines.map((line, index) => `<tspan x="540" dy="${index ? 34 : 0}">${escapeXml(line)}</tspan>`).join('');
+  const coverNameY = marketplaceLogo ? centerY + 170 : centerY + 245;
+  const coverNameSize = marketplaceLogo ? 66 : 76;
+  const coverFooterY = marketplaceLogo ? centerY + 220 : centerY + 310;
+  const coverFooter = marketplaceLogo
+    ? `<text x="540" y="${coverFooterY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#667085">${coverDescriptionMarkup}</text>`
+    : `<text x="540" y="${coverFooterY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#667085">PROMOSHOP</text>`;
   const visualMark = marketplaceLogo ? '' : `<g transform="translate(420 ${markCenterY - 120})">${highlightIconSvg(highlight.icon, iconColor)}</g>`;
   const safeGuide = variant === 'cover'
     ? `<circle cx="540" cy="960" r="390" fill="#ffffff" opacity=".08"/><circle cx="540" cy="960" r="310" fill="#ffffff" filter="url(#shadow)"/>`
     : `<rect x="80" y="310" width="920" height="1260" rx="64" fill="#ffffff" filter="url(#shadow)"/>`;
   const body = variant === 'cover'
-    ? `<circle cx="540" cy="${centerY - 30}" r="170" fill="#edf3ff"/>${visualMark}<text x="540" y="${centerY + 245}" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="900" fill="${theme.background2}">${escapeXml(name)}</text><text x="540" y="${centerY + 310}" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#667085">PROMOSHOP</text>`
+    ? `<circle cx="540" cy="${centerY - 30}" r="170" fill="#edf3ff"/>${visualMark}<text x="540" y="${coverNameY}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${coverNameSize}" font-weight="900" fill="${theme.background2}">${escapeXml(name)}</text>${coverFooter}`
     : `<circle cx="540" cy="${centerY}" r="170" fill="#edf3ff"/>${visualMark}<text x="540" y="910" text-anchor="middle" font-family="Arial,sans-serif" font-size="78" font-weight="900" fill="#101828">${escapeXml(name)}</text><text x="540" y="1040" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="600" fill="#475467">${descriptionMarkup}</text><rect x="150" y="1310" width="780" height="112" rx="34" fill="${theme.accent}"/><text x="540" y="1380" text-anchor="middle" font-family="Arial,sans-serif" font-size="35" font-weight="900" fill="#111827">Veja este Destaque no perfil  →</text>`;
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
     <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${theme.background}"/><stop offset="1" stop-color="${theme.background2}"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-opacity=".22"/></filter></defs>

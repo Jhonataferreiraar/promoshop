@@ -13,10 +13,10 @@ const ICONS = [
 ];
 
 const MARKETPLACES = [
-  { id: 'mercado-livre', name: 'Mercado Livre', short: 'ML', description: 'Ofertas e cupons selecionados do Mercado Livre.' },
-  { id: 'shopee', name: 'Shopee', short: 'S', description: 'Achados e promoções selecionadas da Shopee.' },
-  { id: 'aliexpress', name: 'AliExpress', short: 'AE', description: 'Ofertas selecionadas do AliExpress.' },
-  { id: 'magalu', name: 'Magalu', short: 'M', description: 'Ofertas selecionadas do Magalu.' }
+  { id: 'mercado-livre', name: 'Mercado Livre', short: 'ML', description: 'Ofertas selecionadas do Mercado Livre todos os dias.' },
+  { id: 'shopee', name: 'Shopee', short: 'S', description: 'Ofertas selecionadas da Shopee todos os dias.' },
+  { id: 'aliexpress', name: 'AliExpress', short: 'AE', description: 'Ofertas selecionadas do AliExpress todos os dias.' },
+  { id: 'magalu', name: 'Magalu', short: 'M', description: 'Ofertas selecionadas do Magalu todos os dias.' }
 ];
 
 function uniqueId() {
