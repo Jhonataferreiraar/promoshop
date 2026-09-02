@@ -911,6 +911,25 @@ async function resolveMonitoringRecipientIds(recipient) {
 
   if (configuredIsOwnNumber) candidates.push(own);
 
+  // Depois da migração para LID, o chat privado pode ter um identificador
+  // diferente do número (@c.us). Esta API interna do WhatsApp Web ainda
+  // consegue consultar o par LID/telefone sem abrir o chat (abrir via
+  // getChatById é justamente o caminho que dispara "No LID for user").
+  if (typeof client.getContactLidAndPhone === 'function') {
+    try {
+      const lookupIds = uniqueWhatsappIds([configured, own]);
+      const mappings = await client.getContactLidAndPhone(lookupIds);
+      for (const mapping of mappings || []) {
+        if (mapping?.lid) candidates.push(mapping.lid);
+        if (mapping?.pn) candidates.push(mapping.pn);
+      }
+    } catch (error) {
+      // A consulta é apenas uma otimização. Mantemos os IDs conhecidos para
+      // que contas sem a API de mapeamento continuem usando o fluxo normal.
+      console.warn('Não foi possível consultar o identificador LID do monitoramento:', error?.message || error);
+    }
+  }
+
   // getNumberId() returns the canonical WID for phone numbers. This is the
   // important conversion for accounts that now expose the personal chat as
   // @lid instead of @c.us.
@@ -933,11 +952,81 @@ async function resolveMonitoringRecipientIds(recipient) {
   return ids;
 }
 
+/**
+ * Envia por um modelo de chat que já está na memória do WhatsApp Web.
+ *
+ * O whatsapp-web.js tenta criar/abrir o chat quando usamos getChatById().
+ * Para contatos migrados para LID essa criação pode falhar mesmo quando o
+ * chat já está sincronizado. Consultar a coleção diretamente evita essa
+ * chamada problemática e mantém o restante do envio oficial da biblioteca.
+ */
+async function sendMonitoringMessageFromCachedChat(candidates, text) {
+  const page = await refreshActivePage();
+  return page.evaluate(async ({ chatIds, messageText }) => {
+    const collections = window.require('WAWebCollections');
+    const chatCollection = collections?.Chat;
+    const widFactory = window.require('WAWebWidFactory');
+    const normalizeId = (value) => {
+      if (typeof value === 'string') return value.trim().toLowerCase();
+      const serialized = value?._serialized ?? value?.$1;
+      if (serialized) return String(serialized).trim().toLowerCase();
+      if (value?.user && value?.server) {
+        return `${value.user}@${value.server}`.trim().toLowerCase();
+      }
+      return '';
+    };
+    const ids = [...new Set((chatIds || []).map(normalizeId).filter(Boolean))];
+    let chat = null;
+
+    // Chat.get(Wid) is the most precise lookup and does not invoke
+    // findOrCreateLatestChat, which is the source of the LID exception.
+    for (const id of ids) {
+      try {
+        const wid = widFactory.createWid(id);
+        chat = chatCollection?.get?.(wid) || null;
+      } catch {
+        chat = null;
+      }
+      if (chat) break;
+    }
+
+    // A few WhatsApp Web versions index the model with a slightly different
+    // Wid object. Scan the in-memory collection as a safe second lookup.
+    if (!chat) {
+      const models = chatCollection?.getModelsArray?.() || chatCollection?.models || [];
+      chat = models.find((entry) => ids.includes(normalizeId(entry?.id))) || null;
+    }
+    if (!chat) return { sent: false, reason: 'cached-chat-not-found' };
+
+    // Keep these options aligned with Client.sendMessage for text messages.
+    // WWebJS.sendMessage mutates the object while preparing the payload.
+    await window.WWebJS.sendMessage(chat, messageText, {
+      linkPreview: true,
+      parseVCards: true,
+      mentionedJidList: [],
+      ignoreQuoteErrors: true,
+      waitUntilMsgSent: false
+    });
+
+    return { sent: true, chatId: normalizeId(chat.id) };
+  }, { chatIds: candidates, messageText: text });
+}
+
 async function sendMonitoringMessage(recipient, text) {
   const candidates = await resolveMonitoringRecipientIds(recipient);
   if (!candidates.length) throw new Error('Destinatário de monitoramento inválido.');
 
   const errors = [];
+  try {
+    const cachedResult = await sendMonitoringMessageFromCachedChat(candidates, text);
+    if (cachedResult?.sent) return cachedResult;
+    if (cachedResult?.reason === 'cached-chat-not-found') {
+      errors.push('o chat privado ainda não está carregado no WhatsApp Web');
+    }
+  } catch (error) {
+    errors.push(String(error?.message || error || 'falha no envio pelo chat carregado'));
+  }
+
   for (const chatId of candidates) {
     try {
       const chat = await client.getChatById(chatId);
@@ -950,7 +1039,11 @@ async function sendMonitoringMessage(recipient, text) {
     }
   }
 
-  throw new Error(`Não foi possível enviar o alerta pelo WhatsApp: ${errors.join(' | ').slice(0, 600)}`);
+  const detail = errors.join(' | ').slice(0, 600);
+  const suffix = /no lid for user/i.test(detail)
+    ? ' Abra a conversa com o próprio número no WhatsApp conectado e tente novamente.'
+    : '';
+  throw new Error(`Não foi possível enviar o alerta pelo WhatsApp: ${detail}${suffix}`);
 }
 
 client.on('qr', async (code) => {
