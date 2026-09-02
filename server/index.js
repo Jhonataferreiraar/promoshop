@@ -97,10 +97,11 @@ import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
 import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
 import { safeRedirectDestination } from './urlSecurity.js';
 import {
-  claimMonitoringAlert,
+  claimMonitoringAlertBatch,
   enqueueMonitoringAlert,
   failMonitoringAlert,
   formatMonitoringAlert,
+  formatMonitoringInfoBatch,
   hasMonitoringAlertReady,
   markMonitoringAlertSent,
   monitoringEnabledForConfig,
@@ -8759,34 +8760,59 @@ app.get('/api/worker/monitoring/next', requireWorker, async (_req, res) => {
   await updateStore((data) => {
     recipient = monitoringRecipientForConfig(data.config);
     if (!monitoringEnabledForConfig(data.config)) return;
-    alert = claimMonitoringAlert(data);
-    if (alert) {
-      alert.text = formatMonitoringAlert(alert, alert.metadata || {});
-    }
+    const batch = claimMonitoringAlertBatch(data);
+    if (!batch?.alerts?.length) return;
+    const texts = batch.informational
+      ? formatMonitoringInfoBatch(batch.alerts)
+      : [formatMonitoringAlert(batch.alerts[0], batch.alerts[0].metadata || {})];
+    alert = {
+      id: batch.alerts[0].id,
+      ids: batch.alerts.map((entry) => entry.id),
+      text: texts[0] || '',
+      texts,
+      informational: batch.informational,
+      attempts: Math.max(...batch.alerts.map((entry) => Number(entry.attempts || 0))),
+      createdAt: batch.alerts[0].createdAt
+    };
   });
   if (!alert || !recipient) return res.status(204).end();
   return res.json({
     id: alert.id,
+    ids: alert.ids,
     recipient,
     text: alert.text,
+    texts: alert.texts,
+    informational: alert.informational,
     attempts: alert.attempts,
     createdAt: alert.createdAt
   });
 });
 
 app.post('/api/worker/monitoring/:id/sent', requireWorker, async (req, res) => {
-  let updated = false;
+  let updated = 0;
+  const ids = [...new Set([
+    req.params.id,
+    ...(Array.isArray(req.body?.ids) ? req.body.ids : [])
+  ].map((id) => String(id || '').trim()).filter(Boolean))];
   await updateStore((data) => {
-    updated = markMonitoringAlertSent(data, req.params.id);
+    for (const id of ids) {
+      if (markMonitoringAlertSent(data, id)) updated += 1;
+    }
   });
   return res.json({ ok: true, updated });
 });
 
 app.post('/api/worker/monitoring/:id/failed', requireWorker, async (req, res) => {
-  let updated = false;
+  let updated = 0;
+  const ids = [...new Set([
+    req.params.id,
+    ...(Array.isArray(req.body?.ids) ? req.body.ids : [])
+  ].map((id) => String(id || '').trim()).filter(Boolean))];
   const error = sanitizeMonitoringMessage(req.body?.error, 'Falha ao entregar o alerta.');
   await updateStore((data) => {
-    updated = failMonitoringAlert(data, req.params.id, error);
+    for (const id of ids) {
+      if (failMonitoringAlert(data, id, error)) updated += 1;
+    }
   });
   return res.json({ ok: true, updated });
 });

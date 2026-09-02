@@ -860,18 +860,27 @@ async function processMonitoringQueue() {
   let handled = false;
   try {
     alert = await request('/api/worker/monitoring/next');
-    if (!alert?.id || !alert.text || !alert.recipient) return;
+    const messages = Array.isArray(alert?.texts)
+      ? alert.texts.filter((message) => String(message || '').trim())
+      : [alert?.text].filter((message) => String(message || '').trim());
+    if (!alert?.id || !messages.length || !alert.recipient) return;
     handled = true;
-    await sendMonitoringMessage(alert.recipient, alert.text);
+    for (const message of messages) {
+      await sendMonitoringMessage(alert.recipient, message);
+    }
+    const alertIds = uniqueAlertIds(alert.ids || [alert.id]);
     await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/sent`, {
       method: 'POST',
-      body: '{}'
+      body: JSON.stringify({ ids: alertIds })
     });
   } catch (error) {
     if (alert?.id) {
       await request(`/api/worker/monitoring/${encodeURIComponent(alert.id)}/failed`, {
         method: 'POST',
-        body: JSON.stringify({ error: String(error?.message || error || 'Falha desconhecida').slice(0, 240) })
+        body: JSON.stringify({
+          ids: uniqueAlertIds(alert.ids || [alert.id]),
+          error: String(error?.message || error || 'Falha desconhecida').slice(0, 240)
+        })
       }).catch(() => {});
     }
     console.error('Falha ao enviar alerta operacional:', error?.message || error);
@@ -879,6 +888,12 @@ async function processMonitoringQueue() {
     monitoringProcessing = false;
   }
   return handled;
+}
+
+function uniqueAlertIds(values) {
+  return [...new Set((Array.isArray(values) ? values : [values])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean))];
 }
 
 function serializedWhatsappId(value) {

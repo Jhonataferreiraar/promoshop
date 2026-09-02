@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import {
   claimMonitoringAlert,
+  claimMonitoringAlertBatch,
   enqueueMonitoringAlert,
   failMonitoringAlert,
   formatMonitoringAlert,
+  formatMonitoringInfoBatch,
   markMonitoringAlertSent,
   monitoringEnabledForConfig,
   normalizeMonitoringRecipient,
@@ -61,5 +63,34 @@ const text = formatMonitoringAlert({ type: 'deploy', level: 'success', message: 
 assert.match(text, /Novo deploy/);
 assert.match(text, /apiKey=\[redacted\]/);
 assert.match(text, /abc123/);
+
+const batchConfig = { ...config, monitoringWhatsappIncludeInfo: true };
+const batchData = { batchConfig, config: batchConfig, meta: { monitoring: { alerts: [], recent: {} } } };
+for (let index = 1; index <= 6; index += 1) {
+  assert.ok(enqueueMonitoringAlert(batchData, {
+    type: 'log',
+    level: 'info',
+    message: `Registro informativo ${index}`,
+    force: true
+  }));
+}
+assert.ok(enqueueMonitoringAlert(batchData, {
+  type: 'log',
+  level: 'error',
+  message: 'Falha prioritária',
+  force: true
+}));
+const importantBatch = claimMonitoringAlertBatch(batchData);
+assert.equal(importantBatch?.informational, false);
+assert.equal(importantBatch?.alerts?.[0]?.message, 'Falha prioritária');
+markMonitoringAlertSent(batchData, importantBatch.alerts[0].id);
+const infoBatch = claimMonitoringAlertBatch(batchData);
+assert.equal(infoBatch?.informational, true);
+assert.equal(infoBatch?.alerts?.length, 6);
+const infoTexts = formatMonitoringInfoBatch(infoBatch.alerts);
+assert.equal(infoTexts.length, 2);
+assert.ok(infoTexts.every((entry) => entry.length <= 3400));
+assert.match(infoTexts[0], /Parte|registros informativos/);
+for (const entry of infoBatch.alerts) markMonitoringAlertSent(batchData, entry.id);
 
 console.log('Monitoramento operacional: testes passaram.');

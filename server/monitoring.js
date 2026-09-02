@@ -2,6 +2,8 @@ const MAX_ALERTS = 200;
 const MAX_RECENT_KEYS = 300;
 const DEFAULT_COOLDOWN_MINUTES = 5;
 const STALE_SENDING_MS = 10 * 60 * 1000;
+const INFO_BATCH_MAX_MESSAGES = 2;
+const INFO_BATCH_MESSAGE_LENGTH = 3400;
 
 const LEVELS = new Set(['info', 'success', 'warning', 'error']);
 
@@ -80,6 +82,19 @@ function initializeMonitoring(data) {
   return monitoring;
 }
 
+function isInformationalAlert(alert) {
+  return alert?.type === 'log' && ['info', 'success'].includes(alert?.level);
+}
+
+function claimAlertEntry(alert, now) {
+  if (!alert) return null;
+  alert.status = 'sending';
+  alert.attempts = Number(alert.attempts || 0) + 1;
+  alert.claimedAt = new Date(now).toISOString();
+  alert.lastAttemptAt = alert.claimedAt;
+  return { ...alert };
+}
+
 export function enqueueMonitoringAlert(data, {
   type = 'log',
   level = 'error',
@@ -154,12 +169,39 @@ export function claimMonitoringAlert(data, now = Date.now()) {
     entry?.status === 'pending' &&
     new Date(entry.availableAt || entry.createdAt || 0).getTime() <= now
   ));
-  if (!alert) return null;
-  alert.status = 'sending';
-  alert.attempts = Number(alert.attempts || 0) + 1;
-  alert.claimedAt = new Date(now).toISOString();
-  alert.lastAttemptAt = alert.claimedAt;
-  return { ...alert };
+  return claimAlertEntry(alert, now);
+}
+
+/**
+ * Claims one important alert or all ready informational records as a batch.
+ * Informational records remain individually stored in the activity log, but
+ * the WhatsApp worker can deliver their digest in at most two messages.
+ */
+export function claimMonitoringAlertBatch(data, now = Date.now()) {
+  const monitoring = initializeMonitoring(data);
+  for (const alert of monitoring.alerts) reclaimStaleSending(alert, now);
+
+  const ready = monitoring.alerts.filter((entry) => (
+    entry?.status === 'pending' &&
+    new Date(entry.availableAt || entry.createdAt || 0).getTime() <= now
+  ));
+  if (!ready.length) return null;
+
+  // Warnings, errors, deploys and lifecycle events always go first. They are
+  // never hidden inside an informational digest.
+  const important = ready.find((entry) => !isInformationalAlert(entry));
+  if (important) {
+    return {
+      informational: false,
+      alerts: [claimAlertEntry(important, now)]
+    };
+  }
+
+  const informational = ready.filter(isInformationalAlert);
+  return {
+    informational: true,
+    alerts: informational.map((entry) => claimAlertEntry(entry, now)).filter(Boolean)
+  };
 }
 
 export function markMonitoringAlertSent(data, id, now = new Date()) {
@@ -233,6 +275,75 @@ export function formatMonitoringAlert(alert = {}, context = {}) {
   if (context.deployKey) lines.push(`Versão: ${compactText(context.deployKey, 100)}`);
   if (context.downtimeMinutes != null) lines.push(`Indisponibilidade estimada: ${Math.max(0, Math.round(Number(context.downtimeMinutes) || 0))} min`);
   return lines.join('\n').slice(0, 3500);
+}
+
+function formatInfoLine(alert) {
+  const date = new Date(alert?.createdAt || Date.now()).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'short',
+    timeStyle: 'short'
+  });
+  return `• ${date} — ${compactText(sanitizeMonitoringMessage(alert?.message, 'Sem detalhes.'), 260)}`;
+}
+
+/**
+ * Formats an informational digest into one or two WhatsApp-safe messages.
+ * Older entries that do not fit are explicitly counted; the full records
+ * remain available in the panel activity log.
+ */
+export function formatMonitoringInfoBatch(alerts = []) {
+  const entries = Array.isArray(alerts) ? alerts.filter(isInformationalAlert) : [];
+  if (!entries.length) return [];
+  if (entries.length === 1) return [formatMonitoringAlert(entries[0], entries[0].metadata || {})];
+
+  const headerLength = 80;
+  const messageCapacity = INFO_BATCH_MESSAGE_LENGTH - headerLength;
+  const totalCapacity = messageCapacity * INFO_BATCH_MAX_MESSAGES;
+  const allLines = entries.map(formatInfoLine);
+  const shownLines = [];
+  let used = 0;
+  let omitted = 0;
+
+  // Keep the newest records when a large backlog cannot fit in two messages.
+  for (let index = allLines.length - 1; index >= 0; index -= 1) {
+    const line = allLines[index];
+    const lineLength = line.length + 1;
+    if (used + lineLength <= totalCapacity) {
+      shownLines.unshift(line);
+      used += lineLength;
+    } else {
+      omitted += 1;
+    }
+  }
+
+  const summary = omitted
+    ? `Total: ${entries.length}. Exibindo os ${shownLines.length} mais recentes; ${omitted} anterior(es) continuam no histórico do painel.`
+    : `Total: ${entries.length}.`;
+  const availablePerMessage = Math.max(200, INFO_BATCH_MESSAGE_LENGTH - summary.length - 55);
+  const targetFirstLength = Math.ceil(used / INFO_BATCH_MAX_MESSAGES);
+  const parts = [[], []];
+  let firstLength = 0;
+  for (let index = 0; index < shownLines.length; index += 1) {
+    const line = shownLines[index];
+    const remaining = shownLines.length - index;
+    const fitsFirst = firstLength + line.length + 1 <= availablePerMessage;
+    if (parts[0].length && (!fitsFirst || (firstLength >= targetFirstLength && remaining > 1))) break;
+    parts[0].push(line);
+    firstLength += line.length + 1;
+  }
+  parts[1] = shownLines.slice(parts[0].length);
+  if (!parts[1].length && parts[0].length > 1) {
+    parts[1].unshift(parts[0].pop());
+  }
+
+  return parts.map((part, index) => (
+    [
+      `🔔 PromoShop · registros informativos (${index + 1}/${INFO_BATCH_MAX_MESSAGES})`,
+      summary,
+      '',
+      part.join('\n') || 'Nenhum registro adicional nesta parte.'
+    ].join('\n').slice(0, INFO_BATCH_MESSAGE_LENGTH)
+  ));
 }
 
 export function monitoringQueueSummary(data = {}) {
