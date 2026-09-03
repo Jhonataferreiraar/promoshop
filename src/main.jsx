@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import InstagramPanel from './InstagramPanel.jsx';
@@ -2651,32 +2651,33 @@ function AdminApp() {
   const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
   const activityLogs = Array.isArray(data.logs) ? data.logs : [];
-  const filteredActivityLogs = useMemo(() => {
-    const query = String(logSearchQuery || '').trim().toLocaleLowerCase('pt-BR');
-    const periodMs = logPeriodFilter === '24h'
-      ? 24 * 60 * 60 * 1000
-      : logPeriodFilter === '7d'
-        ? 7 * 24 * 60 * 60 * 1000
-        : logPeriodFilter === '30d'
-          ? 30 * 24 * 60 * 60 * 1000
-          : 0;
-    const cutoff = periodMs ? Date.now() - periodMs : 0;
-    return activityLogs.filter((log) => {
-      if (logLevelFilter !== 'all' && log.level !== logLevelFilter) return false;
-      if (cutoff) {
-        const createdAt = new Date(log.createdAt || 0).getTime();
-        if (!Number.isFinite(createdAt) || createdAt < cutoff) return false;
-      }
-      if (!query) return true;
-      return `${log.message || ''} ${log.level || ''}`.toLocaleLowerCase('pt-BR').includes(query);
-    });
-  }, [activityLogs, logLevelFilter, logPeriodFilter, logSearchQuery]);
-  const activitySummary = useMemo(() => activityLogs.reduce((summary, log) => {
+  // Estas derivações ficam fora de hooks porque o componente possui estados
+  // de autenticação que podem retornar antes da árvore administrativa ser
+  // renderizada. Assim a quantidade de hooks permanece igual em toda renderização.
+  const activityQuery = String(logSearchQuery || '').trim().toLocaleLowerCase('pt-BR');
+  const activityPeriodMs = logPeriodFilter === '24h'
+    ? 24 * 60 * 60 * 1000
+    : logPeriodFilter === '7d'
+      ? 7 * 24 * 60 * 60 * 1000
+      : logPeriodFilter === '30d'
+        ? 30 * 24 * 60 * 60 * 1000
+        : 0;
+  const activityCutoff = activityPeriodMs ? Date.now() - activityPeriodMs : 0;
+  const filteredActivityLogs = activityLogs.filter((log) => {
+    if (logLevelFilter !== 'all' && log.level !== logLevelFilter) return false;
+    if (activityCutoff) {
+      const createdAt = new Date(log.createdAt || 0).getTime();
+      if (!Number.isFinite(createdAt) || createdAt < activityCutoff) return false;
+    }
+    if (!activityQuery) return true;
+    return `${log.message || ''} ${log.level || ''}`.toLocaleLowerCase('pt-BR').includes(activityQuery);
+  });
+  const activitySummary = activityLogs.reduce((summary, log) => {
     const level = ['info', 'success', 'warning', 'error'].includes(log?.level) ? log.level : 'info';
     summary.total += 1;
     summary[level] += 1;
     return summary;
-  }, { total: 0, info: 0, success: 0, warning: 0, error: 0 }), [activityLogs]);
+  }, { total: 0, info: 0, success: 0, warning: 0, error: 0 });
   const reviewOffers = data.offers.filter((offer) => reviewFilter === 'all' || (reviewFilter === 'stale' ? offer.isStale : reviewFilter === 'low' ? Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) : reviewFilter === 'paused' ? offer.status !== 'active' : (offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) || (offer.qualityIssues || []).length)));
   const setConfigField = (key, value) => setData((current) => ({
     ...current,
