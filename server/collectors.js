@@ -1198,7 +1198,31 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
         }
       }
     }
-    data.offers = data.offers.slice(0, 500);
+    /*
+     * A compactação continua protegendo o catálogo contra crescimento
+     * ilimitado, mas nunca descarta uma captura manual ou da extensão do
+     * Mercado Livre. Antes disso, uma coleta automática podia inserir muitos
+     * itens no topo e retirar justamente a oferta que ainda estava na fila de
+     * publicação. A retenção de sete dias faz a limpeza definitiva depois.
+     */
+    const protectedOfferIds = new Set(
+      (Array.isArray(data.queue) ? data.queue : [])
+        .filter((item) => ['pending', 'publishing', 'failed'].includes(item?.status))
+        .flatMap((item) => [item?.offerId, item?.offerSnapshot?.id])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean)
+    );
+    const durableOffers = [];
+    const compactableOffers = [];
+    for (const savedOffer of data.offers) {
+      const durable = protectedOfferIds.has(String(savedOffer?.id || '').trim())
+        || ['manual', 'mercado-livre-extension'].includes(String(savedOffer?.source || ''));
+      (durable ? durableOffers : compactableOffers).push(savedOffer);
+    }
+    data.offers = [
+      ...durableOffers,
+      ...compactableOffers.slice(0, Math.max(0, 500 - durableOffers.length))
+    ];
     data.meta.lastCollectionAt = new Date().toISOString();
   });
   await addLogs([
@@ -1252,7 +1276,14 @@ export function makeQueueItem(offer, config) {
       offer.originalPrice || offer.price
     ),
     affiliateUrl: offer.affiliateUrl,
+    productUrl: offer.productUrl || '',
     image: offer.image || '',
+    source: offer.source || '',
+    externalId: offer.externalId || '',
+    brand: offer.brand || '',
+    gtin: offer.gtin || '',
+    mpn: offer.mpn || '',
+    createdAt: offer.createdAt || offer.importedAt || offer.updatedAt || new Date().toISOString(),
     freeShipping: Boolean(
       offer.freeShipping
     ),

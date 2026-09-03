@@ -15,6 +15,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const dataFile = path.join(dataDir, 'db.json');
 const dataKeyFile = path.join(dataDir, '.data-key');
+export const OFFER_RETENTION_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 let dataMigrationPromise = null;
 let cachedEnvironmentDataKey = null;
 let cachedFileDataKey = null;
@@ -169,7 +171,9 @@ const initialData = {
     seoStructuredDataEnabled: true,
     updatedAt: null,
     publicOfferPageSize: 24,
-    publicOfferMaxAgeDays: 45,
+    // A vitrine mantém uma oferta por uma semana; depois a retenção automática
+    // remove o registro e os itens pendentes associados.
+    publicOfferMaxAgeDays: OFFER_RETENTION_DAYS,
     smartRankingEnabled: true,
     rankingDiscountWeight: 35,
     rankingFreshnessWeight: 25,
@@ -547,6 +551,9 @@ function normalizeStoreData(data) {
     ...initialData.config,
     ...(data.config || {})
   };
+  // Registros antigos podem ter guardado um limite diferente. A permanência
+  // agora é uma política fixa e não deve voltar a 45 dias após uma migração.
+  data.config.publicOfferMaxAgeDays = OFFER_RETENTION_DAYS;
   data.config.campaignsEnabled = data.config.campaignsEnabled !== false;
   data.config.priceMonitoringEnabled = data.config.priceMonitoringEnabled !== false;
   data.config.automaticBackupEnabled = data.config.automaticBackupEnabled !== false;
@@ -677,6 +684,133 @@ const FULL_WHATSAPP_HISTORY = 500;
 const MAX_WHATSAPP_OTHER_TERMINAL_HISTORY = 1000;
 const FULL_INSTAGRAM_HISTORY = 100;
 const MAX_INSTAGRAM_TERMINAL_HISTORY = 1000;
+
+function timestampFrom(value) {
+  const timestamp = new Date(value || '').getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function offerCreatedTimestamp(offer) {
+  // createdAt representa o início da permanência da oferta. O fallback para
+  // updatedAt cobre registros antigos que ainda não possuíam createdAt.
+  return timestampFrom(offer?.createdAt)
+    || timestampFrom(offer?.importedAt)
+    || timestampFrom(offer?.updatedAt);
+}
+
+function queueItemOfferId(item) {
+  return String(item?.offerId || item?.offerSnapshot?.id || '').trim();
+}
+
+/**
+ * Remove ofertas que já completaram a janela de permanência.
+ *
+ * A operação é deliberadamente pura (ela apenas altera o objeto recebido),
+ * para que o arquivo e o PostgreSQL usem exatamente a mesma regra. Itens
+ * pendentes da fila também são removidos quando a oferta expira; assim uma
+ * promoção antiga não é publicada depois do prazo solicitado.
+ */
+export function pruneExpiredOffers(data, nowMs = Date.now(), retentionDays = OFFER_RETENTION_DAYS) {
+  const safeRetentionDays = Math.min(365, Math.max(1, Math.trunc(Number(retentionDays) || OFFER_RETENTION_DAYS)));
+  const cutoff = nowMs - safeRetentionDays * DAY_MS;
+  const offers = Array.isArray(data?.offers) ? data.offers : [];
+  const removed = [];
+  const kept = [];
+
+  for (const offer of offers) {
+    const createdAt = offerCreatedTimestamp(offer);
+    const id = String(offer?.id || '').trim();
+    // Registros sem identificador ou sem uma data confiável são preservados
+    // para evitar uma exclusão acidental durante a migração de dados antigos.
+    if (!id || !createdAt || createdAt > cutoff || createdAt > nowMs) {
+      kept.push(offer);
+      continue;
+    }
+    removed.push(offer);
+  }
+
+  data.offers = kept;
+  const expiredIds = new Set(removed.map((offer) => String(offer?.id || '').trim()).filter(Boolean));
+  let removedQueueItems = 0;
+  if (expiredIds.size && Array.isArray(data.queue)) {
+    data.queue = data.queue.filter((item) => {
+      const matchesExpiredOffer = expiredIds.has(queueItemOfferId(item));
+      // Uma publicação em andamento não deve ser interrompida no meio do
+      // envio, e o histórico enviado continua servindo à deduplicação. Itens
+      // pendentes ou em falha são removidos junto com a oferta.
+      if (matchesExpiredOffer && !['publishing', 'sent'].includes(item?.status)) {
+        removedQueueItems += 1;
+        return false;
+      }
+      return true;
+    });
+  }
+
+  return {
+    removed,
+    removedCount: removed.length,
+    removedQueueItems,
+    retentionDays: safeRetentionDays
+  };
+}
+
+/**
+ * Recupera uma oferta recente que ainda possui publicação pendente, mas foi
+ * retirada do array principal por uma compactação antiga. A fila guarda um
+ * snapshot suficiente para reconstruir a vitrine e isso evita que ofertas do
+ * Mercado Livre desapareçam após uma coleta automática.
+ */
+export function restoreRecentOffersFromQueue(data, nowMs = Date.now(), retentionDays = OFFER_RETENTION_DAYS) {
+  const safeRetentionDays = Math.min(365, Math.max(1, Math.trunc(Number(retentionDays) || OFFER_RETENTION_DAYS)));
+  const cutoff = nowMs - safeRetentionDays * DAY_MS;
+  const offers = Array.isArray(data?.offers) ? data.offers : [];
+  const queue = Array.isArray(data?.queue) ? data.queue : [];
+  const existingIds = new Set(offers.map((offer) => String(offer?.id || '').trim()).filter(Boolean));
+  let restoredCount = 0;
+
+  for (const item of queue) {
+    if (!['pending', 'publishing', 'failed'].includes(item?.status)) continue;
+    const snapshot = item?.offerSnapshot;
+    const id = queueItemOfferId(item);
+    if (!snapshot || !id || existingIds.has(id)) continue;
+
+    const createdAt = timestampFrom(snapshot.createdAt) || timestampFrom(item.createdAt);
+    const title = String(snapshot.title || item.offerTitle || '').trim();
+    const price = Number(snapshot.price || 0);
+    const originalPrice = Number(snapshot.originalPrice || price);
+    const affiliateUrl = String(snapshot.affiliateUrl || '').trim();
+    if (!createdAt || createdAt <= cutoff || createdAt > nowMs || !title || !(price > 0) || !(originalPrice > price) || !affiliateUrl) continue;
+
+    const store = String(snapshot.store || item.store || 'Outra').trim();
+    const inferredSource = store === 'Mercado Livre' && /^https:\/\/meli\.la\//i.test(affiliateUrl)
+      ? 'mercado-livre-extension'
+      : 'queue-recovered';
+    const restored = {
+      ...snapshot,
+      id,
+      title,
+      store,
+      category: String(snapshot.category || '').trim(),
+      price,
+      originalPrice,
+      affiliateUrl,
+      image: String(snapshot.image || item.image || '').trim(),
+      productUrl: String(snapshot.productUrl || '').trim(),
+      freeShipping: Boolean(snapshot.freeShipping),
+      featured: Boolean(snapshot.featured),
+      status: 'active',
+      source: snapshot.source || inferredSource,
+      createdAt: new Date(createdAt).toISOString(),
+      updatedAt: new Date(createdAt).toISOString(),
+      recoveredFromQueue: true
+    };
+    offers.unshift(restored);
+    existingIds.add(id);
+    restoredCount += 1;
+  }
+
+  return { restoredCount };
+}
 
 function compactInstagramHistoryItem(item, feed = false) {
   if (item.historyCompacted === true) return item;

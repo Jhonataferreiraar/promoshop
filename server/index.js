@@ -18,8 +18,11 @@ import {
   addLog,
   checkStoreHealth,
   createId,
+  OFFER_RETENTION_DAYS,
+  pruneExpiredOffers,
   readStore,
   readStoreSlice,
+  restoreRecentOffersFromQueue,
   updateStore
 } from './store.js';
 
@@ -1087,6 +1090,34 @@ function pruneInboxEntries(data, nowMs = Date.now()) {
   }).slice(0, 500);
 }
 
+async function runOfferRetention() {
+  let restoredCount = 0;
+  let removedCount = 0;
+  let removedQueueItems = 0;
+  await updateStore((data) => {
+    const restored = restoreRecentOffersFromQueue(data, Date.now(), OFFER_RETENTION_DAYS);
+    restoredCount = restored.restoredCount;
+    const expired = pruneExpiredOffers(data, Date.now(), OFFER_RETENTION_DAYS);
+    removedCount = expired.removedCount;
+    removedQueueItems = expired.removedQueueItems;
+  });
+
+  if (restoredCount) {
+    await addLog(
+      `Catálogo: ${restoredCount} oferta(s) recente(s) recuperada(s) a partir da fila de publicação.`,
+      'warning'
+    );
+  }
+  if (removedCount) {
+    const queueDetail = removedQueueItems ? ` e ${removedQueueItems} item(ns) retirado(s) da fila` : '';
+    await addLog(
+      `Retenção: ${removedCount} oferta(s) excluída(s) após ${OFFER_RETENTION_DAYS} dias${queueDetail}.`,
+      'info'
+    );
+  }
+  return { restoredCount, removedCount, removedQueueItems };
+}
+
 function normalizedTerms(value) {
   return String(value || '')
     .split(',')
@@ -1133,10 +1164,17 @@ function offerQuality(offer, config = {}) {
 }
 
 function offerIsFresh(offer, config, nowMs = Date.now()) {
+  // A permanência máxima é fixa em uma semana. Atualizações automáticas de
+  // preço não renovam a vida da oferta; caso contrário, um item poderia ficar
+  // indefinidamente no catálogo apenas por ser revisitado pelo coletor.
+  const configuredMaxAgeDays = boundedNumber(config.publicOfferMaxAgeDays, OFFER_RETENTION_DAYS, 1, OFFER_RETENTION_DAYS);
+  const maxAgeDays = Math.min(configuredMaxAgeDays, OFFER_RETENTION_DAYS);
+  const createdAt = new Date(offer?.createdAt || offer?.importedAt || offer?.updatedAt || 0).getTime();
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
+  const ageMs = nowMs - createdAt;
+  if (ageMs >= OFFER_RETENTION_DAYS * 24 * 60 * 60 * 1000) return false;
   if (config.staleOffersHidden === false) return true;
-  const maxAgeDays = boundedNumber(config.publicOfferMaxAgeDays, 45, 1, 365);
-  const updatedAt = new Date(offer?.updatedAt || offer?.createdAt || 0).getTime();
-  return Number.isFinite(updatedAt) && updatedAt > 0 && nowMs - updatedAt <= maxAgeDays * 24 * 60 * 60 * 1000;
+  return ageMs < maxAgeDays * 24 * 60 * 60 * 1000;
 }
 
 /*
@@ -4200,7 +4238,7 @@ app.put(
 
         const numericRules = {
           publicOfferPageSize: [24, 6, 60],
-          publicOfferMaxAgeDays: [45, 1, 365],
+          publicOfferMaxAgeDays: [OFFER_RETENTION_DAYS, OFFER_RETENTION_DAYS, OFFER_RETENTION_DAYS],
           rankingDiscountWeight: [35, 0, 100],
           rankingFreshnessWeight: [25, 0, 100],
           rankingQualityWeight: [25, 0, 100],
@@ -5317,6 +5355,13 @@ app.delete(
               offer.id !==
               req.params.id
           );
+        // A oferta excluída não deve continuar aguardando publicação. O
+        // histórico já enviado permanece para a deduplicação, mas itens
+        // pendentes ou em falha deixam de aparecer na fila.
+        data.queue = (Array.isArray(data.queue) ? data.queue : []).filter((item) => {
+          const matchesOffer = item?.offerId === req.params.id || item?.offerSnapshot?.id === req.params.id;
+          return !matchesOffer || item?.status === 'sent';
+        });
       }
     );
 
@@ -10487,10 +10532,11 @@ app.use(
 cron.schedule('15 3 * * *', async () => {
   try {
     await updateStore((data) => pruneInboxEntries(data));
+    await runOfferRetention();
   } catch (error) {
-    console.error('Falha ao aplicar a retenção da caixa de entrada:', error.message);
+    console.error('Falha ao aplicar as retenções automáticas:', error.message);
   }
-});
+}, { timezone: 'America/Sao_Paulo' });
 
 // O backup automático é diário, atômico e retido apenas pelo período definido
 // no painel. Ele não inclui credenciais, sessões ou dados pessoais.
@@ -10613,6 +10659,13 @@ const httpServer = app.listen(
     console.log(
       `Limite de memória do servidor: ${Math.round(v8.getHeapStatistics().heap_size_limit / 1024 / 1024)} MB.`
     );
+
+    // Executa uma vez após cada deploy para que ofertas antigas não aguardem
+    // até a próxima madrugada e para recuperar capturas recentes que ainda
+    // estejam representadas na fila de publicação.
+    void runOfferRetention().catch((error) => {
+      console.error('Não foi possível aplicar a retenção inicial das ofertas:', safeErrorMessage(error));
+    });
 
     void recordServerLifecycle().catch((error) => {
       console.error('Não foi possível registrar o início do servidor:', safeErrorMessage(error));

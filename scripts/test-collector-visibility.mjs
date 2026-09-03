@@ -48,6 +48,7 @@ try {
   assert.equal(saved.offers[0].affiliateUrl, 'https://meli.la/monitor123');
   assert.equal(saved.queue.length, 1, 'Uma oferta ativada deve entrar na fila automática uma única vez.');
   assert.equal(saved.queue[0].offerSnapshot.affiliateUrl, 'https://meli.la/monitor123');
+  assert.equal(saved.queue[0].offerSnapshot.createdAt, product.createdAt, 'A fila deve preservar a data original para a retenção de sete dias.');
 
   await updateStore((data) => {
     data.config.autoQueue = false;
@@ -92,6 +93,30 @@ try {
   saved = await readStore();
   assert.equal(saved.offers[0].status, 'active');
   assert.equal(saved.offers[0].affiliateUrl, 'https://meli.la/oficial987', 'Uma coleta sem link não pode apagar o vínculo da extensão oficial.');
+
+  const durableExtensionOffer = {
+    ...extensionOffer,
+    id: 'ml_MLB999999999',
+    externalId: 'MLB999999999',
+    title: 'Captura da extensão que não pode sumir',
+    createdAt: new Date().toISOString()
+  };
+  const compactableOffers = Array.from({ length: 500 }, (_, index) => ({
+    ...product,
+    id: `ml_compactable_${index}`,
+    externalId: `MLB_COMPACTABLE_${index}`,
+    title: `Oferta automática ${index}`,
+    source: 'mercado-livre',
+    status: 'active'
+  }));
+  await updateStore((data) => {
+    data.offers = [...compactableOffers, durableExtensionOffer];
+    data.queue = [];
+  });
+  await applyCollectedOffers({ candidates: [] });
+  saved = await readStore();
+  assert.equal(saved.offers.length, 500, 'A compactação continua limitada a 500 itens quando há ofertas duráveis.');
+  assert.equal(saved.offers.some((offer) => offer.id === durableExtensionOffer.id), true, 'A compactação não pode retirar capturas da extensão do Mercado Livre.');
 
   const oldPending = {
     ...product,

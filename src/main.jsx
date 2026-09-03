@@ -36,7 +36,7 @@ const fallbackConfig = {
   seoIndexingEnabled: true,
   seoStructuredDataEnabled: true,
   publicOfferPageSize: 24,
-  publicOfferMaxAgeDays: 45,
+  publicOfferMaxAgeDays: 7,
   smartRankingEnabled: true,
   rankingDiscountWeight: 35,
   rankingFreshnessWeight: 25,
@@ -3988,7 +3988,7 @@ function AdminApp() {
         <div className="section-title"><div><span className="section-step">QUALIDADE</span><h2>Ofertas públicas</h2><p>Filtre itens incompletos, antigos ou potencialmente inadequados.</p></div></div>
         <div className="settings-grid">
           <label>Ofertas por carregamento<input type="number" min="6" max="60" value={data.config.publicOfferPageSize ?? 24} onChange={(event) => setConfigField('publicOfferPageSize', Number(event.target.value))} /></label>
-          <label>Idade máxima da oferta (dias)<input type="number" min="1" max="365" value={data.config.publicOfferMaxAgeDays ?? 45} onChange={(event) => setConfigField('publicOfferMaxAgeDays', Number(event.target.value))} /></label>
+          <label>Retenção automática das ofertas<input type="text" value="7 dias" readOnly aria-readonly="true" /><small>As ofertas ficam disponíveis por uma semana e são excluídas automaticamente depois desse prazo.</small></label>
           <label>Nota mínima de qualidade<input type="number" min="0" max="100" value={data.config.qualityMinimumScore ?? 55} onChange={(event) => setConfigField('qualityMinimumScore', Number(event.target.value))} /></label>
           <label>Tamanho máximo do título<input type="number" min="40" max="500" value={data.config.qualityMaxTitleLength ?? 180} onChange={(event) => setConfigField('qualityMaxTitleLength', Number(event.target.value))} /></label>
           <label>Links por verificação<input type="number" min="1" max="50" value={data.config.linkCheckBatchSize ?? 20} onChange={(event) => setConfigField('linkCheckBatchSize', Number(event.target.value))} /></label>
@@ -3998,7 +3998,6 @@ function AdminApp() {
           <label>Peso dos cliques<input type="number" min="0" max="100" value={data.config.rankingClicksWeight ?? 15} onChange={(event) => setConfigField('rankingClicksWeight', Number(event.target.value))} /></label>
           <label className="wide-field">Termos bloqueados<input value={data.config.qualityBlockedTerms ?? ''} onChange={(event) => setConfigField('qualityBlockedTerms', event.target.value)} /><small>Separe por vírgula. Itens com esses termos perdem qualidade.</small></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.qualityFilterEnabled !== false} onChange={(event) => setConfigField('qualityFilterEnabled', event.target.checked)} /><span><strong>Filtro de qualidade</strong><small>Oculta ofertas abaixo da nota mínima.</small></span></label>
-          <label className="toggle-card"><input type="checkbox" checked={data.config.staleOffersHidden !== false} onChange={(event) => setConfigField('staleOffersHidden', event.target.checked)} /><span><strong>Ocultar ofertas antigas</strong><small>Usa o limite de idade definido acima.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.qualityRequireImage !== false} onChange={(event) => setConfigField('qualityRequireImage', event.target.checked)} /><span><strong>Exigir imagem segura</strong><small>Considera apenas imagens com HTTPS.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.qualityRequireHttpsLink !== false} onChange={(event) => setConfigField('qualityRequireHttpsLink', event.target.checked)} /><span><strong>Exigir link HTTPS</strong><small>Ajuda a evitar destinos inseguros.</small></span></label>
           <label className="toggle-card"><input type="checkbox" checked={data.config.linkCheckEnabled !== false} onChange={(event) => setConfigField('linkCheckEnabled', event.target.checked)} /><span><strong>Verificação de links</strong><small>Habilita o monitor para domínios conhecidos.</small></span></label>

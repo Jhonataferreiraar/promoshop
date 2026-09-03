@@ -34,6 +34,7 @@
     "test:monitoring": "node scripts/test-monitoring.mjs",
     "test:instagram": "node scripts/test-instagram.mjs",
     "test:store": "node scripts/test-store-compaction.mjs",
+    "test:offer-retention": "node scripts/test-offer-retention.mjs",
     "test:postgres": "node scripts/test-postgres-store.mjs",
     "test:extension": "node scripts/test-extension.mjs",
     "test:extension-batch": "node scripts/test-extension-mercadolivre-batch.mjs",
