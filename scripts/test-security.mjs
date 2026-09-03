@@ -237,6 +237,11 @@ try {
   assert.match(sitemap, /<urlset/);
   assert.match(sitemap, /\/privacidade/);
   assert.doesNotMatch(sitemap, /\/favoritos/);
+  const missingPageResponse = await fetch(`${origin}/pagina-que-nao-existe`);
+  assert.equal(missingPageResponse.status, 404);
+  const missingPageHtml = await missingPageResponse.text();
+  assert.match(missingPageHtml, /<title>Página não encontrada — PromoShop<\/title>/);
+  assert.match(missingPageHtml, /noindex, nofollow/);
 
   const createdOfferResponse = await fetch(`${origin}/api/admin/offers`, {
     method: 'POST', headers: authorization,

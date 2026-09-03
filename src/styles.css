@@ -5656,6 +5656,17 @@ button {
 .product-copy > p { margin: 20px 0; color: #64748b; line-height: 1.65; }
 .product-actions { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 .product-related { margin-top: 72px; }
+.not-found-main { min-height: 540px; display: grid; place-items: center; padding-block: 72px 92px; background: radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 42%); }
+.not-found-card { width: min(680px, 100%); padding: clamp(32px, 7vw, 72px) clamp(24px, 7vw, 68px); border: 1px solid #e2e8f0; border-radius: 28px; background: #fff; box-shadow: 0 22px 60px rgba(15,23,42,.09); text-align: center; }
+.not-found-code { display: block; color: var(--primary); font: 800 clamp(86px, 16vw, 156px)/.8 var(--font-display); letter-spacing: -.08em; }
+.not-found-card .eyebrow { display: inline-block; margin-top: 28px; }
+.not-found-card h1 { margin: 12px 0 14px; color: #151d2d; font-size: clamp(28px, 4vw, 44px); line-height: 1.08; letter-spacing: -.04em; }
+.not-found-card p { max-width: 500px; margin: 0 auto; color: #64748b; line-height: 1.65; }
+.not-found-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+.not-found-actions .button { min-width: 170px; }
+.not-found-links { display: flex; justify-content: center; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-top: 30px; padding-top: 20px; border-top: 1px solid #edf1f6; color: #64748b; font-size: 12px; }
+.not-found-links a { color: var(--primary); font-weight: 700; text-decoration: none; }
+.not-found-links a:hover { text-decoration: underline; }
 .analytics-toolbar { display: flex; gap: 10px; align-items: center; }
 .analytics-toolbar select { min-height: 42px; border: 1px solid #d8e0eb; border-radius: 10px; padding: 0 12px; background: #fff; }
 .search-console-panel .settings-grid { margin-top: 18px; }
@@ -5695,6 +5706,10 @@ button {
   .product-copy h1 { font-size: 28px; }
   .product-actions .button { width: 100%; }
   .product-related { margin-top: 48px; }
+  .not-found-main { min-height: 480px; padding-block: 38px 58px; }
+  .not-found-card { border-radius: 20px; }
+  .not-found-actions { display: grid; }
+  .not-found-actions .button { width: 100%; }
   .analytics-toolbar, .review-actions { width: 100%; flex-direction: column; align-items: stretch; }
   .review-row { grid-template-columns: auto 52px minmax(0, 1fr); }
   .review-row > img { width: 52px; height: 52px; }
@@ -5979,70 +5994,7 @@ button {
   }
 }
 
-/* Centro de campanhas, calendário e monitoramento de preço */
-.growth-layout { display: grid; gap: 20px; }
-.growth-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.growth-stats > div { min-width: 0; }
-.growth-form-panel .panel-heading, .growth-monitor-panel .panel-heading, .growth-calendar-panel .panel-heading, .growth-stores-panel .panel-heading { align-items: flex-start; }
-.growth-form, .growth-monitor-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
-.growth-form label, .growth-monitor-form label { display: grid; gap: 7px; color: #344054; font-size: 13px; font-weight: 700; }
-.growth-form input, .growth-form select, .growth-monitor-form input, .growth-monitor-form select { width: 100%; min-height: 44px; border: 1px solid #d0d5dd; border-radius: 10px; padding: 0 12px; background: #fff; color: #101828; font: inherit; }
-.growth-form small, .growth-monitor-form small, .growth-card small, .growth-monitor-item small, .growth-calendar small, .growth-store-links small { color: #667085; font-size: 11px; line-height: 1.4; }
-.growth-fieldset { display: grid; gap: 8px; grid-column: 1 / -1; padding: 14px; border: 1px solid #eaecf0; border-radius: 12px; background: #f8fafc; }
-.growth-fieldset > strong { color: #101828; font-size: 13px; }
-.growth-check-list { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.growth-check-list label { display: flex; align-items: center; gap: 7px; color: #475467; font-size: 12px; font-weight: 600; }
-.growth-check-list input, .growth-toggle input { width: 17px; min-height: 17px; accent-color: var(--primary); }
-.growth-offers-fieldset > input { min-height: 40px; border: 1px solid #d0d5dd; border-radius: 9px; padding: 0 10px; font: inherit; }
-.growth-offers-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 250px; overflow: auto; padding-right: 4px; }
-.growth-offers-list label { align-items: flex-start; }
-.growth-offers-list label span { display: grid; gap: 2px; min-width: 0; }
-.growth-offers-list label span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.growth-form-actions { display: flex; justify-content: flex-end; grid-column: 1 / -1; }
-.growth-card-list, .growth-monitor-list, .growth-calendar { display: grid; gap: 10px; }
-.growth-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid #eaecf0; border-radius: 13px; background: #fff; }
-.growth-card > div:first-child, .growth-monitor-item > div { display: grid; gap: 5px; min-width: 0; }
-.growth-card h3 { margin: 0; color: #101828; font-size: 16px; }
-.growth-card p { margin: 0; color: #475467; font-size: 12px; }
-.growth-status, .growth-monitor-status { display: inline-flex; width: fit-content; padding: 4px 8px; border-radius: 999px; color: #344054; background: #f2f4f7; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
-.growth-status.active, .growth-monitor-status.below-target { color: #067647; background: #ecfdf3; }
-.growth-status.scheduled { color: #1849a9; background: #eff4ff; }
-.growth-status.paused, .growth-status.completed { color: #b54708; background: #fffaeb; }
-.growth-card-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
-.growth-card-actions .button, .growth-card-actions .text-button { white-space: nowrap; }
-.growth-monitor-form { grid-template-columns: 2fr 1fr auto auto auto; align-items: end; }
-.growth-toggle { display: flex !important; grid-template-columns: none; align-items: center; gap: 8px !important; min-height: 44px; white-space: nowrap; }
-.growth-monitor-form > .button { min-height: 44px; white-space: nowrap; }
-.growth-monitor-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border: 1px solid #eaecf0; border-radius: 12px; }
-.growth-monitor-status { margin-top: 2px; }
-.growth-monitor-status.changed { color: #b54708; background: #fffaeb; }
-.growth-monitor-status.unavailable { color: #b42318; background: #fef3f2; }
-.growth-calendar > div { display: grid; grid-template-columns: 150px 12px minmax(0, 1fr); align-items: center; gap: 12px; padding: 11px 12px; border-bottom: 1px solid #f2f4f7; }
-.growth-calendar > div:last-child { border-bottom: 0; }
-.growth-calendar time { color: #667085; font-size: 12px; font-weight: 700; }
-.growth-calendar-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
-.growth-calendar-dot.publication { background: #12b76a; }
-.growth-calendar > div > div { display: grid; gap: 3px; min-width: 0; }
-.growth-calendar strong { overflow: hidden; color: #101828; text-overflow: ellipsis; white-space: nowrap; }
-.growth-store-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.growth-store-links a { display: grid; gap: 5px; padding: 14px; border: 1px solid #dbe5ff; border-radius: 12px; color: #1849a9; background: #f8fbff; text-decoration: none; }
-.growth-store-links a:hover { border-color: #98b7ff; background: #eff4ff; }
-.growth-store-links a span { font-weight: 800; }
-
-@media (max-width: 1000px) {
-  .growth-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .growth-monitor-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .growth-monitor-form > .button { grid-column: 1 / -1; }
-  .growth-store-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 640px) {
-  .growth-form, .growth-monitor-form, .growth-offers-list { grid-template-columns: 1fr; }
-  .growth-card, .growth-monitor-item { align-items: stretch; flex-direction: column; }
-  .growth-card-actions { justify-content: flex-start; }
-  .growth-calendar > div { grid-template-columns: 1fr 10px minmax(0, 2fr); gap: 8px; }
-  .growth-calendar time { font-size: 10px; }
-  .growth-store-links { grid-template-columns: 1fr; }
   .admin-user-form { grid-template-columns: 1fr; }
   .admin-users-list > div { grid-template-columns: minmax(0, 1fr) auto; }
   .admin-users-list > div .danger-text { grid-column: 1 / -1; justify-self: start; }

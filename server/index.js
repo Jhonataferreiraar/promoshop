@@ -4120,9 +4120,6 @@ app.get(
         shortCode: couponShortCode(coupon),
         shortUrl: couponShortUrl(coupon, req)
       })),
-      campaigns: (Array.isArray(dashboardData.campaigns) ? dashboardData.campaigns : []).map((campaign) => adminCampaignPayload(campaign, dashboardData)),
-      priceMonitors: (Array.isArray(dashboardData.priceMonitors) ? dashboardData.priceMonitors : []).map((monitor) => adminPriceMonitorPayload(monitor, dashboardData)),
-
       analytics:
         summarizeAnalytics(
           dashboardData.analytics
@@ -10506,15 +10503,6 @@ cron.schedule('10 2 * * *', async () => {
     await addLog(`Backup automático não concluído: ${error.message}`, 'error').catch(() => {});
   }
 }, { timezone: 'America/Sao_Paulo' });
-
-cron.schedule('45 * * * *', async () => {
-  try {
-    const { config } = await readStore();
-    if (config.priceMonitoringEnabled !== false) await runPriceMonitorChecks();
-  } catch (error) {
-    console.error('Falha ao verificar monitoramentos de preço:', error.message);
-  }
-});
 
 cron.schedule('20 */6 * * *', async () => {
   try {

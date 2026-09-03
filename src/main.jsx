@@ -5,7 +5,6 @@ import InstagramPanel from './InstagramPanel.jsx';
 import InstagramFeedPanel from './InstagramFeedPanel.jsx';
 import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
-import GrowthPanel from './GrowthPanel.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
 import { optimizedProductImage, optimizedProductImageSrcSet } from './imageOptimization.js';
 
@@ -94,8 +93,6 @@ const fallbackConfig = {
   extensionStores: ['Mercado Livre', 'Shopee', 'AliExpress', 'Magalu'],
   extensionAudienceCodes: ['G01'],
   extensionMaxCouponsPerRequest: 10,
-  campaignsEnabled: true,
-  priceMonitoringEnabled: true,
   automaticBackupEnabled: true,
   automaticBackupRetention: 7
 };
@@ -495,6 +492,7 @@ function PublicSite() {
   const [suggestions, setSuggestions] = useState([]);
   const favoritesOnly = window.location.pathname === '/favoritos';
   const [loading, setLoading] = useState(true);
+  const [offerLoadFailed, setOfferLoadFailed] = useState(false);
   const [audiences, setAudiences] = useState([]);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMessage, setAssistantMessage] = useState('');
@@ -549,12 +547,14 @@ function PublicSite() {
       setOfferStores(Array.isArray(result.stores) ? result.stores : []);
       setOfferCategories(Array.isArray(result.categories) ? result.categories : []);
       setTopDiscount(Number(result.topDiscount || 0));
+      setOfferLoadFailed(false);
       return nextOffers;
     } catch {
       if (!append) {
         setOffers([]);
         setOfferTotal(0);
       }
+      if (!append) setOfferLoadFailed(true);
       return [];
     } finally {
       if (requestId === offerRequestRef.current) {
@@ -640,6 +640,11 @@ function PublicSite() {
   const visibleOffers = favoritesOnly ? offers.filter((offer) => favoriteSet.has(offer.id)) : offers;
   const filtersActive = Boolean(favoritesOnly || query || store !== 'Todas' || category || minPrice || maxPrice || minDiscount || freeShipping);
   const displayedOffers = filtersActive ? visibleOffers : visibleOffers.slice(0, homeOfferLimit);
+  const catalogRouteWithoutResults = !loading
+    && !offerLoadFailed
+    && !favoritesOnly
+    && (pathParts[0] === 'loja' || pathParts[0] === 'ofertas')
+    && offerTotal === 0;
   function toggleFavorite(offer) {
     setFavorites((current) => {
       const next = current.includes(offer.id) ? current.filter((id) => id !== offer.id) : [...current, offer.id];
@@ -648,6 +653,8 @@ function PublicSite() {
       return next;
     });
   }
+
+  if (catalogRouteWithoutResults) return <NotFoundPage config={config} />;
 
   async function showMoreOffers() {
     if (!filtersActive && homeOfferLimit < visibleOffers.length) {
@@ -1069,7 +1076,7 @@ function ProductDetail({ slug }) {
     });
   }
 
-  if (error) return <div className="site-shell"><header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /></div></header><main className="product-page container"><div className="empty"><strong>{error}</strong><p>Esta oferta pode ter expirado ou sido removida.</p><a className="button primary" href="/">Ver ofertas atuais</a></div></main><SiteFooter config={config} /></div>;
+  if (error) return <NotFoundPage config={config} detail={error} />;
   if (!data?.offer) return <div className="site-shell"><main className="product-page container"><p className="notice">Carregando oferta…</p></main></div>;
   const { offer, comparisons = [], related = [] } = data;
   return <div className="site-shell">
@@ -1116,6 +1123,47 @@ function SiteFooter({ config = fallbackConfig }) {
     </div>
     <div className="container footer-bottom"><span>© {year} {brandName}. Todos os direitos reservados.</span><span>Links de afiliado podem gerar comissão, sem custo adicional.</span></div>
   </footer>;
+}
+
+function NotFoundPage({ config: initialConfig = null, detail = '' }) {
+  const [config, setConfig] = useState(() => ({ ...fallbackConfig, ...(initialConfig || {}) }));
+
+  useEffect(() => {
+    if (initialConfig) {
+      setConfig({ ...fallbackConfig, ...initialConfig });
+      return undefined;
+    }
+    let active = true;
+    api('/home')
+      .then((result) => {
+        if (active) setConfig({ ...fallbackConfig, ...(result.config || {}) });
+      })
+      .catch(() => { });
+    return () => { active = false; };
+  }, [initialConfig]);
+
+  useEffect(() => {
+    const brandName = config.brandName || fallbackConfig.brandName;
+    document.title = `Página não encontrada — ${brandName}`;
+    const description = document.querySelector('meta[name="description"]');
+    if (description) description.setAttribute('content', 'Esta página não existe ou não está mais disponível. Encontre as ofertas atuais no PromoShop.');
+  }, [config.brandName]);
+
+  return <div className="site-shell not-found-page">
+    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/cupons">Cupons</a><a href="/#grupos">Grupos</a></nav></div></header>
+    <main className="not-found-main container" aria-labelledby="not-found-title">
+      <section className="not-found-card">
+        <span className="not-found-code" aria-hidden="true">404</span>
+        <span className="eyebrow dark">ENDEREÇO NÃO ENCONTRADO</span>
+        <h1 id="not-found-title">Esta página não está disponível.</h1>
+        <p>{detail || 'O endereço pode estar incorreto, ter sido alterado ou a oferta já pode ter saído do ar.'}</p>
+        <div className="not-found-actions"><a className="button primary" href="/">Ver ofertas atuais</a><a className="button subtle" href="/cupons">Ver cupons</a></div>
+        <div className="not-found-links"><span>Você também pode:</span><a href="/sobre">Conhecer o PromoShop</a><a href="/contato">Falar conosco</a></div>
+      </section>
+    </main>
+    <SiteFooter config={config} />
+    <PrivacyConsent policyVersion={config.legalPolicyVersion} />
+  </div>;
 }
 
 const publicInfoPages = {
@@ -1537,7 +1585,7 @@ function AdminApp() {
   const [adminRole, setAdminRole] = useState('owner');
   const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], campaigns: [], priceMonitors: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
@@ -1877,11 +1925,6 @@ function AdminApp() {
     loadPanelState('inbox').catch(() => {});
     const interval = window.setInterval(() => loadPanelState('inbox').catch(() => {}), 15000);
     return () => window.clearInterval(interval);
-  }, [token, tab]);
-  useEffect(() => {
-    if (!token || tab !== 'growth') return undefined;
-    loadPanelState('campaigns').catch(() => {});
-    return undefined;
   }, [token, tab]);
   useEffect(() => {
     if (!token || tab !== 'monitoring') return undefined;
@@ -2634,11 +2677,11 @@ function AdminApp() {
     } catch (error) { setMessage(error.message); }
   }
 
-  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', growth: 'Campanhas e calendário', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', monitoring: 'Monitoramento', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
-  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', growth: 'Planeje campanhas, acompanhe preços e organize a agenda editorial.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', monitoring: 'Receba alertas prioritários do servidor e acompanhe a fila de entrega.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
-  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', growth: '✦', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', monitoring: '!', settings: '✦', security: '⌾', logs: '≡' };
+  const tabLabels = { overview: 'Visão geral', offers: 'Ofertas', review: 'Revisar ofertas', coupons: 'Cupons', inbox: 'Caixa de entrada', queue: 'Fila de publicação', sources: 'Fontes de ofertas', whatsapp: 'WhatsApp', groupDirectory: 'Divulgar grupos', instagram: 'Instagram Stories', instagramFeed: 'Instagram Feed', instagramShare: 'Compartilhar no Instagram', instagramHighlights: 'Destaques do Instagram', extensionCoupons: 'Extensão de cupons', extensionMercadoLivre: 'Extensão Mercado Livre', analytics: 'Acessos', health: 'Saúde e backup', monitoring: 'Monitoramento', settings: 'Site e políticas', security: 'Segurança', logs: 'Atividades' };
+  const tabDescriptions = { overview: 'Acompanhe o que está ativo e o que será publicado.', offers: 'Consulte e publique as ofertas disponíveis.', review: 'Encontre ofertas antigas, incompletas ou com baixa qualidade.', coupons: 'Cadastre, divulgue e envie cupons para grupos específicos.', inbox: 'Leia as mensagens do formulário e responda pelo painel.', queue: 'Controle a ordem e o estado das publicações.', sources: 'Configure cada plataforma e as regras de coleta.', whatsapp: 'Gerencie conexão, grupos e horários de publicação.', groupDirectory: 'Divulgue os links dos grupos e escolha exatamente quem receberá a mensagem.', instagram: 'Conecte a conta e configure os Stories automáticos.', instagramFeed: 'Escolha como o Feed usará as promoções mais recentes dos grupos.', instagramShare: 'Baixe templates prontos para compartilhar no seu Instagram pessoal.', instagramHighlights: 'Crie capas, categorias e Stories de apresentação para os Destaques.', extensionCoupons: 'Capture e revise cupons encontrados no Mercado Livre e na Shopee.', extensionMercadoLivre: 'Capture promoções do Mercado Livre já com o link oficial de afiliado.', analytics: 'Veja acessos e interações anônimas autorizadas.', health: 'Confira os componentes do sistema e proteja suas configurações.', monitoring: 'Receba alertas prioritários do servidor e acompanhe a fila de entrega.', settings: 'Edite identidade, SEO, qualidade, privacidade e informações legais.', security: 'Altere o acesso ao painel administrativo.', logs: 'Consulte as ações e os erros recentes do sistema.' };
+  const navIcons = { overview: '⌂', offers: '◇', review: '!', coupons: '♢', inbox: '✉', queue: '↗', sources: '⌁', whatsapp: '◉', groupDirectory: '☷', instagram: '◎', instagramFeed: '▦', instagramShare: '↗', instagramHighlights: '◉', extensionCoupons: '♢', extensionMercadoLivre: 'ML', analytics: '▥', health: '✓', monitoring: '!', settings: '✦', security: '⌾', logs: '≡' };
   const navGroups = [
-    { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue', 'growth'] },
+    { label: 'Operação', items: ['overview', 'offers', 'review', 'coupons', 'inbox', 'queue'] },
     { label: 'Automação', items: ['sources', 'whatsapp', 'groupDirectory', 'instagram', 'instagramFeed', 'instagramShare', 'instagramHighlights', 'extensionCoupons', 'extensionMercadoLivre'] },
     { label: 'Sistema', items: ['analytics', 'health', 'monitoring', 'settings', 'security', 'logs'] }
   ];
@@ -3182,7 +3225,6 @@ function AdminApp() {
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
     {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
-    {tab === 'growth' && <GrowthPanel data={data} authApi={authApi} setMessage={setMessage} load={load} />}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
@@ -3510,7 +3552,7 @@ function AdminApp() {
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand aliexpress">AE</div><div><h2>AliExpress</h2><p>Standard API para Publishers.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableAliexpress)} onChange={(event) => setData({ ...data, config: { ...data.config, enableAliexpress: event.target.checked } })} /><span></span></label></div>
-          <div className="source-note"><strong>Campanhas automáticas</strong><span>Coleta as campanhas ativas. Busca livre exige Advanced API.</span></div>
+          <div className="source-note"><strong>Ofertas automáticas</strong><span>Coleta ofertas ativas da plataforma. Busca livre exige Advanced API.</span></div>
           <div className="source-card-body"><label>Tracking ID<input value={data.config.aliexpressTrackingId ?? 'promoshop'} onChange={(event) => setData({ ...data, config: { ...data.config, aliexpressTrackingId: event.target.value.trim() } })} placeholder="promoshop" /></label><label>App Key<input value={secretForm.aliexpressAppKey} onChange={(event) => setSecretForm({ ...secretForm, aliexpressAppKey: event.target.value.trim() })} placeholder={data.secrets?.aliexpressAppKeyConfigured ? 'App Key configurada' : 'Cole a App Key'} autoComplete="off" /></label><label>App Secret<input type="password" value={secretForm.aliexpressAppSecret} onChange={(event) => setSecretForm({ ...secretForm, aliexpressAppSecret: event.target.value })} placeholder={data.secrets?.aliexpressAppSecretConfigured ? 'Secret configurado — digite para substituir' : 'Cole o App Secret'} autoComplete="new-password" /></label><label>App Signature <small>(opcional)</small><input type="password" value={secretForm.aliexpressAppSignature} onChange={(event) => setSecretForm({ ...secretForm, aliexpressAppSignature: event.target.value })} placeholder={data.secrets?.aliexpressAppSignatureConfigured ? 'Signature configurada — digite para substituir' : 'Pode deixar vazio'} autoComplete="new-password" /></label><button className="button subtle full" type="button" onClick={testAliexpress}>Testar conexão do AliExpress</button></div>
         </section>
         <section className="panel source-card">
@@ -3520,7 +3562,7 @@ function AdminApp() {
         </section>
         <section className="panel source-card">
           <div className="source-card-head"><div className="source-brand netshoes">N</div><div><h2>Netshoes</h2><p>Parceiro Netshoes / rede de afiliados.</p></div><label className="switch"><input type="checkbox" checked={Boolean(data.config.enableNetshoes)} onChange={(event) => setData({ ...data, config: { ...data.config, enableNetshoes: event.target.checked } })} /><span></span></label></div>
-          <div className="source-note"><strong>Integração preparada</strong><span>O programa de afiliados entrega links e campanhas pelo portal parceiro. A API pública encontrada é de marketplace para sellers, não de afiliados.</span></div>
+          <div className="source-note"><strong>Integração preparada</strong><span>O programa de afiliados entrega links e ofertas pelo portal parceiro. A API pública encontrada é de marketplace para sellers, não de afiliados.</span></div>
           <div className="source-card-body"><label>ID do afiliado<input value={secretForm.netshoesAffiliateId} onChange={(event) => setSecretForm({ ...secretForm, netshoesAffiliateId: event.target.value.trim() })} placeholder={data.secrets?.netshoesAffiliateIdConfigured ? 'ID configurado' : 'Cole o ID do programa'} autoComplete="off" /></label><label>Chave ou token <small>(se fornecido)</small><input type="password" value={secretForm.netshoesApiKey} onChange={(event) => setSecretForm({ ...secretForm, netshoesApiKey: event.target.value })} placeholder={data.secrets?.netshoesApiKeyConfigured ? 'Chave configurada — digite para substituir' : 'Cole a chave/token'} autoComplete="new-password" /></label><small>O cadastro fica criptografado. Não use o token de seller sem confirmar que ele é de afiliado.</small></div>
         </section>
       </div>
@@ -3846,7 +3888,7 @@ function AdminApp() {
       <section className={`panel health-summary ${data.systemHealth?.status || 'attention'}`}><div><span className="section-step">DIAGNÓSTICO</span><h2>{data.systemHealth?.status === 'healthy' ? 'Sistema funcionando normalmente' : data.systemHealth?.status === 'critical' ? 'O sistema precisa de atenção imediata' : 'Há itens para revisar'}</h2><p>Verificação atualizada em {data.systemHealth?.checkedAt ? new Date(data.systemHealth.checkedAt).toLocaleString('pt-BR') : '—'}.</p></div><button className="button subtle" type="button" onClick={() => load()}>Verificar novamente</button></section>
       <div className="health-check-grid">{(data.systemHealth?.checks || []).map((check) => <article className={`panel health-check ${check.ok ? 'ok' : 'warning'}`} key={check.id}><span>{check.ok ? '✓' : '!'}</span><div><h3>{check.label}</h3><p>{check.detail}</p></div></article>)}</div>
       <section className="panel backup-panel"><div><span className="section-step">MANUTENÇÃO SEGURA</span><h2>Links, configurações e cupons</h2><p>Verifique os links conhecidos em pequenos lotes ou baixe uma cópia operacional. Por privacidade e segurança, o backup não inclui senhas, chaves de API, sessão do WhatsApp, mensagens de contato, comprovantes de consentimento ou identificadores de audiência.</p></div><div className="backup-actions"><button className="button subtle" type="button" onClick={checkOfferLinks}>Verificar links</button><button className="button primary" type="button" onClick={downloadBackup}>Baixar backup</button><button className="button subtle" type="button" onClick={() => backupInputRef.current?.click()}>Restaurar backup</button><input ref={backupInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={restoreBackup} /></div></section>
-      <section className="panel backup-auto-panel"><div className="panel-heading"><div><span className="section-step">BACKUP AUTOMÁTICO</span><h2>Proteja o planejamento</h2><p>Uma cópia operacional diária guarda configurações, campanhas, monitoramentos e cupons. Credenciais e dados pessoais ficam fora do arquivo.</p></div><button className="button primary" type="button" onClick={createAutomaticBackup}>Criar agora</button></div><div className="settings-grid backup-auto-settings"><label className="toggle-card"><input type="checkbox" checked={data.config.automaticBackupEnabled !== false} onChange={(event) => setConfigField('automaticBackupEnabled', event.target.checked)} /><span><strong>Backup diário ativo</strong><small>Executado automaticamente às 02:10 (horário de Brasília).</small></span></label><label>Reter por (dias)<select value={data.config.automaticBackupRetention ?? 7} onChange={(event) => setConfigField('automaticBackupRetention', Number(event.target.value))}>{[1, 3, 7, 14, 30].map((days) => <option key={days} value={days}>{days} dias</option>)}</select></label><button className="button subtle" type="button" onClick={() => saveConfig({ preventDefault() {} })}>Salvar preferência</button></div><div className="backup-history"><strong>{backupHistory.lastAutomaticAt ? `Último backup: ${new Date(backupHistory.lastAutomaticAt).toLocaleString('pt-BR')}` : 'Nenhum backup automático criado ainda.'}</strong>{backupHistory.files?.length > 0 && <><small>{backupHistory.files.length} arquivo(s) mantido(s) · retenção de {backupHistory.retention || data.config.automaticBackupRetention || 7} dias</small><div className="backup-file-list">{backupHistory.files.slice(0, 8).map((file) => <a key={file.name} href={`/api/admin/backup/automatic/${encodeURIComponent(file.name)}`} download={file.name}>{file.name} · {(Number(file.size || 0) / 1024).toFixed(1)} KB</a>)}</div></>}</div></section>
+      <section className="panel backup-auto-panel"><div className="panel-heading"><div><span className="section-step">BACKUP AUTOMÁTICO</span><h2>Proteja suas configurações</h2><p>Uma cópia operacional diária guarda configurações, ofertas e cupons. Credenciais e dados pessoais ficam fora do arquivo.</p></div><button className="button primary" type="button" onClick={createAutomaticBackup}>Criar agora</button></div><div className="settings-grid backup-auto-settings"><label className="toggle-card"><input type="checkbox" checked={data.config.automaticBackupEnabled !== false} onChange={(event) => setConfigField('automaticBackupEnabled', event.target.checked)} /><span><strong>Backup diário ativo</strong><small>Executado automaticamente às 02:10 (horário de Brasília).</small></span></label><label>Reter por (dias)<select value={data.config.automaticBackupRetention ?? 7} onChange={(event) => setConfigField('automaticBackupRetention', Number(event.target.value))}>{[1, 3, 7, 14, 30].map((days) => <option key={days} value={days}>{days} dias</option>)}</select></label><button className="button subtle" type="button" onClick={() => saveConfig({ preventDefault() {} })}>Salvar preferência</button></div><div className="backup-history"><strong>{backupHistory.lastAutomaticAt ? `Último backup: ${new Date(backupHistory.lastAutomaticAt).toLocaleString('pt-BR')}` : 'Nenhum backup automático criado ainda.'}</strong>{backupHistory.files?.length > 0 && <><small>{backupHistory.files.length} arquivo(s) mantido(s) · retenção de {backupHistory.retention || data.config.automaticBackupRetention || 7} dias</small><div className="backup-file-list">{backupHistory.files.slice(0, 8).map((file) => <a key={file.name} href={`/api/admin/backup/automatic/${encodeURIComponent(file.name)}`} download={file.name}>{file.name} · {(Number(file.size || 0) / 1024).toFixed(1)} KB</a>)}</div></>}</div></section>
       <section className="panel health-privacy-note"><strong>Importante</strong><p>O disco persistente do Render conserva os dados entre reinícios. Durante uma nova publicação, esse tipo de disco pode causar uma breve indisponibilidade; o painel diferencia isso de falhas permanentes.</p></section>
     </div>}
     {tab === 'monitoring' && <form className="site-settings-layout monitoring-page" onSubmit={saveConfig}>
@@ -4209,5 +4251,14 @@ const isAdmin = window.location.pathname.startsWith('/admin');
 const normalizedPublicPath = window.location.pathname.replace(/\/+$/, '') || '/';
 const isInfoPage = Object.prototype.hasOwnProperty.call(publicInfoPages, normalizedPublicPath);
 const isCouponsPage = normalizedPublicPath === '/cupons';
+const isFavoritesPage = normalizedPublicPath === '/favoritos';
+const isCatalogPage = /^\/(?:ofertas|loja)\/[^/]+$/.test(normalizedPublicPath);
 const productSlug = normalizedPublicPath.match(/^\/oferta\/([^/]+)$/)?.[1] || '';
-createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
+const isNotFoundPage = !isAdmin
+  && !isInfoPage
+  && !isCouponsPage
+  && !isFavoritesPage
+  && !isCatalogPage
+  && !productSlug
+  && normalizedPublicPath !== '/';
+createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : isNotFoundPage ? <NotFoundPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
