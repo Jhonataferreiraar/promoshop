@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './InstagramHighlightsPanel.css';
+import Icon from './Icon.jsx';
 
 const DEFAULT_ITEMS = [
   { id: 'offers', name: 'Ofertas', icon: 'bolt', description: 'Achados e promoções selecionadas todos os dias.', enabled: true },
@@ -8,8 +9,8 @@ const DEFAULT_ITEMS = [
 ];
 
 const ICONS = [
-  ['bolt', '⚡', 'Oferta'], ['ticket', '🎟', 'Cupom'], ['users', '●●', 'Pessoas'], ['store', '▣', 'Loja'],
-  ['info', 'i', 'Informação'], ['message', '✉', 'Mensagem'], ['star', '★', 'Estrela'], ['heart', '♥', 'Coração']
+  ['bolt', 'Oferta'], ['ticket', 'Cupom'], ['users', 'Pessoas'], ['store', 'Loja'],
+  ['info', 'Informação'], ['message', 'Mensagem'], ['star', 'Estrela'], ['heart', 'Coração']
 ];
 
 const MARKETPLACES = [
@@ -175,12 +176,12 @@ export default function InstagramHighlightsPanel({ data, setData, authApi, setMe
         <div className="panel-heading"><div><h2>Categorias</h2><p>Edite o nome, símbolo, logo e texto de cada Destaque.</p></div><div className="highlight-heading-actions"><button className="button subtle" type="button" onClick={addMarketplaceItems}>+ Adicionar lojas</button><button className="button subtle" type="button" onClick={addItem}>+ Novo Destaque</button></div></div>
         <div className="highlight-tabs" role="tablist">
           {items.map((item) => <button type="button" role="tab" aria-selected={selected?.id === item.id} className={selected?.id === item.id ? 'active' : ''} key={item.id} onClick={() => { setSelectedId(item.id); setPreview(null); }}>
-            <span>{MARKETPLACES.find((store) => store.id === item.marketplace)?.short || ICONS.find(([id]) => id === item.icon)?.[1] || '★'}</span>{item.name}<i className={item.enabled === false ? 'off' : ''}></i>
+            <span><Icon name={MARKETPLACES.find((store) => store.id === item.marketplace) ? 'store' : item.icon} size={14} /></span>{item.name}<i className={item.enabled === false ? 'off' : ''}></i>
           </button>)}
         </div>
         {selected && <div className="highlight-form">
           <label>Nome do Destaque<input maxLength="30" value={selected.name} onChange={(event) => updateItem(selected.id, 'name', event.target.value)} /></label>
-          <label>Ícone<select value={selected.icon} onChange={(event) => updateItem(selected.id, 'icon', event.target.value)}>{ICONS.map(([id, symbol, label]) => <option key={id} value={id}>{symbol} {label}</option>)}</select></label>
+          <label>Ícone<select value={selected.icon} onChange={(event) => updateItem(selected.id, 'icon', event.target.value)}>{ICONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
           <label>Logo da loja<select value={selected.marketplace || ''} onChange={(event) => updateItem(selected.id, 'marketplace', event.target.value)}><option value="">Nenhuma — usar ícone</option>{MARKETPLACES.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select><small className="highlight-field-help">A logo aparece na capa e no Story deste Destaque.</small></label>
           <label className="wide">Texto do Story<textarea maxLength="180" rows="3" value={selected.description} onChange={(event) => updateItem(selected.id, 'description', event.target.value)} /><small>{selected.description.length}/180 caracteres</small></label>
           <label className="highlight-switch"><input type="checkbox" checked={selected.enabled !== false} onChange={(event) => updateItem(selected.id, 'enabled', event.target.checked)} /><span><strong>Mostrar esta categoria</strong><small>Desative sem apagar a configuração.</small></span></label>

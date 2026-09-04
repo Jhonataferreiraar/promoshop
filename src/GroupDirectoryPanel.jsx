@@ -10,9 +10,9 @@ export default function GroupDirectoryPanel({ data, setData, authApi, setMessage
   const audiences = useMemo(() => (config.whatsappAudiences || []).filter((audience) => audience.enabled !== false), [config.whatsappAudiences]);
   const linkableCodes = audiences.filter((audience) => audience.whatsappLink).map((audience) => String(audience.code).toUpperCase());
   const activeCodes = audiences.map((audience) => String(audience.code).toUpperCase());
-  const [title, setTitle] = useState(config.whatsappDirectoryTitle || '📢 Encontre seu grupo PromoShop');
+  const [title, setTitle] = useState(config.whatsappDirectoryTitle || 'Encontre seu grupo PromoShop');
   const [intro, setIntro] = useState(config.whatsappDirectoryIntro || 'Escolha os assuntos que você mais gosta e entre nos grupos:');
-  const [footer, setFooter] = useState(config.whatsappDirectoryFooter || '✅ Entre nos seus favoritos e acompanhe as próximas ofertas.');
+  const [footer, setFooter] = useState(config.whatsappDirectoryFooter || 'Entre nos seus favoritos e acompanhe as próximas ofertas.');
   const [includedCodes, setIncludedCodes] = useState(() => {
     const saved = normalizedCodes(config.whatsappDirectoryIncludedCodes).filter((code) => linkableCodes.includes(code));
     return saved.length ? saved : linkableCodes;
@@ -24,7 +24,7 @@ export default function GroupDirectoryPanel({ data, setData, authApi, setMessage
   const [busy, setBusy] = useState('');
 
   const includedGroups = audiences.filter((audience) => includedCodes.includes(String(audience.code).toUpperCase()) && audience.whatsappLink);
-  const preview = [`*${title || '📢 Encontre seu grupo PromoShop'}*`, intro,
+  const preview = [`*${title || 'Encontre seu grupo PromoShop'}*`, intro,
     includedGroups.map((audience) => `• *${audience.name || audience.code}*\n${audience.whatsappLink}`).join('\n\n'), footer
   ].filter(Boolean).join('\n\n');
 

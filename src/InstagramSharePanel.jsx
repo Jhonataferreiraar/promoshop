@@ -13,7 +13,7 @@ export default function InstagramSharePanel({ data, authApi, setMessage }) {
   const [groupCode, setGroupCode] = useState('');
   const [siteTitle, setSiteTitle] = useState('PromoShop - Ofertas Diárias');
   const [siteDescription, setSiteDescription] = useState('Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas');
-  const [bio, setBio] = useState('⚡ Ofertas e cupons selecionados\n💸 Preços baixos todos os dias\n🛒 Achados das melhores lojas\n👇 Confira as ofertas');
+  const [bio, setBio] = useState('Ofertas e cupons selecionados\nPreços baixos todos os dias\nAchados das melhores lojas\nConfira as ofertas');
   const [themeId, setThemeId] = useState('');
   const [ctaText, setCtaText] = useState('Acesse o link da bio');
   const [manualLinkPlacement, setManualLinkPlacement] = useState(false);

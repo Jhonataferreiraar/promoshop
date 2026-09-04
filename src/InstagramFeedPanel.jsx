@@ -32,7 +32,7 @@ export default function InstagramFeedPanel({ data, setData, authApi, setMessage 
   const [selected, setSelected] = useState([]);
   const [format, setFormat] = useState(config.instagramFeedFormat || 'portrait');
   const [themeId, setThemeId] = useState('');
-  const [caption, setCaption] = useState(config.instagramFeedCaption || '🔥 Ofertas selecionadas do dia\n\n{offers}\n\n🔗 Acesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção');
+  const [caption, setCaption] = useState(config.instagramFeedCaption || 'Ofertas selecionadas do dia\n\n{offers}\n\nAcesse a bio do perfil\n\n#PromoShop #Ofertas #Promoção');
   const [scheduledFor, setScheduledFor] = useState('');
   const [previewUrls, setPreviewUrls] = useState([]);
   const [previewTemplates, setPreviewTemplates] = useState([]);
