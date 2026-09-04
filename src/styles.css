@@ -6668,6 +6668,402 @@ html[data-theme="dark"] .inbox-status {
   background: #3a2e16;
 }
 
+/* Ajustes finais para superfícies que também aparecem em rotas secundárias. */
+html[data-theme="dark"] .site-shell .topbar.compact-mobile-nav nav {
+  border-color: #2b3a50;
+  background: #121d2e;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, .34);
+}
+
+html[data-theme="dark"] .site-shell .topbar.compact-mobile-nav nav a {
+  color: #dce6f3;
+}
+
+html[data-theme="dark"] .site-shell .topbar.compact-mobile-nav nav a:hover {
+  color: #eef4fb;
+  background: #1a2b43;
+}
+
+html[data-theme="dark"] .site-shell .category-links a {
+  border-color: #2b3a50;
+  color: #c6d1df;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .site-shell .category-links a:hover {
+  color: #fff;
+  background: #1d4fa8;
+  border-color: #3b82f6;
+}
+
+html[data-theme="dark"] .site-shell .instagram-public-section {
+  background: #0b1120;
+}
+
+html[data-theme="dark"] .site-shell .contact-form label,
+html[data-theme="dark"] .site-shell .contact-form-footer span,
+html[data-theme="dark"] .site-shell .contact-form-alternative,
+html[data-theme="dark"] .site-shell .settings-help {
+  color: #c6d1df;
+}
+
+html[data-theme="dark"] .site-shell .info-contact-missing {
+  border-color: #765d29;
+  color: #f8d58b !important;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .site-shell .contact-status.success {
+  border-color: #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .site-shell .contact-status.error {
+  border-color: #713b43;
+  color: #ffaaa8;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .site-shell .coupon-code {
+  border-color: #61738d;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .site-shell .coupon-code span {
+  color: #eef4fb;
+}
+
+/* O painel contém algumas ferramentas antigas com cores próprias. */
+html[data-theme="dark"] .admin-shell aside {
+  border-right-color: #1f3047;
+  background: #0c1525;
+}
+
+html[data-theme="dark"] .admin-main .group-options,
+html[data-theme="dark"] .admin-main .coupon-audience-picker,
+html[data-theme="dark"] .admin-main .product-search-strict,
+html[data-theme="dark"] .admin-main .keyword-tags,
+html[data-theme="dark"] .admin-main .activity-toolbar,
+html[data-theme="dark"] .admin-main .analytics-chart,
+html[data-theme="dark"] .admin-main .analytics-ranking-list > div,
+html[data-theme="dark"] .admin-main .backup-file-list a,
+html[data-theme="dark"] .admin-main .extension-flow-note,
+html[data-theme="dark"] .admin-main .extension-token-empty,
+html[data-theme="dark"] .admin-main .extension-install-card,
+html[data-theme="dark"] .admin-main .google-search-preview,
+html[data-theme="dark"] .admin-main .google-search-result,
+html[data-theme="dark"] .admin-main .health-privacy-note,
+html[data-theme="dark"] .admin-main .manual-link-share-note {
+  border-color: #2b3a50;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .admin-main .group-option,
+html[data-theme="dark"] .admin-main .coupon-audience-picker .group-option,
+html[data-theme="dark"] .admin-main .instagram-feed-day {
+  border-color: #2b3a50;
+  color: #dce6f3;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .group-selector .group-option,
+html[data-theme="dark"] .admin-main .group-selector .group-option > span {
+  color: #eef4fb !important;
+  -webkit-text-fill-color: #eef4fb;
+}
+
+html[data-theme="dark"] .admin-main .group-options,
+html[data-theme="dark"] .admin-main .coupon-audience-picker {
+  color: #dce6f3;
+}
+
+html[data-theme="dark"] .admin-main .offer-admin-list button,
+html[data-theme="dark"] .admin-main .queue-remove,
+html[data-theme="dark"] .admin-main .queue-force {
+  border-color: #3a4b64;
+  color: #b9d3ff;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .offer-admin-list button.force,
+html[data-theme="dark"] .admin-main .queue-force {
+  border-color: #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .offer-admin-list button.danger,
+html[data-theme="dark"] .admin-main .queue-remove,
+html[data-theme="dark"] .admin-main .queue-clear-failed {
+  border-color: #713b43;
+  color: #ffaaa8;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .status {
+  color: #c6d1df;
+  background: #202c3d;
+}
+
+html[data-theme="dark"] .admin-main .status.pending {
+  color: #f8d58b;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .status.sent {
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .status.failed {
+  color: #ffaaa8;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .status.skipped {
+  color: #b3c0d1;
+  background: #202c3d;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span {
+  border-color: #2b3a50;
+  color: #c6d1df;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span b,
+html[data-theme="dark"] .admin-main .activity-entry > span,
+html[data-theme="dark"] .admin-main .activity-toolbar label,
+html[data-theme="dark"] .admin-main .analytics-ranking-list span,
+html[data-theme="dark"] .admin-main .analytics-note p,
+html[data-theme="dark"] .admin-main .backup-history {
+  color: #c6d1df;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span.info,
+html[data-theme="dark"] .admin-main .activity-entry > b {
+  color: #b9d3ff;
+  border-color: #315788;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span.success,
+html[data-theme="dark"] .admin-main .activity-entry.success > b {
+  color: #8de4b2;
+  border-color: #236b4b;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span.warning,
+html[data-theme="dark"] .admin-main .activity-entry.warning > b {
+  color: #f8d58b;
+  border-color: #765d29;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .activity-summary > span.error,
+html[data-theme="dark"] .admin-main .activity-entry.error > b {
+  color: #ffaaa8;
+  border-color: #713b43;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .analytics-funnel-step,
+html[data-theme="dark"] .admin-main .analytics-note,
+html[data-theme="dark"] .admin-main .analytics-ranking-list > div {
+  border-color: #2b3a50;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .analytics-funnel-step > strong,
+html[data-theme="dark"] .admin-main .analytics-ranking-list span b,
+html[data-theme="dark"] .admin-main .analytics-ranking-list strong {
+  color: #eef4fb;
+}
+
+html[data-theme="dark"] .admin-main .analytics-chart {
+  background: linear-gradient(180deg, #142943 0%, #0f1a2b 100%);
+}
+
+html[data-theme="dark"] .admin-main .qr-box,
+html[data-theme="dark"] .admin-main .pairing-box {
+  border-color: #2b3a50;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .admin-main .pairing-code,
+html[data-theme="dark"] .admin-main .qr-box img {
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .pairing-code {
+  color: #8de4b2;
+}
+
+html[data-theme="dark"] .admin-main .inbox-avatar {
+  color: #b9d3ff;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .inbox-list-copy strong,
+html[data-theme="dark"] .admin-main .inbox-detail-head h2,
+html[data-theme="dark"] .admin-main .inbox-replies h3,
+html[data-theme="dark"] .admin-main .inbox-replies article p,
+html[data-theme="dark"] .admin-main .inbox-reply-form label {
+  color: #eef4fb;
+}
+
+html[data-theme="dark"] .admin-main .inbox-message-body,
+html[data-theme="dark"] .admin-main .inbox-replies article,
+html[data-theme="dark"] .admin-main .inbox-replies article.inbound,
+html[data-theme="dark"] .admin-main .inbox-reply-form textarea {
+  border-color: #2b3a50;
+  color: #dce6f3;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .admin-main .inbox-replies article.inbound > div {
+  color: #c6d1df;
+}
+
+html[data-theme="dark"] .admin-main .inbox-status {
+  border-color: #3a4b64;
+  color: #c6d1df;
+  background: #202c3d;
+}
+
+html[data-theme="dark"] .admin-main .inbox-status.unread {
+  border-color: #315788;
+  color: #b9d3ff;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .inbox-status.replied {
+  border-color: #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .product-search-card,
+html[data-theme="dark"] .admin-main .audience-card,
+html[data-theme="dark"] .admin-main .extension-coupon-row,
+html[data-theme="dark"] .admin-main .review-row {
+  border-color: #2b3a50;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .product-search-image,
+html[data-theme="dark"] .admin-main .product-search-store,
+html[data-theme="dark"] .admin-main .audience-card input,
+html[data-theme="dark"] .admin-main .audience-card textarea,
+html[data-theme="dark"] .admin-main .extension-token-result textarea,
+html[data-theme="dark"] .admin-main .extension-install-steps span,
+html[data-theme="dark"] .admin-main .google-search-result-site {
+  border-color: #2b3a50;
+  color: #c6d1df;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .admin-main .product-search-card-content p,
+html[data-theme="dark"] .admin-main .product-search-card-content small,
+html[data-theme="dark"] .admin-main .product-search-price s,
+html[data-theme="dark"] .admin-main .extension-coupon-row small,
+html[data-theme="dark"] .admin-main .review-row > div small,
+html[data-theme="dark"] .admin-main .health-summary p,
+html[data-theme="dark"] .admin-main .health-check p,
+html[data-theme="dark"] .admin-main .backup-panel p {
+  color: #aab7c8;
+}
+
+html[data-theme="dark"] .admin-main .product-search-price span {
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .keyword-editor-label,
+html[data-theme="dark"] .admin-main .admin-permission-row,
+html[data-theme="dark"] .admin-main .extension-choice,
+html[data-theme="dark"] .admin-main .extension-install-steps,
+html[data-theme="dark"] .admin-main .google-search-result-url,
+html[data-theme="dark"] .admin-main .google-search-more {
+  color: #c6d1df;
+}
+
+html[data-theme="dark"] .admin-main .keyword-tag {
+  border-color: #315788;
+  color: #b9d3ff;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .keyword-tag button {
+  color: #b9d3ff;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .google-search-result-title {
+  color: #8db7ff;
+}
+
+html[data-theme="dark"] .admin-main .google-search-result p {
+  color: #b3c0d1;
+}
+
+html[data-theme="dark"] .admin-main .review-filters button,
+html[data-theme="dark"] .admin-main .coupon-cancel-button,
+html[data-theme="dark"] .admin-main .coupon-row-actions button {
+  border-color: #3a4b64;
+  color: #dce6f3;
+  background: #18263a;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.edit {
+  border-color: #315788;
+  color: #b9d3ff;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.danger {
+  border-color: #713b43;
+  color: #ffaaa8;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .extension-hero {
+  border-color: #315788;
+  background: linear-gradient(135deg, #142943, #121d2e);
+}
+
+html[data-theme="dark"] .admin-main .extension-hero h2,
+html[data-theme="dark"] .admin-main .extension-flow-note strong,
+html[data-theme="dark"] .admin-main .health-privacy-note strong,
+html[data-theme="dark"] .admin-main .admin-permission-editor > strong {
+  color: #9fc5ff;
+}
+
+html[data-theme="dark"] .admin-main .extension-hero p,
+html[data-theme="dark"] .admin-main .extension-flow-note p,
+html[data-theme="dark"] .admin-main .extension-token-empty,
+html[data-theme="dark"] .admin-main .extension-install-card p,
+html[data-theme="dark"] .admin-main .extension-install-card code {
+  color: #aab7c8;
+}
+
+html[data-theme="dark"] .admin-main .extension-status {
+  border-color: #3a4b64;
+  color: #c6d1df;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .admin-main .extension-install-card code {
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .settings-save-bar,
+html[data-theme="dark"] .admin-main .instagram-save-bar {
+  background: rgba(18, 29, 46, .96);
+}
+
 @media (max-width: 640px) {
   .site-shell .topbar.compact-mobile-nav .nav-actions {
     display: flex;
