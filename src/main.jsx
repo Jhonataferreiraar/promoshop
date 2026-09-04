@@ -1596,7 +1596,7 @@ function AdminApp() {
   const [adminPermissions, setAdminPermissions] = useState(() => defaultAdminPermissions('owner'));
   const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
+  const [data, setData] = useState({ offers: [], adminOfferTotal: 0, adminOfferLimit: 500, adminOffersHasMore: false, adminOfferStores: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
   const [newOffer, setNewOffer] = useState(defaultNewOffer);
   const [editingOfferId, setEditingOfferId] = useState('');
   const [couponForm, setCouponForm] = useState(defaultCoupon);
@@ -2752,8 +2752,13 @@ function AdminApp() {
   const whatsappConnecting = ['starting', 'qr', 'pairing', 'authenticated'].includes(whatsapp.status);
   const formattedPairingCode = String(whatsapp.pairingCode || '').replace(/\s/g, '').match(/.{1,4}/g)?.join(' ') || '';
   const configuredAudiences = Array.isArray(data.config.whatsappAudiences) ? data.config.whatsappAudiences : [];
-  const adminStores = ['Todas', ...new Set(data.offers.map((offer) => offer.store))];
+  const allAdminStores = Array.isArray(data.adminOfferStores) && data.adminOfferStores.length
+    ? data.adminOfferStores
+    : [...new Set(data.offers.map((offer) => offer.store).filter(Boolean))];
+  const adminStores = ['Todas', ...allAdminStores];
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
+  const adminOfferTotal = Number.isFinite(Number(data.adminOfferTotal)) ? Number(data.adminOfferTotal) : data.offers.length;
+  const adminOfferLimit = Math.max(0, Number(data.adminOfferLimit) || 500);
   const activityLogs = Array.isArray(data.logs) ? data.logs : [];
   // Estas derivações ficam fora de hooks porque o componente possui estados
   // de autenticação que podem retornar antes da árvore administrativa ser
@@ -3157,8 +3162,8 @@ function AdminApp() {
                 <h2>Ofertas cadastradas</h2>
 
                 <p>
-                  {adminFilteredOffers.length} de {data.offers.length}{' '}
-                  ofertas
+                  {adminFilteredOffers.length} de {adminOfferTotal}{' '}
+                  ofertas{data.adminOffersHasMore ? ` · mostrando as ${adminOfferLimit} mais recentes` : ''}
                 </p>
               </div>
               <div className="offer-bulk-actions"><button className="button subtle" type="button" disabled={Boolean(bulkQueueing)} onClick={() => confirmBulkQueue('missing')}>{bulkQueueing === 'missing' ? 'Agendando…' : 'Agendar últimas'}</button><button className="button primary" type="button" disabled={Boolean(bulkQueueing)} onClick={() => confirmBulkQueue('all')}>{bulkQueueing === 'all' ? 'Agendando…' : 'Agendar todas'}</button></div>

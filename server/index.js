@@ -143,6 +143,12 @@ const port = Number(
   process.env.PORT || 3001
 );
 
+// A aba Ofertas do painel não precisa renderizar todo o histórico de uma vez.
+// O catálogo completo continua no armazenamento e nas rotas públicas; este
+// limite reduz o payload e o número de elementos que o navegador precisa
+// montar ao abrir o painel.
+const ADMIN_OFFER_DISPLAY_LIMIT = 500;
+
 function redirectWithinOrigin(res, status, origin, requestPath) {
   return res.redirect(status, safeRedirectDestination(origin, requestPath) || '/');
 }
@@ -4148,6 +4154,13 @@ app.get(
       dashboardSecrets.adminUsers = [];
     }
     const canSeeDashboardArea = (key) => req.adminRole === 'owner' || hasAdminPermission(req, key, 'view');
+    const allAdminOffers = Array.isArray(dashboardData.offers) ? dashboardData.offers : [];
+    const adminOfferStores = [...new Set(
+      allAdminOffers
+        .map((offer) => String(offer?.store || '').trim())
+        .filter(Boolean)
+    )].sort((left, right) => left.localeCompare(right, 'pt-BR', { sensitivity: 'base' }));
+    const visibleAdminOffers = allAdminOffers.slice(0, ADMIN_OFFER_DISPLAY_LIMIT);
 
     res.json({
       ...dashboardPayload,
@@ -4158,7 +4171,14 @@ app.get(
         dashboardData.offers,
         dashboardData.config
       ),
-      offers: canSeeDashboardArea('offers') ? (Array.isArray(dashboardData.offers) ? dashboardData.offers : []).map((offer) => {
+      // A lista abaixo é somente a prévia usada pelo painel. As ações de
+      // agendamento, edição e exclusão continuam consultando o catálogo
+      // completo no servidor.
+      adminOfferTotal: canSeeDashboardArea('offers') ? allAdminOffers.length : 0,
+      adminOfferLimit: canSeeDashboardArea('offers') ? ADMIN_OFFER_DISPLAY_LIMIT : 0,
+      adminOffersHasMore: canSeeDashboardArea('offers') && allAdminOffers.length > ADMIN_OFFER_DISPLAY_LIMIT,
+      adminOfferStores: canSeeDashboardArea('offers') ? adminOfferStores : [],
+      offers: canSeeDashboardArea('offers') ? visibleAdminOffers.map((offer) => {
         const quality = offerQuality(offer, dashboardData.config);
         return {
           ...offer,
