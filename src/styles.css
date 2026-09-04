@@ -7100,3 +7100,100 @@ html[data-theme="dark"] .admin-main .instagram-save-bar {
     right: 12px;
   }
 }
+
+/* Contraste do modo escuro na home pública. O mockup continua claro de propósito,
+   mas precisa usar a própria paleta para que seus textos não desapareçam. */
+html[data-theme="dark"] .site-shell .phone,
+html[data-theme="dark"] .site-shell .floating-card {
+  color: #172033;
+  background: #f8fbff;
+}
+
+html[data-theme="dark"] .site-shell .phone-head,
+html[data-theme="dark"] .site-shell .mini-offer {
+  border-color: #d8e0eb;
+}
+
+html[data-theme="dark"] .site-shell .phone-head b,
+html[data-theme="dark"] .site-shell .mini-offer b,
+html[data-theme="dark"] .site-shell .floating-card strong {
+  color: #172033;
+}
+
+html[data-theme="dark"] .site-shell .phone .mini-offer small,
+html[data-theme="dark"] .site-shell .floating-card small {
+  color: #64748b;
+}
+
+/* A seção de grupos usava um gradiente claro mesmo quando o restante da página
+   estava escuro, deixando o título praticamente ilegível. */
+html[data-theme="dark"] .site-shell .audience-public-section:not(.assistant-only) {
+  border-top-color: #2b3a50;
+  background: linear-gradient(180deg, #0f1929 0%, #0b1120 100%);
+}
+
+html[data-theme="dark"] .site-shell .audience-public-section .section-heading.centered h2 {
+  color: #f1f5fb;
+}
+
+html[data-theme="dark"] .site-shell .audience-public-section .section-heading.centered p {
+  color: #aab7c8;
+}
+
+html[data-theme="dark"] .site-shell .audience-public-section .section-heading.centered .eyebrow.dark {
+  color: #8db7ff;
+}
+
+html[data-theme="dark"] .site-shell .audience-public-card > span {
+  color: #b9d3ff;
+  background: #1a3152;
+}
+
+/* Ajustes de leitura e largura no celular. */
+@media (max-width: 640px) {
+  .site-shell .topbar.compact-mobile-nav .nav-wrap {
+    gap: 8px;
+  }
+
+  .site-shell .topbar.compact-mobile-nav .logo {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .site-shell .audience-public-section .section-heading.centered {
+    display: block;
+    width: 100%;
+    margin-bottom: 0;
+    text-align: center;
+  }
+
+  .site-shell .audience-public-section .section-heading.centered > div {
+    width: 100%;
+  }
+
+  .site-shell .audience-public-section .section-heading.centered h2 {
+    max-width: 100%;
+    font-size: clamp(28px, 8.5vw, 34px);
+    line-height: 1.1;
+  }
+
+  .site-shell .audience-public-section .section-heading.centered p {
+    max-width: 32ch;
+    margin-inline: auto;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .site-shell .audience-public-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  .site-shell .audience-public-card {
+    width: 100%;
+    min-width: 0;
+  }
+}
