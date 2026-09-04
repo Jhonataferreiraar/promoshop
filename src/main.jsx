@@ -166,16 +166,76 @@ function useTheme() {
 
 function ThemeSwitcher({ compact = false }) {
   const { preference, changeTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+  const switcherRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const icon = preference === 'dark' ? '☾' : preference === 'light' ? '☀' : '◐';
-  return <label className={`theme-switcher ${compact ? 'theme-switcher-compact' : ''}`}>
-    <span className="theme-switcher-icon" aria-hidden="true">{icon}</span>
-    <span className="theme-switcher-label">Tema</span>
-    <select value={preference} onChange={(event) => changeTheme(event.target.value)} aria-label="Tema do site">
-      <option value="system">Sistema</option>
-      <option value="light">Claro</option>
-      <option value="dark">Escuro</option>
-    </select>
-  </label>;
+  const options = [
+    { value: 'system', label: 'Sistema', icon: '◐' },
+    { value: 'light', label: 'Claro', icon: '☀' },
+    { value: 'dark', label: 'Escuro', icon: '☾' }
+  ];
+  const currentLabel = options.find((option) => option.value === preference)?.label || 'Sistema';
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const closeWhenOutside = (event) => {
+      if (!switcherRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeWithEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      window.setTimeout(() => triggerRef.current?.focus(), 0);
+    };
+
+    document.addEventListener('pointerdown', closeWhenOutside);
+    document.addEventListener('keydown', closeWithEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeWhenOutside);
+      document.removeEventListener('keydown', closeWithEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) menuRef.current?.querySelector('[aria-checked="true"]')?.focus();
+  }, [open]);
+
+  function chooseTheme(value) {
+    changeTheme(value);
+    setOpen(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  }
+
+  return <div ref={switcherRef} className={`theme-switcher ${compact ? 'theme-switcher-compact' : ''} ${open ? 'is-open' : ''}`}>
+    <button
+      ref={triggerRef}
+      className="theme-switcher-trigger"
+      type="button"
+      aria-label={`Tema atual: ${currentLabel}. Abrir opções de tema`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      title={`Tema: ${currentLabel}`}
+      onClick={() => setOpen((current) => !current)}
+    >
+      <span className="theme-switcher-icon" aria-hidden="true">{icon}</span>
+    </button>
+    {open && <div ref={menuRef} className="theme-switcher-menu" role="menu" aria-label="Opções de tema">
+      {options.map((option) => <button
+        key={option.value}
+        className="theme-switcher-option"
+        type="button"
+        role="menuitemradio"
+        aria-checked={preference === option.value}
+        onClick={() => chooseTheme(option.value)}
+      >
+        <span aria-hidden="true">{option.icon}</span>
+        <span>{option.label}</span>
+        {preference === option.value && <b aria-hidden="true">✓</b>}
+      </button>)}
+    </div>}
+  </div>;
 }
 
 function formatSeoPreviewUrl(value) {
