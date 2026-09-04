@@ -40,7 +40,7 @@ services:
       - key: PUPPETEER_SKIP_DOWNLOAD
         value: "true"
       - key: WHATSAPP_AUTOSTART
-        value: "true"
+        value: "false"
       # Opcional: destinatário dos alertas operacionais do servidor.
       - key: MONITORING_WHATSAPP_RECIPIENT
         sync: false

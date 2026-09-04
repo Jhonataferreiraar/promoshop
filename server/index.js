@@ -154,11 +154,14 @@ function collectOffersOutsideWebProcess() {
     const worker = new Worker(new URL('./collectionWorker.js', import.meta.url), {
       resourceLimits: { maxOldGenerationSizeMb: 256 }
     });
+    const terminateWorker = () => {
+      worker.terminate().catch(() => {});
+    };
     let settled = false;
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
-      worker.terminate().catch(() => {});
+      terminateWorker();
       reject(new Error('A coleta excedeu o tempo de segurança e foi encerrada.'));
     }, 12 * 60_000);
     timeout.unref?.();
@@ -168,6 +171,9 @@ function collectOffersOutsideWebProcess() {
       settled = true;
       clearTimeout(timeout);
       callback();
+      // Libera imediatamente o isolate temporário, inclusive após sucesso.
+      // Isso evita que execuções periódicas mantenham workers na memória.
+      terminateWorker();
     };
     worker.once('message', (message) => finish(() => {
       if (message?.ok) resolve(message.result);
