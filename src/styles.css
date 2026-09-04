@@ -8019,6 +8019,367 @@ html[data-theme="dark"] .admin-main .extension-install-steps {
   color: var(--theme-text-secondary);
 }
 
+/* Contraste final das abas solicitadas: cupons, divulgação, Instagram,
+   extensão, segurança e atividades. Estas regras ficam no fim do arquivo
+   para também vencer os estilos dos módulos carregados sob demanda. */
+
+/* Texto auxiliar comum do painel. */
+html[data-theme="dark"] .admin-main .panel-intro,
+html[data-theme="dark"] .admin-main .coupon-audience-picker > small,
+html[data-theme="dark"] .admin-main .coupon-group-label small,
+html[data-theme="dark"] .admin-main .coupon-admin-row small,
+html[data-theme="dark"] .admin-main .group-directory-intro p,
+html[data-theme="dark"] .admin-main .group-directory-editor .panel-heading p,
+html[data-theme="dark"] .admin-main .group-directory-preview p,
+html[data-theme="dark"] .admin-main .group-directory-preview > small,
+html[data-theme="dark"] .admin-main .highlights-intro p,
+html[data-theme="dark"] .admin-main .highlight-save,
+html[data-theme="dark"] .admin-main .highlight-legal-note,
+html[data-theme="dark"] .admin-main .extension-settings-card label small,
+html[data-theme="dark"] .admin-main .extension-token-card .panel-heading p,
+html[data-theme="dark"] .admin-main .extension-review-card .panel-heading p,
+html[data-theme="dark"] .admin-main .settings-save-bar span {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .panel-intro strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .text-button {
+  color: #9fc5ff;
+}
+
+html[data-theme="dark"] .admin-main .text-button:hover,
+html[data-theme="dark"] .admin-main .text-button:focus-visible {
+  color: #d6e6ff;
+}
+
+html[data-theme="dark"] .admin-main .danger-text {
+  color: #ffaaa8 !important;
+}
+
+/* Cupons */
+html[data-theme="dark"] .admin-main .coupon-audience-picker,
+html[data-theme="dark"] .admin-main .coupon-admin-row {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .coupon-audience-picker > strong,
+html[data-theme="dark"] .admin-main .coupon-group-label strong,
+html[data-theme="dark"] .admin-main .coupon-admin-row > div:first-child > strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .coupon-short-link {
+  color: var(--theme-accent) !important;
+}
+
+html[data-theme="dark"] .admin-main .coupon-audience-picker .group-option {
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .coupon-audience-picker .group-option:hover,
+html[data-theme="dark"] .admin-main .coupon-audience-picker .group-option:focus-within {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .coupon-cancel-button,
+html[data-theme="dark"] .admin-main .coupon-row-actions button {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-secondary);
+  background: #18263a;
+}
+
+html[data-theme="dark"] .admin-main .coupon-cancel-button:hover,
+html[data-theme="dark"] .admin-main .coupon-row-actions button:hover {
+  border-color: #496487;
+  background: #223550;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.edit {
+  border-color: #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.edit:hover {
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.force {
+  border-color: #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.force:hover {
+  background: #1a513a;
+}
+
+html[data-theme="dark"] .admin-main .coupon-row-actions button.danger:hover {
+  border-color: #9a515d;
+  color: #ffd0ce;
+  background: #432630;
+}
+
+/* Divulgar grupos */
+html[data-theme="dark"] .admin-main .group-directory-badge {
+  border: 1px solid #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .group-directory-fields label,
+html[data-theme="dark"] .admin-main .directory-selection-heading strong {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .group-directory-fields input,
+html[data-theme="dark"] .admin-main .group-directory-fields textarea {
+  border-color: #33445d;
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .group-directory-fields input::placeholder,
+html[data-theme="dark"] .admin-main .group-directory-fields textarea::placeholder {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .directory-selection-block {
+  border-top-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .directory-selection-heading small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .directory-selection-heading button {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-secondary);
+  background: #18263a;
+}
+
+html[data-theme="dark"] .admin-main .directory-selection-heading button:hover,
+html[data-theme="dark"] .admin-main .directory-selection-heading button:focus-visible {
+  border-color: #496487;
+  color: var(--theme-text);
+  background: #223550;
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list label {
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list label:hover,
+html[data-theme="dark"] .admin-main .directory-group-list label:focus-within {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list label:has(input:checked) {
+  border-color: #3b82f6;
+  background: #172f53;
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list label.disabled {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .directory-group-list small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .group-directory-preview pre {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: linear-gradient(145deg, var(--theme-surface-accent), var(--theme-surface-alt));
+}
+
+/* Destaques do Instagram */
+html[data-theme="dark"] .admin-main .highlights-limit {
+  border: 1px solid #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .highlights-limit span {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .highlight-tabs button {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .highlight-tabs button:hover,
+html[data-theme="dark"] .admin-main .highlight-tabs button:focus-visible {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .highlight-tabs button.active {
+  border-color: #3b82f6;
+  color: var(--theme-accent);
+  background: #172f53;
+}
+
+html[data-theme="dark"] .admin-main .highlight-tabs button > span {
+  color: #fff;
+  background: #1d4fa8;
+}
+
+html[data-theme="dark"] .admin-main .highlight-form {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .highlight-form label {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .highlight-form input:not([type="checkbox"]),
+html[data-theme="dark"] .admin-main .highlight-form select,
+html[data-theme="dark"] .admin-main .highlight-form textarea {
+  border-color: #33445d;
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .highlight-form input::placeholder,
+html[data-theme="dark"] .admin-main .highlight-form textarea::placeholder {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .highlight-form small,
+html[data-theme="dark"] .admin-main .highlight-form .highlight-field-help {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .highlight-phone {
+  border: 1px solid var(--theme-border-strong);
+  background: #0b1120;
+  box-shadow: 0 18px 35px rgba(0, 0, 0, .42);
+}
+
+html[data-theme="dark"] .admin-main .highlight-empty {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-muted);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .highlight-empty span {
+  color: #8db7ff;
+}
+
+html[data-theme="dark"] .admin-main .highlight-empty strong,
+html[data-theme="dark"] .admin-main .highlight-steps strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .highlight-steps > div {
+  border-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .highlight-steps p {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .highlight-steps span {
+  background: #1d4fa8;
+}
+
+/* Extensão de cupons */
+html[data-theme="dark"] .admin-main .extension-settings-card label > input[type="number"] {
+  border-color: #33445d;
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .extension-choice label,
+html[data-theme="dark"] .admin-main .extension-choice label span {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .extension-choice label span small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .extension-status .status-dot.active {
+  box-shadow: 0 0 0 4px #123c2c;
+}
+
+/* Segurança */
+html[data-theme="dark"] .admin-main .admin-permission-editor {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-editor > strong {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-row {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-row select:disabled {
+  border-color: #33445d;
+  color: var(--theme-text-subtle);
+  background: #202c3d;
+}
+
+/* Atividades */
+html[data-theme="dark"] .admin-main .activity-toolbar {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .activity-toolbar label,
+html[data-theme="dark"] .admin-main .activity-entry {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .activity-toolbar input,
+html[data-theme="dark"] .admin-main .activity-toolbar select {
+  border-color: #33445d;
+  color: var(--theme-text);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .activity-toolbar input::placeholder {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .activity-entry > span {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .activity-entry.error > span {
+  color: #ffd0ce;
+}
+
+html[data-theme="dark"] .admin-main .logs > div {
+  border-bottom-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .logs time {
+  color: var(--theme-text-muted);
+}
+
 /* Estados gerais do serviço e seleção de público */
 html[data-theme="dark"] .admin-main .queue-audience-editor select {
   border-color: #315788;
