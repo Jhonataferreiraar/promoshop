@@ -8380,6 +8380,139 @@ html[data-theme="dark"] .admin-main .logs time {
   color: var(--theme-text-muted);
 }
 
+/* Usuários adicionais: mantenha o cartão compacto e abra as permissões
+   somente quando o proprietário quiser consultá-las ou editá-las. */
+.admin-users-list > .admin-user-card {
+  display: block;
+  padding: 12px;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.admin-user-card > .admin-user-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-user-card > .admin-user-summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-user-card > .admin-user-summary > span:first-child {
+  min-width: 0;
+}
+
+.admin-permission-details {
+  margin-top: 12px;
+}
+
+.admin-permission-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid #dbe5ff;
+  border-radius: 9px;
+  color: #1849a9;
+  background: #f8fbff;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-permission-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-permission-details > summary small {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.admin-permission-details > summary:hover,
+.admin-permission-details > summary:focus-visible {
+  border-color: #98b7ff;
+  background: #eff4ff;
+  outline: none;
+}
+
+.admin-permission-details > summary:focus-visible {
+  outline: 2px solid #98b7ff;
+  outline-offset: 2px;
+}
+
+.admin-permission-details[open] > summary {
+  border-bottom-right-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.admin-permission-details[open] .admin-permission-editor {
+  margin-top: 8px;
+}
+
+html[data-theme="dark"] .admin-main .admin-users-list > .admin-user-card {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+.admin-permission-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-permission-summary-label i {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  color: #175cd3;
+  background: #eff8ff;
+  font-style: normal;
+  font-size: 14px;
+  line-height: 1;
+  transition: transform .18s ease;
+}
+
+.admin-permission-details[open] .admin-permission-summary-label i {
+  transform: rotate(180deg);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-summary-label {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-summary-label i {
+  color: var(--theme-accent);
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-details > summary {
+  border-color: #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-details > summary small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-details > summary:hover,
+html[data-theme="dark"] .admin-main .admin-permission-details > summary:focus-visible {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .admin-permission-details > summary:focus-visible {
+  outline-color: #6ea8ff;
+}
+
 /* Estados gerais do serviço e seleção de público */
 html[data-theme="dark"] .admin-main .queue-audience-editor select {
   border-color: #315788;
