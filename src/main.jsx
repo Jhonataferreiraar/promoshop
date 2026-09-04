@@ -143,8 +143,25 @@ function ThemeProvider({ children }) {
     applyTheme();
     if (preference !== 'system' || !media) return undefined;
 
-    media.addEventListener?.('change', applyTheme);
-    return () => media.removeEventListener?.('change', applyTheme);
+    const onSystemThemeChange = () => applyTheme();
+    const supportsEventTarget = typeof media.addEventListener === 'function';
+    if (supportsEventTarget) media.addEventListener('change', onSystemThemeChange);
+    else media.addListener?.(onSystemThemeChange);
+
+    // Alguns navegadores só atualizam o estado do sistema quando a aba volta
+    // para o primeiro plano. Reaplique o tema nesses momentos também.
+    const syncWhenVisible = () => {
+      if (document.visibilityState !== 'hidden') applyTheme();
+    };
+    document.addEventListener('visibilitychange', syncWhenVisible);
+    window.addEventListener('pageshow', syncWhenVisible);
+
+    return () => {
+      if (supportsEventTarget) media.removeEventListener('change', onSystemThemeChange);
+      else media.removeListener?.(onSystemThemeChange);
+      document.removeEventListener('visibilitychange', syncWhenVisible);
+      window.removeEventListener('pageshow', syncWhenVisible);
+    };
   }, [preference]);
 
   function changeTheme(nextPreference) {

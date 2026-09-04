@@ -7286,21 +7286,21 @@ html[data-theme="dark"] .site-shell .audience-public-card > span {
   }
 }
 
-/* No celular, o hambúrguer fica imediatamente antes do botão de tema. */
+/* No celular, o botão de tema fica imediatamente antes do hambúrguer. */
 @media (max-width: 900px) {
   .site-shell .topbar.compact-mobile-nav .logo {
     order: 1;
   }
 
-  .site-shell .topbar.compact-mobile-nav .mobile-menu-button {
+  .site-shell .topbar.compact-mobile-nav .nav-actions {
     order: 2;
-    flex: 0 0 42px;
+    flex: 0 0 auto;
     margin-left: auto;
   }
 
-  .site-shell .topbar.compact-mobile-nav .nav-actions {
+  .site-shell .topbar.compact-mobile-nav .mobile-menu-button {
     order: 3;
-    flex: 0 0 auto;
+    flex: 0 0 42px;
     margin-left: 0;
   }
 
@@ -7367,4 +7367,60 @@ html[data-theme="dark"] .theme-switcher-option[aria-checked="true"] {
     top: calc(100% + 8px);
     min-width: 148px;
   }
+}
+
+/* Ajuste do assistente no modo escuro: todas as superfícies e textos mantêm
+   contraste suficiente para leitura, inclusive respostas, grupos e cupons. */
+html[data-theme="dark"] .assistant-chat-body {
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .assistant-chat-body::-webkit-scrollbar-thumb {
+  background: #4e6380;
+}
+
+html[data-theme="dark"] .assistant-bubble.assistant {
+  color: #e8eef7;
+}
+
+html[data-theme="dark"] .assistant-group {
+  border-color: #2b3a50;
+  color: #dce6f3;
+  background: #121d2e;
+}
+
+html[data-theme="dark"] .assistant-group:hover,
+html[data-theme="dark"] .assistant-group:focus-visible {
+  border-color: #496487;
+  background: #1a3152;
+  outline: none;
+}
+
+html[data-theme="dark"] .assistant-group strong {
+  color: #eef4fb;
+}
+
+html[data-theme="dark"] .assistant-section-label,
+html[data-theme="dark"] .assistant-coupon p,
+html[data-theme="dark"] .assistant-coupon em,
+html[data-theme="dark"] .assistant-product s {
+  color: #aab7c8;
+}
+
+html[data-theme="dark"] .assistant-coupon-code b {
+  color: #eef4fb;
+}
+
+html[data-theme="dark"] .assistant-chat-form textarea {
+  border-color: #33445d;
+  color: #eef4fb;
+  background: #0f1a2b;
+}
+
+html[data-theme="dark"] .assistant-chat-form textarea::placeholder {
+  color: #8290a5;
+}
+
+html[data-theme="dark"] .assistant-chat-form .button {
+  color: #fff;
 }
