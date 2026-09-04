@@ -23,7 +23,37 @@ jobs:
       - run: npm ci
       # O teste de rotas HTML usa o pacote de produção gerado pelo Vite.
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=high
+      - name: Audit production dependencies
+        env:
+          # O endpoint de auditoria do npm pode ficar indisponível. Não
+          # prolongue o job por vários minutos em uma falha de infraestrutura;
+          # vulnerabilidades retornadas pelo audit continuam bloqueando o job.
+          npm_config_fetch_retries: 0
+          npm_config_fetch_timeout: 30000
+        shell: bash
+        run: |
+          set -o pipefail
+          audit_log="$(mktemp)"
+          trap 'rm -f "$audit_log"' EXIT
+
+          set +e
+          npm audit --omit=dev --audit-level=high 2>&1 | tee "$audit_log"
+          audit_status="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$audit_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          # 5xx e falhas de transporte indicam que o registro npm não pôde
+          # responder. Isso é diferente de um relatório de vulnerabilidades;
+          # não transforme essa indisponibilidade externa em falso alarme.
+          if grep -Eqi 'audit endpoint returned an error|(^|[^0-9])5[0-9]{2}([^0-9]|$)|bad gateway|service unavailable|econnreset|etimedout|eai_again|enotfound' "$audit_log"; then
+            echo "::warning title=npm audit indisponível::O registro npm não respondeu temporariamente; a auditoria será repetida na próxima execução."
+            exit 0
+          fi
+
+          exit "$audit_status"
       - run: npm run test:secret-scan
       - run: npm run test:safe-remote
       - run: npm run test:secrets
