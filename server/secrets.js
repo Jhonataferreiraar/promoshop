@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { normalizeAdminPermissions } from './adminPermissions.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
@@ -91,6 +92,7 @@ function normalizeAdminUsers(value, ownerUsername = '') {
       username,
       passwordHash: String(user.passwordHash).slice(0, 500),
       role: ADMIN_ROLES.has(String(user?.role)) ? String(user.role) : 'viewer',
+      permissions: normalizeAdminPermissions(user?.permissions, ADMIN_ROLES.has(String(user?.role)) ? String(user.role) : 'viewer'),
       active: user?.active !== false,
       createdAt: String(user?.createdAt || new Date().toISOString()).slice(0, 40),
       updatedAt: String(user?.updatedAt || user?.createdAt || new Date().toISOString()).slice(0, 40)
@@ -303,11 +305,13 @@ async function updateSecretsUnlocked(changes) {
     const duplicate = [ownerUsername, ...next.adminUsers.map((user) => user.username)].some((entry) => String(entry).toLocaleLowerCase('pt-BR') === username.toLocaleLowerCase('pt-BR'));
     if (duplicate) throw new Error('Já existe um usuário com esse nome.');
     if (next.adminUsers.length >= 20) throw new Error('O limite seguro de usuários adicionais foi atingido.');
+    const normalizedRole = role;
     next.adminUsers.push({
       id: `admin_${crypto.randomBytes(8).toString('hex')}`,
       username,
       passwordHash: await hashPassword(password.slice(0, 256)),
-      role,
+      role: normalizedRole,
+      permissions: normalizeAdminPermissions(requested.permissions, normalizedRole),
       active: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -325,6 +329,16 @@ async function updateSecretsUnlocked(changes) {
     if (requested.role !== undefined) {
       if (!ADMIN_ROLES.has(String(requested.role))) throw new Error('O papel do usuário adicional é inválido.');
       user.role = String(requested.role);
+      // Alterar o papel sem enviar uma matriz mantém o comportamento esperado
+      // das contas antigas: editor recebe edição ampla e consulta recebe apenas
+      // leitura. A matriz explícita abaixo sempre tem precedência.
+      if (requested.permissions === undefined) user.permissions = normalizeAdminPermissions(undefined, user.role);
+    }
+    if (requested.permissions !== undefined) {
+      if (!requested.permissions || typeof requested.permissions !== 'object' || Array.isArray(requested.permissions)) {
+        throw new Error('As permissões do usuário adicional são inválidas.');
+      }
+      user.permissions = normalizeAdminPermissions(requested.permissions, user.role);
     }
     if (requested.active !== undefined) user.active = requested.active === true;
     if (String(requested.password || '').length > 0) {
@@ -495,6 +509,7 @@ export function secretStatus(secrets) {
       id: user.id,
       username: user.username,
       role: user.role,
+      permissions: user.permissions,
       active: user.active !== false,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt

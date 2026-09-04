@@ -56,11 +56,11 @@ async function waitForServer() {
   throw new Error('Servidor de teste não iniciou.');
 }
 
-async function login(password) {
+async function login(password, username = 'admin') {
   return fetch(`${origin}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password })
+    body: JSON.stringify({ username, password })
   });
 }
 
@@ -126,6 +126,51 @@ try {
   assert.equal((await fetch(`${origin}/api/auth/session`, { headers: { cookie: cookieHeader } })).status, 200);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop' }) })).status, 403);
   assert.equal((await fetch(`${origin}/api/admin/config`, { method: 'PUT', headers: { cookie: cookieHeader, 'x-csrf-token': csrfToken, 'content-type': 'application/json' }, body: JSON.stringify({ brandName: 'PromoShop', __internal: 'blocked' }) })).status, 200);
+
+  const additionalUsername = `operador-${crypto.randomBytes(5).toString('hex')}`;
+  const additionalPassword = `Additional-${crypto.randomBytes(18).toString('base64url')}!`;
+  const additionalPermissions = {
+    overview: 'view',
+    offers: 'edit',
+    queue: 'view',
+    logs: 'view'
+  };
+  const additionalCreate = await fetch(`${origin}/api/admin/users`, {
+    method: 'POST',
+    headers: authorization,
+    body: JSON.stringify({ username: additionalUsername, password: additionalPassword, role: 'editor', permissions: additionalPermissions })
+  });
+  assert.equal(additionalCreate.status, 201);
+  const additionalCreateBody = await additionalCreate.json();
+  const additionalUser = additionalCreateBody.users?.[0];
+  assert.ok(additionalUser?.id);
+  const additionalLogin = await login(additionalPassword, additionalUsername);
+  assert.equal(additionalLogin.status, 200);
+  const additionalCookies = additionalLogin.headers.getSetCookie?.() || [];
+  const additionalCookieHeader = additionalCookies.map((cookie) => cookie.split(';', 1)[0]).join('; ');
+  const additionalCsrfToken = decodeURIComponent(additionalCookieHeader.match(/(?:^|; )promoshop_csrf=([^;]+)/)?.[1] || '');
+  const additionalHeaders = { cookie: additionalCookieHeader, 'x-csrf-token': additionalCsrfToken, 'content-type': 'application/json' };
+  const additionalSession = await fetch(`${origin}/api/auth/session`, { headers: { cookie: additionalCookieHeader } }).then((response) => response.json());
+  assert.equal(additionalSession.role, 'editor');
+  assert.equal(additionalSession.permissions.offers, 'edit');
+  assert.equal(additionalSession.permissions.whatsapp, 'none');
+  const additionalDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: additionalHeaders }).then((response) => response.json());
+  assert.equal(additionalDashboard.secrets.adminUser, '');
+  assert.deepEqual(additionalDashboard.secrets.adminUsers, []);
+  const deniedSettingsChange = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT', headers: additionalHeaders,
+    body: JSON.stringify({ brandName: 'Nome indevido pelo operador' })
+  });
+  assert.equal(deniedSettingsChange.status, 403);
+  const allowedOffersChange = await fetch(`${origin}/api/admin/config`, {
+    method: 'PUT', headers: additionalHeaders,
+    body: JSON.stringify({ aiModel: additionalDashboard.config.aiModel === 'modelo-teste-operador' ? 'gemini-3.5-flash-lite' : 'modelo-teste-operador' })
+  });
+  assert.equal(allowedOffersChange.status, 200);
+  assert.equal((await fetch(`${origin}/api/admin/queue?offset=0&limit=1`, { headers: additionalHeaders })).status, 200);
+  assert.equal((await fetch(`${origin}/api/admin/whatsapp/state`, { headers: additionalHeaders })).status, 403);
+  assert.equal((await fetch(`${origin}/api/admin/whatsapp/start`, { method: 'POST', headers: additionalHeaders, body: '{}' })).status, 403);
+  assert.equal((await fetch(`${origin}/api/admin/users`, { headers: additionalHeaders })).status, 403);
 
   const initialDashboard = await fetch(`${origin}/api/admin/dashboard`, { headers: authorization }).then((response) => response.json());
   const technologyAudience = initialDashboard.config.whatsappAudiences.find((audience) => audience.code === 'G02');

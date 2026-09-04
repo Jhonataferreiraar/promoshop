@@ -30,11 +30,18 @@ import {
   clearSessionCookies,
   createToken,
   hashSecurityIdentifier,
+  hasAdminPermission,
   requireAdmin,
   requireOwner,
   requireWorker,
   setSessionCookies
 } from './auth.js';
+
+import {
+  configPermissionScopes,
+  defaultAdminPermissions,
+  normalizeAdminPermissions
+} from './adminPermissions.js';
 
 import {
   collectAliexpress,
@@ -3915,14 +3922,18 @@ app.post(
       secrets = await updateSecrets({ rehashAdminPassword: password });
     }
 
-    const token = createToken(expectedUser, secrets.adminSessionVersion, additionalUser?.role || 'owner');
+    const loginRole = additionalUser?.role || 'owner';
+    const loginPermissions = additionalUser
+      ? normalizeAdminPermissions(additionalUser.permissions, loginRole)
+      : defaultAdminPermissions('owner');
+    const token = createToken(expectedUser, secrets.adminSessionVersion, loginRole, loginPermissions);
     setSessionCookies(res, token);
-    res.json({ authenticated: true, role: additionalUser?.role || 'owner' });
+    res.json({ authenticated: true, role: loginRole, permissions: loginPermissions });
   }
 );
 
 app.get('/api/auth/session', requireAdmin, (req, res) => {
-  res.json({ authenticated: true, username: req.adminUsername, role: req.adminRole || 'owner' });
+  res.json({ authenticated: true, username: req.adminUsername, role: req.adminRole || 'owner', permissions: req.adminPermissions || defaultAdminPermissions(req.adminRole || 'owner') });
 });
 
 app.post('/api/auth/logout', requireAdmin, (_req, res) => {
@@ -4130,16 +4141,24 @@ app.get(
     };
 
     const dashboardSecrets = secretStatus(secrets);
-    if (req.adminRole !== 'owner') dashboardSecrets.adminUsers = [];
+    if (req.adminRole !== 'owner') {
+      // A secondary account must not learn the principal's login identifier or
+      // receive a list that could be used to infer it.
+      dashboardSecrets.adminUser = '';
+      dashboardSecrets.adminUsers = [];
+    }
+    const canSeeDashboardArea = (key) => req.adminRole === 'owner' || hasAdminPermission(req, key, 'view');
 
     res.json({
       ...dashboardPayload,
+      adminRole: req.adminRole || 'owner',
+      adminPermissions: req.adminPermissions || defaultAdminPermissions(req.adminRole || 'owner'),
       meta: safeDashboardMeta,
       publicOfferTotal: publicOfferTotal(
         dashboardData.offers,
         dashboardData.config
       ),
-      offers: (Array.isArray(dashboardData.offers) ? dashboardData.offers : []).map((offer) => {
+      offers: canSeeDashboardArea('offers') ? (Array.isArray(dashboardData.offers) ? dashboardData.offers : []).map((offer) => {
         const quality = offerQuality(offer, dashboardData.config);
         return {
           ...offer,
@@ -4148,26 +4167,25 @@ app.get(
           qualityIssues: quality.issues,
           isStale: !offerIsFresh(offer, dashboardData.config)
         };
-      }),
+      }) : [],
       // O resumo inicial precisa apenas das próximas publicações. A aba da
       // fila carrega páginas de 50 itens por uma rota dedicada.
-      queue: (Array.isArray(dashboardData.queue) ? dashboardData.queue : [])
+      queue: canSeeDashboardArea('queue') ? (Array.isArray(dashboardData.queue) ? dashboardData.queue : [])
         .filter((item) => item?.status === 'pending')
         .slice(0, 5)
-        .map(adminQueueItem),
+        .map(adminQueueItem) : [],
       queueSummary: summarizeQueue(dashboardData.queue, dashboardMeta?.whatsappSentHistoryCount),
       inbox: [],
       instagramQueue: [],
       instagramFeedQueue: [],
-      coupons: (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
+      coupons: canSeeDashboardArea('coupons') ? (Array.isArray(dashboardData.coupons) ? dashboardData.coupons : []).map((coupon) => ({
         ...coupon,
         shortCode: couponShortCode(coupon),
         shortUrl: couponShortUrl(coupon, req)
-      })),
+      })) : [],
       analytics:
-        summarizeAnalytics(
-          dashboardData.analytics
-        ),
+        canSeeDashboardArea('analytics') ? summarizeAnalytics(dashboardData.analytics) : {},
+      logs: canSeeDashboardArea('logs') ? (dashboardPayload.logs || []) : [],
 
       systemHealth:
         summarizeSystemHealth(
@@ -4192,6 +4210,27 @@ app.put(
       !Array.isArray(req.body)
         ? req.body
         : {};
+
+    // A tela envia o objeto de configuração inteiro. Compare somente as
+    // chaves realmente alteradas para que uma conta secundária possa salvar
+    // sua área sem ganhar acesso implícito às demais.
+    if (req.adminRole !== 'owner') {
+      const currentData = await readStoreSlice(['config']);
+      const currentConfig = currentData.config || {};
+      const changedKeys = Object.entries(body)
+        .filter(([key]) => key !== 'updatedAt' && Object.prototype.hasOwnProperty.call(currentConfig, key))
+        .filter(([key, value]) => {
+          try { return JSON.stringify(value) !== JSON.stringify(currentConfig[key]); } catch { return value !== currentConfig[key]; }
+        })
+        .map(([key]) => key);
+      const deniedKeys = changedKeys.filter((key) => !configPermissionScopes(key).some((scope) => hasAdminPermission(req, scope, 'edit')));
+      if (deniedKeys.length) {
+        return res.status(403).json({
+          error: 'Este usuário não tem permissão para editar uma ou mais configurações selecionadas.',
+          fields: deniedKeys.slice(0, 20)
+        });
+      }
+    }
 
     await updateStore(
       (data) => {
@@ -9376,7 +9415,7 @@ app.get('/api/admin/users', requireAdmin, requireOwner, async (_req, res) => {
 
 app.post('/api/admin/users', requireAdmin, requireOwner, async (req, res) => {
   try {
-    const updated = await updateSecrets({ adminUserAdd: { username: req.body?.username, password: req.body?.password, role: req.body?.role } });
+    const updated = await updateSecrets({ adminUserAdd: { username: req.body?.username, password: req.body?.password, role: req.body?.role, permissions: req.body?.permissions } });
     await addLog(`Usuário administrativo adicional criado: ${String(req.body?.username || '').trim()}.`, 'success');
     res.status(201).json({ users: secretStatus(updated).adminUsers || [] });
   } catch (error) {
@@ -9386,7 +9425,7 @@ app.post('/api/admin/users', requireAdmin, requireOwner, async (req, res) => {
 
 app.patch('/api/admin/users/:id', requireAdmin, requireOwner, async (req, res) => {
   try {
-    const updated = await updateSecrets({ adminUserUpdate: { id: req.params.id, role: req.body?.role, active: req.body?.active, password: req.body?.password } });
+    const updated = await updateSecrets({ adminUserUpdate: { id: req.params.id, role: req.body?.role, permissions: req.body?.permissions, active: req.body?.active, password: req.body?.password } });
     await addLog('Permissões de usuário administrativo atualizadas.', 'success');
     res.json({ users: secretStatus(updated).adminUsers || [] });
   } catch (error) {

@@ -7,6 +7,16 @@ import InstagramSharePanel from './InstagramSharePanel.jsx';
 import ExtensionPanel from './ExtensionPanel.jsx';
 import ConfirmationModal from './ConfirmationModal.jsx';
 import { optimizedProductImage, optimizedProductImageSrcSet } from './imageOptimization.js';
+import {
+  ADMIN_PERMISSION_DEFINITIONS,
+  ADMIN_PERMISSION_LEVELS,
+  adminPermissionAllows,
+  adminPermissionForPath,
+  defaultAdminPermissions,
+  normalizeAdminPermissions,
+  permissionLevelLabel,
+  permissionProfileLabel
+} from '../server/adminPermissions.js';
 
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
 const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
@@ -1468,14 +1478,14 @@ function Login({ onLogin }) {
     setBusy(true);
     setError('');
     try {
-      await api('/auth/login', {
+      const session = await api('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
           ...form,
           ...(turnstileConfig.enabled ? { turnstileToken: currentTurnstileToken } : {})
         })
       });
-      onLogin('cookie');
+      onLogin(session);
     } catch (err) {
       setError(err.message);
       if (turnstileConfig.enabled) resetTurnstile();
@@ -1583,6 +1593,7 @@ function couponFormFromCoupon(coupon) {
 function AdminApp() {
   const [token, setToken] = useState(null);
   const [adminRole, setAdminRole] = useState('owner');
+  const [adminPermissions, setAdminPermissions] = useState(() => defaultAdminPermissions('owner'));
   const [authChecking, setAuthChecking] = useState(true);
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ offers: [], queue: [], instagramQueue: [], instagramFeedQueue: [], config: fallbackConfig, logs: [], analytics: {}, meta: { whatsapp: {}, monitoring: {}, backup: {} }, secrets: {} });
@@ -1653,7 +1664,7 @@ function AdminApp() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [magaluStoreUrl, setMagaluStoreUrl] = useState('');
   const [backupHistory, setBackupHistory] = useState({ files: [], retention: 7, enabled: true, lastAutomaticAt: null });
-  const [newAdmin, setNewAdmin] = useState({ username: '', password: '', role: 'viewer' });
+  const [newAdmin, setNewAdmin] = useState(() => ({ username: '', password: '', role: 'viewer', permissions: defaultAdminPermissions('viewer') }));
   const backupInputRef = useRef(null);
   const queueSearchInputRef = useRef(null);
   const queueLoadRequestRef = useRef(0);
@@ -1661,7 +1672,12 @@ function AdminApp() {
   const whatsappStateLoadCountRef = useRef(0);
   useEffect(() => {
     api('/auth/session', { cache: 'no-store' })
-      .then((session) => { setAdminRole(session.role || 'owner'); setToken('cookie'); })
+      .then((session) => {
+        const role = session.role || 'owner';
+        setAdminRole(role);
+        setAdminPermissions(normalizeAdminPermissions(session.permissions, role));
+        setToken(session);
+      })
       .catch(() => setToken(null))
       .finally(() => setAuthChecking(false));
   }, []);
@@ -1755,13 +1771,33 @@ function AdminApp() {
       }
     });
   }
-  const authApi = (path, options = {}) => api(path, options);
+  const canView = (key) => adminRole === 'owner' || adminPermissionAllows(adminPermissions, key, 'view');
+  const canEdit = (key) => adminRole === 'owner' || adminPermissionAllows(adminPermissions, key, 'edit');
+  const authApi = (path, options = {}) => {
+    const method = String(options.method || 'GET').toUpperCase();
+    const permissionKey = adminPermissionForPath(path);
+    if (adminRole !== 'owner' && permissionKey === '__owner__') {
+      return Promise.reject(new Error('Somente o administrador principal pode acessar esta área.'));
+    }
+    if (adminRole !== 'owner' && permissionKey && permissionKey !== '__owner__' && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !adminPermissionAllows(adminPermissions, permissionKey, 'edit')) {
+      return Promise.reject(new Error('Este usuário não tem permissão para editar esta área.'));
+    }
+    return api(path, options);
+  };
+  function handleLogin(session) {
+    const role = session?.role || 'owner';
+    setAdminRole(role);
+    setAdminPermissions(normalizeAdminPermissions(session?.permissions, role));
+    setToken(session || 'cookie');
+  }
 
   async function load({ preserveConfig = false, background = false } = {}) {
     if (background && (document.hidden || dashboardLoadCountRef.current > 0)) return;
     dashboardLoadCountRef.current += 1;
     try {
       const result = await authApi('/admin/dashboard');
+      if (result.adminRole) setAdminRole(result.adminRole);
+      if (result.adminPermissions) setAdminPermissions(normalizeAdminPermissions(result.adminPermissions, result.adminRole || adminRole));
       // O dashboard principal devolve as filas do Instagram vazias para manter
       // a resposta leve. Preserve o estado já visível até a consulta específica
       // da aba chegar, evitando que a lista pisque ou desapareça.
@@ -1940,8 +1976,12 @@ function AdminApp() {
   useEffect(() => {
     if (token && tab === 'analytics' && data.secrets?.googleSearchConsoleConnected && !searchConsoleData) loadSearchConsole();
   }, [token, tab, data.secrets?.googleSearchConsoleConnected]);
+  useEffect(() => {
+    if (!token || adminRole === 'owner' || canView(tab)) return;
+    setTab('overview');
+  }, [token, adminRole, adminPermissions, tab]);
   if (authChecking) return <div className="login-page"><div className="login-card"><Logo name="PromoShop" /><p>Verificando sua sessão segura…</p></div></div>;
-  if (!token) return <Login onLogin={setToken} />;
+  if (!token) return <Login onLogin={handleLogin} />;
 
   async function saveConfig(event) {
     event.preventDefault();
@@ -2155,10 +2195,19 @@ function AdminApp() {
     event.preventDefault();
     try {
       await authApi('/admin/users', { method: 'POST', body: JSON.stringify(newAdmin) });
-      setNewAdmin({ username: '', password: '', role: 'viewer' });
+      setNewAdmin({ username: '', password: '', role: 'viewer', permissions: defaultAdminPermissions('viewer') });
       await load();
       setMessage('Usuário adicional criado com segurança.');
     } catch (error) { setMessage(error.message); }
+  }
+  function setNewAdminRole(role) {
+    setNewAdmin((current) => ({ ...current, role, permissions: defaultAdminPermissions(role) }));
+  }
+  function setNewAdminPermission(key, level) {
+    setNewAdmin((current) => ({
+      ...current,
+      permissions: normalizeAdminPermissions({ ...(current.permissions || {}), [key]: level }, current.role)
+    }));
   }
   async function removeAdminUser(user) {
     if (!window.confirm(`Remover o acesso de ${user.username}?`)) return;
@@ -2166,8 +2215,20 @@ function AdminApp() {
     catch (error) { setMessage(error.message); }
   }
   async function changeAdminRole(user, role) {
-    try { await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }); await load(); setMessage('Permissão atualizada.'); }
+    try {
+      await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role, permissions: defaultAdminPermissions(role) }) });
+      await load();
+      setMessage('Perfil e permissões atualizados.');
+    }
     catch (error) { setMessage(error.message); }
+  }
+  async function changeAdminPermission(user, key, level) {
+    const permissions = normalizeAdminPermissions({ ...(user.permissions || {}), [key]: level }, user.role);
+    try {
+      await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ permissions }) });
+      await load();
+      setMessage(`Permissão de ${user.username} atualizada.`);
+    } catch (error) { setMessage(error.message); }
   }
   async function changeAdminActive(user) {
     try { await authApi(`/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ active: user.active === false }) }); await load(); setMessage(user.active === false ? 'Usuário reativado.' : 'Usuário desativado.'); }
@@ -2730,7 +2791,7 @@ function AdminApp() {
   const seoPreviewDescription = String(data.config.seoDescription || '').trim() || 'Encontre ofertas e cupons selecionados na PromoShop.';
   const seoPreviewUrl = formatSeoPreviewUrl(data.config.canonicalUrl);
 
-  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => <div className="nav-group" key={group.label}><span>{group.label}</span>{group.items.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>)}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className="admin-main"><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : whatsappConnecting ? 'pending' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : whatsappConnecting ? 'conectando' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}
+  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => { const visibleItems = group.items.filter(canView); if (!visibleItems.length) return null; return <div className="nav-group" key={group.label}><span>{group.label}</span>{visibleItems.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>; })}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className={`admin-main ${!canEdit(tab) ? 'permission-readonly' : ''}`}><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : whatsappConnecting ? 'pending' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : whatsappConnecting ? 'conectando' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && canEdit('sources') && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}{tab !== 'overview' && tab !== 'security' && !canEdit(tab) && <div className="permission-notice" role="status"><strong>Modo consulta</strong><span>Você pode visualizar esta área, mas não editar seus dados. Solicite ao administrador principal a liberação de edição.</span></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : whatsappConnecting ? 'Finalizando a conexão' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : whatsappConnecting ? (whatsapp.message || 'O número foi vinculado e os grupos estão sendo sincronizados.') : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : whatsappConnecting ? 'Acompanhar conexão' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{Number(data.queueSummary?.pending || 0)}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{Number(data.queueSummary?.sent || 0)}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
@@ -4041,7 +4102,7 @@ function AdminApp() {
 
       <div className="settings-save-bar"><div><strong>Revise antes de salvar</strong><span>As alterações públicas entram em vigor imediatamente.</span></div><button className="button primary">Salvar site e políticas</button></div>
     </form>}
-    {tab === 'security' && <div className="security-layout"><section className="panel settings-form narrow-panel"><h2>Acesso administrativo</h2><p className="panel-intro">Seu papel atual: <strong>{adminRole === 'owner' ? 'proprietário' : adminRole === 'editor' ? 'editor' : 'consulta'}</strong>. Credenciais e permissões ficam criptografadas no servidor.</p>{adminRole === 'owner' ? <form onSubmit={saveSecurity}><div className="settings-grid"><label>Usuário proprietário<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form> : <p className="panel-intro">Somente o proprietário pode alterar o acesso principal.</p>}</section>{adminRole === 'owner' && <section className="panel admin-users-panel"><div className="panel-heading"><div><span className="section-step">PERMISSÕES</span><h2>Usuários adicionais</h2><p>Editor pode operar o painel; consulta pode apenas visualizar. Nenhum deles vê chaves secretas.</p></div></div><form className="admin-user-form" onSubmit={addAdminUser}><label>Usuário<input required minLength="3" maxLength="100" value={newAdmin.username} onChange={(event) => setNewAdmin({ ...newAdmin, username: event.target.value })} autoComplete="off" /></label><label>Senha temporária<input required minLength="12" type="password" value={newAdmin.password} onChange={(event) => setNewAdmin({ ...newAdmin, password: event.target.value })} autoComplete="new-password" /></label><label>Papel<select value={newAdmin.role} onChange={(event) => setNewAdmin({ ...newAdmin, role: event.target.value })}><option value="viewer">Consulta</option><option value="editor">Editor</option></select></label><button className="button primary" type="submit">Adicionar usuário</button></form>{data.secrets?.adminUsers?.length ? <div className="admin-users-list">{data.secrets.adminUsers.map((user) => <div key={user.id}><span><strong>{user.username}</strong><small>{user.active === false ? 'Desativado' : user.role === 'editor' ? 'Editor' : 'Consulta'}</small></span><select value={user.role} disabled={user.active === false} onChange={(event) => changeAdminRole(user, event.target.value)}><option value="viewer">Consulta</option><option value="editor">Editor</option></select><button className="text-button" type="button" onClick={() => changeAdminActive(user)}>{user.active === false ? 'Reativar' : 'Desativar'}</button><button className="text-button danger-text" type="button" onClick={() => removeAdminUser(user)}>Remover</button></div>)}</div> : <div className="empty"><strong>Nenhum usuário adicional</strong><p>O acesso proprietário continua sendo o único ativo.</p></div>}</section>}</div>}
+    {tab === 'security' && <div className="security-layout"><section className="panel settings-form narrow-panel"><h2>Acesso administrativo</h2><p className="panel-intro">Seu papel atual: <strong>{adminRole === 'owner' ? 'proprietário' : adminRole === 'editor' ? 'editor' : 'usuário adicional'}</strong>. Credenciais e permissões ficam criptografadas no servidor.</p>{adminRole === 'owner' ? <form onSubmit={saveSecurity}><div className="settings-grid"><label>Usuário proprietário<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form> : <p className="panel-intro">O administrador principal define as áreas e ações disponíveis para esta conta.</p>}</section>{adminRole === 'owner' && <section className="panel admin-users-panel"><div className="panel-heading"><div><span className="section-step">PERMISSÕES POR ÁREA</span><h2>Usuários adicionais</h2><p>Escolha, para cada área, se a pessoa não terá acesso, poderá consultar ou também editar. O administrador principal nunca aparece para contas secundárias. Usuários, credenciais e esta área continuam exclusivos do proprietário.</p></div></div><form className="admin-user-form" onSubmit={addAdminUser}><label>Usuário<input required minLength="3" maxLength="100" value={newAdmin.username} onChange={(event) => setNewAdmin({ ...newAdmin, username: event.target.value })} autoComplete="off" /></label><label>Senha temporária<input required minLength="12" type="password" value={newAdmin.password} onChange={(event) => setNewAdmin({ ...newAdmin, password: event.target.value })} autoComplete="new-password" /></label><label>Papel-base<select value={newAdmin.role} onChange={(event) => setNewAdminRole(event.target.value)}><option value="viewer">Consulta</option><option value="editor">Editor</option></select></label><div className="admin-permission-editor"><strong>Áreas e nível de acesso</strong>{ADMIN_PERMISSION_DEFINITIONS.map((definition) => <label className="admin-permission-row" key={definition.key}><span>{definition.label}</span><select value={newAdmin.permissions?.[definition.key] || 'none'} disabled={definition.viewOnly} onChange={(event) => setNewAdminPermission(definition.key, event.target.value)}>{ADMIN_PERMISSION_LEVELS.map((level) => <option value={level} key={level} disabled={definition.viewOnly && level !== 'view'}>{permissionLevelLabel(level)}</option>)}</select></label>)}</div><button className="button primary" type="submit">Adicionar usuário</button></form>{data.secrets?.adminUsers?.length ? <div className="admin-users-list">{data.secrets.adminUsers.map((user) => <div className="admin-user-card" key={user.id}><div className="admin-user-summary"><span><strong>{user.username}</strong><small>{user.active === false ? 'Desativado' : permissionProfileLabel(user.permissions, user.role)}</small></span><select value={user.role} disabled={user.active === false} onChange={(event) => changeAdminRole(user, event.target.value)}><option value="viewer">Perfil base: consulta</option><option value="editor">Perfil base: editor</option></select><button className="text-button" type="button" onClick={() => changeAdminActive(user)}>{user.active === false ? 'Reativar' : 'Desativar'}</button><button className="text-button danger-text" type="button" onClick={() => removeAdminUser(user)}>Remover</button></div><div className="admin-permission-editor existing"><strong>Áreas e nível de acesso</strong>{ADMIN_PERMISSION_DEFINITIONS.map((definition) => <label className="admin-permission-row" key={definition.key}><span>{definition.label}</span><select value={user.permissions?.[definition.key] || 'none'} disabled={user.active === false || definition.viewOnly} onChange={(event) => changeAdminPermission(user, definition.key, event.target.value)}>{ADMIN_PERMISSION_LEVELS.map((level) => <option value={level} key={level} disabled={definition.viewOnly && level !== 'view'}>{permissionLevelLabel(level)}</option>)}</select></label>)}</div></div>)}</div> : <div className="empty"><strong>Nenhum usuário adicional</strong><p>O acesso proprietário continua sendo o único ativo.</p></div>}</section>}</div>}
     {tab === 'logs' && <section className="panel activity-panel">
       <div className="panel-heading activity-heading">
         <div><span className="section-step">HISTÓRICO DO SISTEMA</span><h2>Registro de atividades</h2><p>{filteredActivityLogs.length} de {activitySummary.total} registro(s) exibido(s). Os filtros só alteram a visualização.</p></div>

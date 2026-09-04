@@ -5433,6 +5433,20 @@ button {
 .admin-users-list > div { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto auto; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid #eaecf0; border-radius: 10px; }
 .admin-users-list > div > span { display: grid; gap: 3px; min-width: 0; }
 .admin-users-list small { color: #667085; font-size: 11px; }
+.admin-permission-editor { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; margin-top: 4px; padding: 14px; border: 1px solid #dbe5ff; border-radius: 12px; background: #f8fbff; }
+.admin-permission-editor > strong { grid-column: 1 / -1; color: #1849a9; font-size: 12px; }
+.admin-permission-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; align-items: center; gap: 8px; color: #344054; font-size: 11px; font-weight: 600; }
+.admin-permission-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-permission-row select { min-height: 34px; padding: 0 7px; font-size: 11px; }
+.admin-permission-row select:disabled { color: #667085; background: #f2f4f7; cursor: not-allowed; }
+.admin-users-list > .admin-user-card { display: block; padding: 12px; }
+.admin-user-summary { display: grid; grid-template-columns: minmax(0, 1fr) 190px auto auto; align-items: center; gap: 12px; }
+.admin-user-summary > span { display: grid; gap: 3px; min-width: 0; }
+.admin-permission-editor.existing { margin-top: 12px; }
+.permission-notice { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 12px 15px; border: 1px solid #b2ccff; border-radius: 10px; color: #1849a9; background: #f5f8ff; font-size: 12px; line-height: 1.45; }
+.permission-notice strong { flex: 0 0 auto; }
+.admin-main.permission-readonly .settings-form input:not([type="search"]), .admin-main.permission-readonly .settings-form select, .admin-main.permission-readonly .settings-form textarea { pointer-events: none; opacity: .68; }
+.admin-main.permission-readonly .settings-form button[type="submit"], .admin-main.permission-readonly .settings-form .button, .admin-main.permission-readonly .settings-save-bar .button { pointer-events: none; opacity: .55; }
 .info-custom-note { padding: 20px 22px; border: 1px solid #b2ccff; border-radius: 14px; background: #f5f8ff; }
 .info-custom-note strong { color: #1849a9; }
 .monitoring-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 28px; border: 1px solid #cfe0ff; background: linear-gradient(120deg, #f5f8ff, #ffffff); }
@@ -5998,4 +6012,10 @@ button {
   .admin-user-form { grid-template-columns: 1fr; }
   .admin-users-list > div { grid-template-columns: minmax(0, 1fr) auto; }
   .admin-users-list > div .danger-text { grid-column: 1 / -1; justify-self: start; }
+  .admin-permission-editor { grid-template-columns: 1fr; }
+  .admin-permission-editor > strong { grid-column: auto; }
+  .admin-user-summary { grid-template-columns: 1fr auto; }
+  .admin-user-summary > span { grid-column: 1 / -1; }
+  .admin-user-summary .danger-text { grid-column: 1 / -1; justify-self: start; }
+  .permission-notice { align-items: flex-start; flex-direction: column; }
 }
