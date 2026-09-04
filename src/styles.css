@@ -8042,6 +8042,74 @@ html[data-theme="dark"] .admin-main .settings-save-bar span {
   color: var(--theme-text-muted);
 }
 
+/* Cabeçalho do painel em celulares: mantém o seletor de tema acessível
+   sem deixar o status ou os botões de ação espremidos. */
+@media (max-width: 640px) {
+  .admin-main > header .header-actions {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-main > header .header-actions > .theme-switcher-compact {
+    grid-column: 1;
+    grid-row: 1;
+    display: inline-flex;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    flex: 0 0 42px;
+    justify-self: start;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .admin-main > header .header-actions > .header-status {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-main > header .header-actions > .button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .admin-main > header .theme-switcher-compact .theme-switcher-menu {
+    left: 0;
+    right: auto;
+    min-width: 156px;
+  }
+}
+
+@media (max-width: 360px) {
+  .admin-main > header .header-actions {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .admin-main > header .header-actions > .theme-switcher-compact {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+  }
+
+  .admin-main > header .theme-switcher-compact .theme-switcher-menu {
+    min-width: 150px;
+  }
+}
+
 html[data-theme="dark"] .admin-main .panel-intro strong {
   color: var(--theme-text);
 }
