@@ -7424,3 +7424,657 @@ html[data-theme="dark"] .assistant-chat-form textarea::placeholder {
 html[data-theme="dark"] .assistant-chat-form .button {
   color: #fff;
 }
+
+/* Varredura final de contraste do painel. Alguns módulos mais antigos ainda
+   traziam cores do tema claro e ficavam quase invisíveis no modo escuro. */
+html[data-theme="dark"] {
+  --theme-surface: #121d2e;
+  --theme-surface-alt: #0f1a2b;
+  --theme-surface-accent: #142943;
+  --theme-border: #2b3a50;
+  --theme-border-strong: #3a4b64;
+  --theme-text: #eef4fb;
+  --theme-text-secondary: #dce6f3;
+  --theme-text-muted: #aab7c8;
+  --theme-text-subtle: #8290a5;
+  --theme-accent: #b9d3ff;
+}
+
+/* Campos de configuração e cartões de opção */
+html[data-theme="dark"] .admin-main .toggle-card,
+html[data-theme="dark"] .admin-main .site-settings-layout .toggle-card {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .toggle-card strong,
+html[data-theme="dark"] .admin-main .site-settings-layout .toggle-card strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .toggle-card small,
+html[data-theme="dark"] .admin-main .site-settings-layout .toggle-card small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .advanced-ai summary,
+html[data-theme="dark"] .admin-main .fallback-template > div > small,
+html[data-theme="dark"] .admin-main .field-separator small,
+html[data-theme="dark"] .admin-main .connection-progress-note {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .advanced-ai summary:hover,
+html[data-theme="dark"] .admin-main .advanced-ai summary:focus-visible {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .settings-note {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .settings-note strong,
+html[data-theme="dark"] .admin-main .ai-preview > span,
+html[data-theme="dark"] .admin-main .info-custom-note strong {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .settings-note small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .ai-preview {
+  border-color: #315788;
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .ai-preview pre {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .info-custom-note {
+  border-color: #315788;
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .info-custom-note p {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .source-note span,
+html[data-theme="dark"] .admin-main .setup-hint p,
+html[data-theme="dark"] .admin-main .connection-summary p {
+  color: var(--theme-text-muted);
+}
+
+/* Categorias e automação do Mercado Livre */
+html[data-theme="dark"] .admin-main .ml-category-header strong,
+html[data-theme="dark"] .admin-main .affiliate-automation-head strong {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .ml-category-header small,
+html[data-theme="dark"] .admin-main .ml-category-count,
+html[data-theme="dark"] .admin-main .affiliate-automation-head small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .ml-category-grid {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .ml-category-option {
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .ml-category-option:hover,
+html[data-theme="dark"] .admin-main .ml-category-option:focus-within {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .ml-category-option span {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .affiliate-automation {
+  border-top-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .source-brand.mercado {
+  border-color: #765d29;
+  color: #f8d58b;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .source-brand.shopee {
+  border-color: #754335;
+  color: #ffb38e;
+  background: #3a211d;
+}
+
+html[data-theme="dark"] .admin-main .source-brand.aliexpress {
+  border-color: #713349;
+  color: #ff9db7;
+  background: #3a202e;
+}
+
+html[data-theme="dark"] .admin-main .source-brand.magalu {
+  border-color: #315788;
+  color: #9fc5ff;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .source-brand.netshoes {
+  border-color: #3a4b64;
+  color: var(--theme-text-secondary);
+  background: #202c3d;
+}
+
+/* Caixa de entrada: lista, detalhes e respostas */
+html[data-theme="dark"] .admin-main .inbox-setup-copy h2,
+html[data-theme="dark"] .admin-main .inbox-mx-hint strong,
+html[data-theme="dark"] .admin-main .inbox-detail-head h2 {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .inbox-setup-copy p,
+html[data-theme="dark"] .admin-main .inbox-setup-form label,
+html[data-theme="dark"] .admin-main .inbox-mx-hint,
+html[data-theme="dark"] .admin-main .inbox-mx-hint small,
+html[data-theme="dark"] .admin-main .inbox-list-copy small,
+html[data-theme="dark"] .admin-main .inbox-list-copy span,
+html[data-theme="dark"] .admin-main .inbox-list-item time,
+html[data-theme="dark"] .admin-main .inbox-meta,
+html[data-theme="dark"] .admin-main .inbox-reply-footer small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .inbox-mx-hint {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .inbox-mx-hint code {
+  color: var(--theme-accent);
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .inbox-list-item {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .inbox-list-item:hover {
+  border-color: #315788;
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .inbox-list-item.active {
+  border-color: #3b82f6;
+  color: var(--theme-text);
+  background: #172f53;
+}
+
+html[data-theme="dark"] .admin-main .inbox-list-item.unread .inbox-list-copy strong,
+html[data-theme="dark"] .admin-main .inbox-list-copy strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .inbox-count {
+  color: var(--theme-accent);
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .inbox-detail-head a {
+  color: #9fc5ff;
+}
+
+html[data-theme="dark"] .admin-main .manual-link-share-note {
+  border-color: #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .manual-link-share-note strong {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .manual-link-share-note small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .inbox-message-body {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .inbox-replies article > div {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .inbox-replies article time {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .inbox-reply-error {
+  border-color: #713b43;
+  color: #ffaaa8;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .inbox-delivery-error {
+  color: #f8d58b;
+}
+
+/* Busca da fila, relevância e mensagens de erro */
+html[data-theme="dark"] .admin-main .queue-search {
+  border-color: var(--theme-border-strong);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .queue-search-toggle {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .queue-search-toggle:hover,
+html[data-theme="dark"] .admin-main .queue-search-toggle:focus-visible {
+  color: var(--theme-text);
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .queue-search input {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .queue-search input::placeholder {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .product-search-relevance {
+  border: 1px solid #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .offer-updated,
+html[data-theme="dark"] .admin-main .review-summary p,
+html[data-theme="dark"] .admin-main .backup-history small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .offer-quality.ok {
+  color: #8de4b2 !important;
+}
+
+html[data-theme="dark"] .admin-main .offer-quality.warning {
+  color: #f8d58b !important;
+}
+
+html[data-theme="dark"] .admin-main .search-console-panel .settings-grid label {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .backup-history {
+  border-top-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .login-card .error,
+html[data-theme="dark"] .login-card .error {
+  border: 1px solid #713b43;
+  color: #ffaaa8 !important;
+  background: #321d25;
+}
+
+/* Monitoramento, saúde do serviço e avisos informativos */
+html[data-theme="dark"] .admin-main .monitoring-hero {
+  border-color: #315788;
+  background: linear-gradient(120deg, #142943, #121d2e);
+}
+
+html[data-theme="dark"] .admin-main .monitoring-hero p {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .monitoring-live-status {
+  border: 1px solid #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-live-status.attention {
+  border-color: #765d29;
+  color: #f8d58b;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-failure {
+  border-color: #713b43;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-failure .section-step,
+html[data-theme="dark"] .admin-main .monitoring-failure strong {
+  color: #ffaaa8;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-failure small {
+  color: #f8d58b;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-note {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .monitoring-note strong {
+  color: #9fc5ff;
+}
+
+html[data-theme="dark"] .admin-main .monitoring-note p,
+html[data-theme="dark"] .admin-main .monitoring-whatsapp-actions small {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .monitoring-whatsapp-actions {
+  border-top-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .health-summary,
+html[data-theme="dark"] .admin-main .health-check,
+html[data-theme="dark"] .admin-main .backup-panel {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .health-privacy-note strong {
+  color: #9fc5ff;
+}
+
+html[data-theme="dark"] .admin-main .personal-share-tip {
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+  background: var(--theme-surface) !important;
+}
+
+html[data-theme="dark"] .admin-main .personal-share-tip span {
+  color: var(--theme-text-muted);
+}
+
+/* Integrações do Instagram e da extensão */
+html[data-theme="dark"] .admin-main .instagram-status-card.connected {
+  border-left-color: #236b4b;
+  background: linear-gradient(120deg, #121d2e 60%, #123c2c);
+}
+
+html[data-theme="dark"] .admin-main .instagram-status-card {
+  border-left-color: var(--theme-border-strong);
+}
+
+html[data-theme="dark"] .admin-main .instagram-account p,
+html[data-theme="dark"] .admin-main .instagram-filter-grid > div > small,
+html[data-theme="dark"] .admin-main .instagram-theme-card summary small,
+html[data-theme="dark"] .admin-main .instagram-feed-days > small,
+html[data-theme="dark"] .admin-main .instagram-preview > small,
+html[data-theme="dark"] .admin-main .instagram-queue-row span,
+html[data-theme="dark"] .admin-main .instagram-queue-row small,
+html[data-theme="dark"] .admin-main .instagram-feed-auto-summary p {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .instagram-filter-grid > div > strong,
+html[data-theme="dark"] .admin-main .instagram-feed-days > strong,
+html[data-theme="dark"] .admin-main .instagram-theme-card summary strong,
+html[data-theme="dark"] .admin-main .instagram-save-bar strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .instagram-check-list label,
+html[data-theme="dark"] .admin-main .instagram-feed-day,
+html[data-theme="dark"] .admin-main .instagram-feed-item {
+  border-color: var(--theme-border);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .instagram-check-list label:hover,
+html[data-theme="dark"] .admin-main .instagram-feed-day:hover,
+html[data-theme="dark"] .admin-main .instagram-feed-item:hover {
+  border-color: #496487;
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .instagram-check-list label > span small {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .instagram-theme-fields {
+  border-top-color: var(--theme-border);
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .instagram-theme-fields label {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .instagram-color-dot {
+  border-color: var(--theme-surface);
+  box-shadow: 0 0 0 1px var(--theme-border-strong);
+}
+
+html[data-theme="dark"] .admin-main .instagram-preview > div {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .instagram-preview > div p {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .instagram-feed-auto-summary {
+  border-color: #765d29;
+  color: #f8d58b;
+  background: #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .instagram-feed-auto-summary.active {
+  border-color: #236b4b;
+  color: #8de4b2;
+  background: #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .instagram-feed-auto-summary p {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .instagram-feed-day input,
+html[data-theme="dark"] .admin-main .instagram-check-list input {
+  accent-color: #3b82f6;
+}
+
+html[data-theme="dark"] .admin-main .instagram-feed-item.selected {
+  border-color: #3b82f6;
+  color: var(--theme-accent);
+  background: #172f53;
+}
+
+html[data-theme="dark"] .admin-main .instagram-queue-row.sent {
+  background: #123326;
+}
+
+html[data-theme="dark"] .admin-main .instagram-queue-row.failed {
+  border-color: #713b43;
+  background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .instagram-queue-row.publishing {
+  border-color: #315788;
+  background: #142943;
+}
+
+html[data-theme="dark"] .admin-main .instagram-queue-row strong,
+html[data-theme="dark"] .admin-main .instagram-save-bar strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .instagram-queue-row em {
+  color: #ffaaa8;
+}
+
+html[data-theme="dark"] .admin-main .instagram-save-bar {
+  border-color: #315788;
+  background: rgba(18, 29, 46, .96);
+}
+
+html[data-theme="dark"] .admin-main .instagram-save-bar span {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .extension-status {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .extension-settings-card label:not(.toggle-card),
+html[data-theme="dark"] .admin-main .extension-choice {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .extension-settings-card label small,
+html[data-theme="dark"] .admin-main .extension-choice > small,
+html[data-theme="dark"] .admin-main .extension-choice label span small,
+html[data-theme="dark"] .admin-main .extension-install-card p {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .extension-choice {
+  border-top-color: var(--theme-border);
+}
+
+html[data-theme="dark"] .admin-main .extension-flow-note {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-flow-note strong,
+html[data-theme="dark"] .admin-main .extension-flow-note code {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-flow-note p {
+  color: var(--theme-text-secondary);
+}
+
+html[data-theme="dark"] .admin-main .extension-token-empty {
+  border-color: #315788;
+  color: var(--theme-text-secondary);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-token-result textarea {
+  border-color: #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-token-result small {
+  color: #f8d58b;
+}
+
+html[data-theme="dark"] .admin-main .extension-coupon-row {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+html[data-theme="dark"] .admin-main .extension-coupon-row strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .extension-coupon-row span {
+  color: var(--theme-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-coupon-row small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .extension-install-card {
+  border-color: #315788;
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .extension-install-card code,
+html[data-theme="dark"] .admin-main .extension-install-steps span {
+  color: var(--theme-accent);
+  background: #1a3152;
+}
+
+html[data-theme="dark"] .admin-main .extension-install-steps {
+  color: var(--theme-text-secondary);
+}
+
+/* Estados gerais do serviço e seleção de público */
+html[data-theme="dark"] .admin-main .queue-audience-editor select {
+  border-color: #315788;
+  color: var(--theme-accent);
+  background: var(--theme-surface-accent);
+}
+
+html[data-theme="dark"] .admin-main .queue-audience-editor select:focus {
+  outline-color: rgba(59, 130, 246, .26);
+}
+
+html[data-theme="dark"] .admin-main .admin-search span {
+  color: var(--theme-text-subtle);
+}
+
+html[data-theme="dark"] .admin-main .settings-form label small,
+html[data-theme="dark"] .admin-main .message-section small {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .connection-head small,
+html[data-theme="dark"] .admin-main .connection-head p,
+html[data-theme="dark"] .admin-main .connection-meta span {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme="dark"] .admin-main .connection-meta span {
+  background: var(--theme-surface-alt);
+}
+
+html[data-theme="dark"] .admin-main .connection-meta strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .connection-dot.connected {
+  background: #37d18a;
+  box-shadow: 0 0 0 5px #123c2c;
+}
+
+html[data-theme="dark"] .admin-main .connection-dot.qr,
+html[data-theme="dark"] .admin-main .connection-dot.pairing,
+html[data-theme="dark"] .admin-main .connection-dot.authenticated,
+html[data-theme="dark"] .admin-main .connection-dot.starting {
+  background: #f8d58b;
+  box-shadow: 0 0 0 5px #3a2e16;
+}
+
+html[data-theme="dark"] .admin-main .connection-dot.error {
+  background: #ffaaa8;
+  box-shadow: 0 0 0 5px #321d25;
+}
+
+html[data-theme="dark"] .admin-main .settings-save-bar strong {
+  color: var(--theme-text);
+}
+
+html[data-theme="dark"] .admin-main .settings-save-bar span {
+  color: var(--theme-text-muted);
+}
