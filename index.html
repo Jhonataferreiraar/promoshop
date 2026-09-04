@@ -9,6 +9,22 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1269f3" />
+    <script>
+      (() => {
+        try {
+          const allowed = ['system', 'light', 'dark'];
+          const preference = allowed.includes(localStorage.getItem('promoshop_theme'))
+            ? localStorage.getItem('promoshop_theme')
+            : 'system';
+          const dark = preference === 'dark'
+            || (preference === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.documentElement.dataset.themePreference = preference;
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch { }
+      })();
+    </script>
     <title>PromoShop - Ofertas Diárias</title>
   </head>
   <body>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import InstagramPanel from './InstagramPanel.jsx';
@@ -106,6 +106,77 @@ const fallbackConfig = {
   automaticBackupEnabled: true,
   automaticBackupRetention: 7
 };
+
+const themeStorageKey = 'promoshop_theme';
+const themeValues = new Set(['system', 'light', 'dark']);
+const ThemeContext = createContext(null);
+
+function readThemePreference() {
+  try {
+    const saved = window.localStorage.getItem(themeStorageKey);
+    return themeValues.has(saved) ? saved : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function ThemeProvider({ children }) {
+  const [preference, setPreference] = useState(readThemePreference);
+
+  useEffect(() => {
+    const media = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+    const root = document.documentElement;
+
+    const applyTheme = () => {
+      const resolved = preference === 'system'
+        ? (media?.matches ? 'dark' : 'light')
+        : preference;
+      root.dataset.theme = resolved;
+      root.dataset.themePreference = preference;
+      root.style.colorScheme = resolved;
+      const themeColor = document.querySelector('meta[name="theme-color"]');
+      if (themeColor) themeColor.setAttribute('content', resolved === 'dark' ? '#0b1120' : '#1269f3');
+    };
+
+    applyTheme();
+    if (preference !== 'system' || !media) return undefined;
+
+    media.addEventListener?.('change', applyTheme);
+    return () => media.removeEventListener?.('change', applyTheme);
+  }, [preference]);
+
+  function changeTheme(nextPreference) {
+    const next = themeValues.has(nextPreference) ? nextPreference : 'system';
+    setPreference(next);
+    try {
+      window.localStorage.setItem(themeStorageKey, next);
+    } catch { }
+  }
+
+  return <ThemeContext.Provider value={{ preference, changeTheme }}>{children}</ThemeContext.Provider>;
+}
+
+function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) return { preference: 'system', changeTheme: () => {} };
+  return context;
+}
+
+function ThemeSwitcher({ compact = false }) {
+  const { preference, changeTheme } = useTheme();
+  const icon = preference === 'dark' ? '☾' : preference === 'light' ? '☀' : '◐';
+  return <label className={`theme-switcher ${compact ? 'theme-switcher-compact' : ''}`}>
+    <span className="theme-switcher-icon" aria-hidden="true">{icon}</span>
+    <span className="theme-switcher-label">Tema</span>
+    <select value={preference} onChange={(event) => changeTheme(event.target.value)} aria-label="Tema do site">
+      <option value="system">Sistema</option>
+      <option value="light">Claro</option>
+      <option value="dark">Escuro</option>
+    </select>
+  </label>;
+}
 
 function formatSeoPreviewUrl(value) {
   try {
@@ -737,7 +808,7 @@ function PublicSite() {
           {config.instagramUrl && <a href={config.instagramUrl} target="_blank" rel="noreferrer" onClick={() => { setMobileMenuOpen(false); if (config.clickAnalyticsEnabled !== false) trackPublicEvent('instagram', { id: 'header', label: 'Instagram PromoShop', store: 'Instagram' }); }}>Instagram</a>}
           {config.favoritesEnabled !== false && <a href="/favoritos" onClick={() => setMobileMenuOpen(false)}>Favoritos ({favorites.length})</a>}
         </nav>
-        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'header', label: 'Grupo no WhatsApp' })}>Grupo no WhatsApp</a></div>
+        <div className="nav-actions"><ThemeSwitcher compact /><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('whatsapp', { id: 'header', label: 'Grupo no WhatsApp' })}>Grupo no WhatsApp</a></div>
       </div>
     </header>
 
@@ -1044,7 +1115,7 @@ function CouponsPage() {
         <Logo name={config.brandName || fallbackConfig.brandName} />
         {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label="Abrir menu" onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
         <nav className={mobileMenuOpen ? 'mobile-open' : ''}><a href="/#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a><a href="/cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a><a href="/#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a><a href="/#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a></nav>
-        <div className="nav-actions"><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
+        <div className="nav-actions"><ThemeSwitcher compact /><a className="nav-whatsapp" href={config.whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
       </div>
     </header>
     <main>
@@ -1090,7 +1161,7 @@ function ProductDetail({ slug }) {
   if (!data?.offer) return <div className="site-shell"><main className="product-page container"><p className="notice">Carregando oferta…</p></main></div>;
   const { offer, comparisons = [], related = [] } = data;
   return <div className="site-shell">
-    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/favoritos">Favoritos ({favorites.length})</a></nav></div></header>
+    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/favoritos">Favoritos ({favorites.length})</a></nav><div className="nav-actions"><ThemeSwitcher compact /></div></div></header>
     <main className="product-page container">
       <nav className="breadcrumbs" aria-label="Navegação"><a href="/">Início</a><span>›</span><a href={`/ofertas/${String(offer.category || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>{offer.category}</a><span>›</span><span>{offer.title}</span></nav>
       <section className="product-hero"><div className="product-image"><img src={offer.image} alt={offer.title} referrerPolicy="no-referrer" /></div><div className="product-copy"><span className="eyebrow dark">{offer.store} · {offer.category}</span><h1>{offer.title}</h1>{discount(offer) > 0 && <span className="product-discount">{discount(offer)}% de desconto</span>}<div className="product-price"><s>{offer.originalPrice > offer.price ? money.format(offer.originalPrice) : ''}</s><strong>{money.format(offer.price)}</strong></div>{offer.freeShipping && <span className="shipping">Frete grátis informado pela loja</span>}<p>Confira preço, estoque, frete e condições diretamente na loja antes de concluir a compra.</p><small className="affiliate-label">{config.affiliateDisclosureLabel || 'Publicidade · Link de afiliado'}</small><div className="product-actions"><a className="button primary" href={offer.affiliateUrl} target="_blank" rel="nofollow sponsored noreferrer" onClick={() => config.clickAnalyticsEnabled !== false && trackPublicEvent('offer', { id: offer.id, label: offer.title, store: offer.store })}>Ver oferta no {offer.store} ↗</a>{config.favoritesEnabled !== false && <button className="button subtle" type="button" onClick={() => toggleFavorite(offer)}>{favorites.includes(offer.id) ? '♥ Salvo' : '♡ Salvar'}</button>}</div></div></section>
@@ -1160,7 +1231,7 @@ function NotFoundPage({ config: initialConfig = null, detail = '' }) {
   }, [config.brandName]);
 
   return <div className="site-shell not-found-page">
-    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/cupons">Cupons</a><a href="/#grupos">Grupos</a></nav></div></header>
+    <header className="topbar"><div className="container nav-wrap"><Logo name={config.brandName} /><nav><a href="/">Ofertas</a><a href="/cupons">Cupons</a><a href="/#grupos">Grupos</a></nav><div className="nav-actions"><ThemeSwitcher compact /></div></div></header>
     <main className="not-found-main container" aria-labelledby="not-found-title">
       <section className="not-found-card">
         <span className="not-found-code" aria-hidden="true">404</span>
@@ -1348,7 +1419,7 @@ function InfoPage({ page }) {
         <Logo name={config.brandName || fallbackConfig.brandName} />
         {config.mobileCompactMenu !== false && <button className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label="Abrir menu" onClick={() => setMobileMenuOpen((current) => !current)}><span></span><span></span><span></span></button>}
         <nav className={mobileMenuOpen ? 'mobile-open' : ''}><a href="/#ofertas" onClick={() => setMobileMenuOpen(false)}>Ofertas</a><a href="/#cupons" onClick={() => setMobileMenuOpen(false)}>Cupons</a><a href="/#grupos" onClick={() => setMobileMenuOpen(false)}>Grupos</a><a href="/#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como funciona</a></nav>
-        <div className="nav-actions"><a className="nav-whatsapp" href={whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
+        <div className="nav-actions"><ThemeSwitcher compact /><a className="nav-whatsapp" href={whatsappUrl || '#'} target="_blank" rel="noreferrer">Grupo no WhatsApp</a></div>
       </div>
     </header>
     <main className="info-main">
@@ -1495,7 +1566,7 @@ function Login({ onLogin }) {
   }
   const securityPending = turnstileState === 'checking' || turnstileState === 'loading' || turnstileState === 'error';
   const submitDisabled = busy || securityPending;
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{turnstileConfig.enabled && <div className="turnstile-panel"><div className="turnstile-widget" ref={turnstileContainerRef} aria-label="Confirmação de segurança"></div></div>}{turnstileState === 'checking' && <p className="login-security-note" aria-live="polite">Verificando a proteção de acesso…</p>}{error && <p className="error" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={submitDisabled}>{busy ? 'Entrando…' : 'Entrar'}</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
+  return <div className="login-page"><div className="login-theme"><ThemeSwitcher /></div><form className="login-card" onSubmit={submit}><Logo name="PromoShop" /><div><span className="eyebrow dark">ÁREA RESTRITA</span><h1>Painel administrativo</h1><p>Entre para gerenciar ofertas e automações.</p></div><label>Usuário<input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label><label>Senha<input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{turnstileConfig.enabled && <div className="turnstile-panel"><div className="turnstile-widget" ref={turnstileContainerRef} aria-label="Confirmação de segurança"></div></div>}{turnstileState === 'checking' && <p className="login-security-note" aria-live="polite">Verificando a proteção de acesso…</p>}{error && <p className="error" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={submitDisabled}>{busy ? 'Entrando…' : 'Entrar'}</button><a className="back-link" href="/">← Voltar para o site</a></form></div>;
 }
 
 const defaultNewOffer = { title: '', store: 'Mercado Livre', category: 'Eletrônicos', price: '', originalPrice: '', image: '', affiliateUrl: '', freeShipping: false, featured: true, status: 'active' };
@@ -2796,7 +2867,7 @@ function AdminApp() {
   const seoPreviewDescription = String(data.config.seoDescription || '').trim() || 'Encontre ofertas e cupons selecionados na PromoShop.';
   const seoPreviewUrl = formatSeoPreviewUrl(data.config.canonicalUrl);
 
-  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => { const visibleItems = group.items.filter(canView); if (!visibleItems.length) return null; return <div className="nav-group" key={group.label}><span>{group.label}</span>{visibleItems.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>; })}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className={`admin-main ${!canEdit(tab) ? 'permission-readonly' : ''}`}><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : whatsappConnecting ? 'pending' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : whatsappConnecting ? 'conectando' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && canEdit('sources') && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}{tab !== 'overview' && tab !== 'security' && !canEdit(tab) && <div className="permission-notice" role="status"><strong>Modo consulta</strong><span>Você pode visualizar esta área, mas não editar seus dados. Solicite ao administrador principal a liberação de edição.</span></div>}
+  return <div className="admin-shell"><aside><div className="sidebar-brand"><Logo name={data.config.brandName || 'PromoShop'} /><small>Painel administrativo</small></div><nav>{navGroups.map((group) => { const visibleItems = group.items.filter(canView); if (!visibleItems.length) return null; return <div className="nav-group" key={group.label}><span>{group.label}</span>{visibleItems.map((id) => <button className={tab === id ? 'active' : ''} key={id} onClick={() => setTab(id)}><i>{navIcons[id]}</i><span className="nav-label">{tabLabels[id]}</span>{id === 'inbox' && unreadInboxCount > 0 && <b className="nav-badge">{unreadInboxCount > 99 ? '99+' : unreadInboxCount}</b>}</button>)}</div>; })}</nav><div className="sidebar-footer"><a href="/">Ver site <span>↗</span></a><button className="logout" onClick={logout}>Sair</button></div></aside><main className={`admin-main ${!canEdit(tab) ? 'permission-readonly' : ''}`}><header><div><span className="eyebrow dark">CENTRAL DE CONTROLE</span><h1>{tabLabels[tab]}</h1><p>{tabDescriptions[tab]}</p></div><div className="header-actions"><ThemeSwitcher compact /><span className={`header-status ${whatsapp.status === 'connected' ? 'online' : whatsappConnecting ? 'pending' : ''}`}><i></i>WhatsApp {whatsapp.status === 'connected' ? 'ativo' : whatsappConnecting ? 'conectando' : 'inativo'}</span>{['overview', 'offers', 'sources'].includes(tab) && canEdit('sources') && <><button className="button primary" onClick={collect}>Atualizar ofertas</button><button className="button subtle" onClick={() => collect({ pauseRound: true })}>Pausar rodada e atualizar</button></>}</div></header>{message && <div className="toast" role="status"><span>{message}</span><button type="button" onClick={() => setMessage('')} aria-label="Fechar aviso">×</button></div>}{tab !== 'overview' && tab !== 'security' && !canEdit(tab) && <div className="permission-notice" role="status"><strong>Modo consulta</strong><span>Você pode visualizar esta área, mas não editar seus dados. Solicite ao administrador principal a liberação de edição.</span></div>}
     {tab === 'overview' && <div className="overview-layout"><section className="welcome-panel"><div><span className="eyebrow">RESUMO DA AUTOMAÇÃO</span><h2>{whatsapp.status === 'connected' ? 'Tudo pronto para publicar' : whatsappConnecting ? 'Finalizando a conexão' : 'WhatsApp precisa de atenção'}</h2><p>{whatsapp.status === 'connected' ? `O publicador está conectado a ${(data.config.whatsappGroups || []).length} grupo(s) e segue a agenda configurada.` : whatsappConnecting ? (whatsapp.message || 'O número foi vinculado e os grupos estão sendo sincronizados.') : 'Conecte o WhatsApp para que as ofertas da fila sejam enviadas automaticamente.'}</p></div><button className="button light" onClick={() => setTab('whatsapp')}>{whatsapp.status === 'connected' ? 'Ver configuração' : whatsappConnecting ? 'Acompanhar conexão' : 'Conectar WhatsApp'}</button></section><div className="stats"><div><span><i>◇</i>Ofertas no site</span><strong>{Number.isFinite(Number(data.publicOfferTotal)) ? Number(data.publicOfferTotal) : data.offers.filter((o) => o.status === 'active').length}</strong><small>Ativas e visíveis</small></div><div><span><i>↗</i>Na fila</span><strong>{Number(data.queueSummary?.pending || 0)}</strong><small>Aguardando publicação</small></div><div><span><i>✓</i>Enviadas</span><strong>{Number(data.queueSummary?.sent || 0)}</strong><small>Publicações concluídas</small></div><div><span><i>⌁</i>Fontes ativas</span><strong>{[data.config.enableMercadoLivre, data.config.enableShopee, data.config.enableAliexpress, data.config.enableMagalu].filter(Boolean).length}</strong><small>Coletas automáticas</small></div></div><section className="panel table-panel"><div className="panel-heading"><div><h2>Próximas publicações</h2><p>Itens que serão enviados primeiro.</p></div><button className="text-button" onClick={() => setTab('queue')}>Ver fila completa →</button></div><QueueTable queue={data.queue} /></section></div>}
     {tab === 'offers' && (
       <div className="offers-admin-layout">
@@ -4326,4 +4397,4 @@ const isNotFoundPage = !isAdmin
   && !isCatalogPage
   && !productSlug
   && normalizedPublicPath !== '/';
-createRoot(document.getElementById('root')).render(<React.StrictMode>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : isNotFoundPage ? <NotFoundPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</React.StrictMode>);
+createRoot(document.getElementById('root')).render(<React.StrictMode><ThemeProvider>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : isNotFoundPage ? <NotFoundPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</ThemeProvider></React.StrictMode>);
