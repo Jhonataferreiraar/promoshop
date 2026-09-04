@@ -33,6 +33,7 @@ assert.doesNotMatch(sanitizeMonitoringMessage('{"apiKey":"super-secret","passwor
 const data = { config, meta: { monitoring: { alerts: [], recent: {} } } };
 const error = enqueueMonitoringAlert(data, { type: 'log', level: 'error', message: 'Falha ao conectar banco' });
 assert.ok(error?.id);
+assert.match(error.id, /^monitor_\d+_[0-9a-f-]{36}$/);
 assert.equal(enqueueMonitoringAlert(data, { type: 'log', level: 'error', message: 'Falha ao conectar banco' }), null);
 assert.equal(enqueueMonitoringAlert(data, { type: 'log', level: 'info', message: 'Rotina concluída' }), null);
 const deployment = enqueueMonitoringAlert(data, { type: 'deploy', level: 'success', message: 'Novo deploy iniciado.', force: true, dedupeKey: 'deploy:one' });
