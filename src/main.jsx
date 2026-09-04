@@ -114,9 +114,9 @@ const ThemeContext = createContext(null);
 function readThemePreference() {
   try {
     const saved = window.localStorage.getItem(themeStorageKey);
-    return themeValues.has(saved) ? saved : 'system';
+    return themeValues.has(saved) ? saved : 'light';
   } catch {
-    return 'system';
+    return 'light';
   }
 }
 
@@ -177,7 +177,7 @@ function ThemeProvider({ children }) {
 
 function useTheme() {
   const context = useContext(ThemeContext);
-  if (!context) return { preference: 'system', changeTheme: () => {} };
+  if (!context) return { preference: 'light', changeTheme: () => {} };
   return context;
 }
 

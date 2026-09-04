@@ -15,7 +15,7 @@
           const allowed = ['system', 'light', 'dark'];
           const preference = allowed.includes(localStorage.getItem('promoshop_theme'))
             ? localStorage.getItem('promoshop_theme')
-            : 'system';
+            : 'light';
           const dark = preference === 'dark'
             || (preference === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
           document.documentElement.dataset.theme = dark ? 'dark' : 'light';
