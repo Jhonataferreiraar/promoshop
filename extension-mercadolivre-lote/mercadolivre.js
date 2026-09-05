@@ -199,7 +199,6 @@
       const discount = Number(cardText.match(/\b(\d{1,2})%\s*OFF\b/i)?.[1] || 0);
       seen.add(url);
       products.push({ url, title, discount, image });
-      if (products.length >= 40) break;
     }
     return products;
   }

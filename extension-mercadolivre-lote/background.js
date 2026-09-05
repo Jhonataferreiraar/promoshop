@@ -1,5 +1,4 @@
 const DEFAULT_ENDPOINT = 'https://promoshop.jhonatafaraujo.com.br';
-const MAX_BATCH_SIZE = 40;
 const UPLOAD_CHUNK_SIZE = 10;
 const DEFAULT_DELAY_MS = 10000;
 const MIN_DELAY_MS = 8000;
@@ -47,8 +46,7 @@ function normalizedCandidates(candidates) {
         title: String(candidate?.title || 'Produto Mercado Livre').replace(/\s+/g, ' ').trim().slice(0, 300)
       };
     })
-    .filter((candidate) => candidate && !seen.has(candidate.url) && seen.add(candidate.url))
-    .slice(0, MAX_BATCH_SIZE);
+    .filter((candidate) => candidate && !seen.has(candidate.url) && seen.add(candidate.url));
 }
 
 function snapshot(state) {
