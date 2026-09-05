@@ -110,7 +110,7 @@ O publicador usa `whatsapp-web.js` e Chromium. A sessão é persistida para que 
 
 ### Regras de publicação
 
-- Uma rodada escolhe uma oferta adequada para cada grupo temático.
+- Uma rodada escolhe uma oferta diferente para cada destino selecionado. Grupos com código Gxx recebem ofertas classificadas para seu público; canal, comunidade e outros destinos sem código recebem seus próprios itens, sem repetir a mesma oferta na rodada.
 - O intervalo configurado é aplicado entre os grupos da rodada.
 - Horário inicial, horário final, máximo por hora e máximo diário são respeitados.
 - **Publicar agora** ignora o intervalo normal, mas mantém as proteções de segurança e duplicidade.

@@ -546,6 +546,35 @@ async function resolveDestinations(item) {
   }
 
   const groups = await listGroups();
+
+  // Rodadas novas reservam um destino físico por vez. Isso é importante para
+  // que o canal, a comunidade e cada grupo temático recebam ofertas
+  // diferentes, mesmo quando o WhatsApp devolve o mesmo nome para mais de um
+  // destino. O ID é a identidade confiável nesse caso.
+  const roundDestinationId = String(item?.roundDestinationId || '').trim();
+  if (roundDestinationId) {
+    const destination = groups.find(
+      (group) => String(group.id || '') === roundDestinationId
+    );
+
+    if (!destination) {
+      console.warn(`Destino reservado não foi encontrado no WhatsApp: ${roundDestinationId}`);
+      return [];
+    }
+
+    const attempted = new Set(
+      [
+        ...(Array.isArray(item?.deliveryClaimedDestinationIds) ? item.deliveryClaimedDestinationIds : []),
+        ...(Array.isArray(item?.deliveryAttemptedDestinationIds) ? item.deliveryAttemptedDestinationIds : []),
+        ...(Array.isArray(item?.deliverySentDestinationIds) ? item.deliverySentDestinationIds : [])
+      ]
+        .map((id) => String(id))
+    );
+
+    return uniqueWhatsAppDestinations([destination])
+      .filter((candidate) => !attempted.has(String(candidate.id)));
+  }
+
   const selectedIds = new Set(selectedGroups.map((group) => String(group.id)));
   const selectedDestinations = selectedIds.size
     ? groups.filter((group) => selectedIds.has(String(group.id)))
@@ -693,11 +722,12 @@ async function processQueue() {
     sentTimes = sentTimes.filter((time) => Date.now() - time < 60 * 60 * 1000);
     if (!item.force && sentTimes.length >= maxPerHour) return;
     const destinations = await resolveDestinations(item);
-    console.log(
-      `Roteamento de "${item.offerTitle}": ${Array.isArray(item.targetAudienceCodes)
+    const routingLabel = item.roundDestinationName
+      || (Array.isArray(item.targetAudienceCodes) && item.targetAudienceCodes.length
         ? item.targetAudienceCodes.join(', ')
-        : 'modo antigo'
-      } → ${destinations.map((group) => group.name).join(' | ')
+        : 'destino reservado');
+    console.log(
+      `Roteamento de "${item.offerTitle}": ${routingLabel} → ${destinations.map((group) => group.name).join(' | ')
       }`
     );
     if (!destinations.length) {

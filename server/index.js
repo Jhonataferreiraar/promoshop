@@ -230,8 +230,8 @@ function resolveWithin(promise, milliseconds, fallback) {
  *
  * - IA com fallback local.
  * - Roteamento local caso IA falhe.
- * - Rodada por público.
- * - 1 produto diferente para cada público.
+ * - Rodada por destino/público.
+ * - 1 produto diferente para cada destino selecionado.
  * - Intervalo configurado no painel entre publicações automáticas.
  */
 const aiGenerationVersion = 7;
@@ -1816,76 +1816,142 @@ function formatCouponMessage(coupon) {
   return parts.filter(Boolean).join('\n\n');
 }
 
-function getRoundAudienceCodes(data) {
-  const audiences =
-    Array.isArray(
-      data.config
-        ?.whatsappAudiences
-    )
-      ? data.config
-          .whatsappAudiences
-      : [];
+function normalizeRoundSlotKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^dest:/i.test(raw)) return `dest:${raw.slice(5)}`;
+  return normalizeAudienceCode(raw);
+}
 
-  const whatsappGroups =
-    Array.isArray(
-      data.meta
-        ?.whatsapp
-        ?.groups
-    )
-      ? data.meta
-          .whatsapp
-          .groups
-      : [];
+function normalizeRoundDestinationName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  const availableGroupCodes =
-    new Set();
+function getRoundDestinationSlots(data) {
+  const audiences = Array.isArray(data.config?.whatsappAudiences)
+    ? data.config.whatsappAudiences
+    : [];
+  const groups = Array.isArray(data.meta?.whatsapp?.groups)
+    ? data.meta.whatsapp.groups
+    : [];
 
-  for (
-    const group
-    of whatsappGroups
-  ) {
-    const name =
-      String(
-        group.name || ''
-      ).trim();
+  const configuredIds = new Set(
+    (Array.isArray(data.config?.whatsappGroups) && data.config.whatsappGroups.length
+      ? data.config.whatsappGroups
+      : data.config?.whatsappGroupId
+        ? [{ id: data.config.whatsappGroupId }]
+        : [])
+      .map((group) => String(group?.id || '').trim())
+      .filter(Boolean)
+  );
 
-    const match =
-      name.match(
-        /(?:\||\s)(G\d+)\s*$/i
+  let selectedGroups = configuredIds.size
+    ? groups.filter((group) => configuredIds.has(String(group?.id || '').trim()))
+    : groups;
+
+  // Mantém a regra já usada pelo publicador: quando a comunidade geral está
+  // habilitada, todos os destinos que representam esse nome também entram no
+  // conjunto de publicação, mesmo que o usuário tenha marcado somente os
+  // grupos temáticos. Eles agora viram slots independentes, em vez de serem
+  // anexados à mesma oferta.
+  if (data.config?.whatsappCommunityEnabled !== false) {
+    const normalizedCommunityName = normalizeRoundDestinationName(
+      data.config?.whatsappCommunityName || 'PromoShop - Ofertas'
+    );
+    if (normalizedCommunityName) {
+      const selectedIds = new Set(
+        selectedGroups.map((group) => String(group?.id || '').trim())
       );
-
-    if (match?.[1]) {
-      availableGroupCodes.add(
-        normalizeAudienceCode(
-          match[1]
-        )
-      );
+      const communityGroups = groups.filter((group) => (
+        normalizeRoundDestinationName(group?.name) === normalizedCommunityName
+        && !selectedIds.has(String(group?.id || '').trim())
+      ));
+      selectedGroups = [...selectedGroups, ...communityGroups];
     }
   }
 
-  return audiences
-    .filter(
-      (audience) =>
-        audience.enabled !==
-        false
-    )
-    .map(
-      (audience) =>
-        normalizeAudienceCode(
-          audience.code
-        )
-    )
-    .filter(
-      (code) =>
-        /^G\d+$/.test(code)
-    )
-    .filter(
-      (code) =>
-        !availableGroupCodes.size ||
-        availableGroupCodes.has(
-          code
-        )
-    );
+  const enabledAudienceCodes = new Set(
+    audiences
+      .filter((audience) => audience && audience.enabled !== false)
+      .map((audience) => normalizeAudienceCode(audience.code))
+      .filter((code) => /^G\d+$/.test(code))
+  );
+
+  const slots = selectedGroups
+    .map((group) => {
+      const destinationId = String(group?.id || '').trim();
+      if (!destinationId) return null;
+
+      const destinationName = String(group?.name || '').trim();
+      const match = destinationName.match(/(?:\||\s)(G\d+)\s*$/i);
+      const audienceCode = match?.[1]
+        ? normalizeAudienceCode(match[1])
+        : '';
+
+      return {
+        key: `dest:${destinationId}`,
+        destinationId,
+        destinationName,
+        audienceCode: enabledAudienceCodes.has(audienceCode) ? audienceCode : ''
+      };
+    })
+    .filter(Boolean);
+
+  // A rodada começa pelos grupos codificados e, em seguida, atende todos os
+  // destinos sem código (canal, comunidade e qualquer outro destino geral).
+  // Cada ID é um slot próprio, mesmo quando o WhatsApp devolve o mesmo nome.
+  return slots.sort((a, b) => {
+    const aCode = a.audienceCode ? Number(a.audienceCode.slice(1)) : Number.POSITIVE_INFINITY;
+    const bCode = b.audienceCode ? Number(b.audienceCode.slice(1)) : Number.POSITIVE_INFINITY;
+    return aCode - bCode
+      || a.destinationName.localeCompare(b.destinationName, 'pt-BR')
+      || a.destinationId.localeCompare(b.destinationId);
+  });
+}
+
+function getRoundAudienceCodes(data) {
+  const slots = getRoundDestinationSlots(data);
+
+  // O nome histórico da função é mantido para evitar mudanças fora da
+  // rotina de rodadas. Novas rodadas usam o ID do destino como chave, e não
+  // apenas o código Gxx, para que destinos com o mesmo nome não se misturem.
+  return slots.map((slot) => slot.key);
+}
+
+function getRoundAvailableSlotKeys(data) {
+  const slots = getRoundDestinationSlots(data);
+  return [
+    ...slots.map((slot) => slot.key),
+    // Aceita rodadas antigas que ainda persistiram somente G01, G02 etc.
+    ...new Set(slots.map((slot) => slot.audienceCode).filter(Boolean))
+  ];
+}
+
+function getRoundSlot(data, slotKey) {
+  const normalizedKey = normalizeRoundSlotKey(slotKey);
+  if (!normalizedKey) return null;
+
+  const slots = getRoundDestinationSlots(data);
+  const directSlot = slots.find((slot) => slot.key === normalizedKey);
+  if (directSlot) return directSlot;
+
+  // Compatibilidade com uma rodada criada antes da mudança para slots por ID.
+  if (/^G\d+$/.test(normalizedKey)) {
+    return slots.find((slot) => slot.audienceCode === normalizedKey) || {
+      key: normalizedKey,
+      destinationId: '',
+      destinationName: '',
+      audienceCode: normalizedKey
+    };
+  }
+
+  return null;
 }
 
 function getLocalCodesForQueueItem(
@@ -1973,10 +2039,10 @@ async function getPublicationRound(
     const data = await readStore();
     const round = data.meta?.publicationRound;
     if (!round || !Array.isArray(round.pendingAudienceCodes)) return null;
-    const availableCodes = getRoundAudienceCodes(data);
+    const availableCodes = getRoundAvailableSlotKeys(data);
     const pendingAudienceCodes = round.pendingAudienceCodes
-      .map(normalizeAudienceCode)
-      .filter((code) => availableCodes.includes(code));
+      .map(normalizeRoundSlotKey)
+      .filter((code, index, list) => code && list.indexOf(code) === index && availableCodes.includes(code));
     if (!pendingAudienceCodes.length) return null;
     return {
       id: round.id,
@@ -2056,21 +2122,17 @@ async function getPublicationRound(
           .publicationRound =
           round;
       } else {
+        const availableSlotKeys = getRoundAvailableSlotKeys(data);
         round
           .pendingAudienceCodes =
           round
             .pendingAudienceCodes
-            .map(
-              (code) =>
-                normalizeAudienceCode(
-                  code
-                )
-            )
+            .map(normalizeRoundSlotKey)
             .filter(
-              (code) =>
-                audienceCodes.includes(
-                  code
-                )
+              (code, index, list) =>
+                code &&
+                list.indexOf(code) === index &&
+                availableSlotKeys.includes(code)
             );
 
         round.usedOfferIds =
@@ -2121,7 +2183,7 @@ async function getPublicationRound(
 
 async function skipRoundAudience(
   roundId,
-  audienceCode
+  slotKey
 ) {
   await updateStore(
     (data) => {
@@ -2144,12 +2206,8 @@ async function skipRoundAudience(
           []
         ).filter(
           (code) =>
-            normalizeAudienceCode(
-              code
-            ) !==
-            normalizeAudienceCode(
-              audienceCode
-            )
+            normalizeRoundSlotKey(code) !==
+            normalizeRoundSlotKey(slotKey)
         );
 
       if (
@@ -4448,6 +4506,9 @@ app.put(
             if (item.offerSnapshot) item.offerSnapshot.targetAudienceCodes = targetAudienceCodes;
             delete item.roundId;
             delete item.roundAudienceCode;
+            delete item.roundSlotKey;
+            delete item.roundDestinationId;
+            delete item.roundDestinationName;
           }
 
           data.meta.publicationRound = null;
@@ -7263,6 +7324,9 @@ app.patch(
 
       item.targetAudienceCodes = [selectedCode];
       item.roundAudienceCode = selectedCode;
+      delete item.roundSlotKey;
+      delete item.roundDestinationId;
+      delete item.roundDestinationName;
       if (item.offerSnapshot) item.offerSnapshot.targetAudienceCodes = [selectedCode];
       updatedItem = adminQueueItem(item);
     });
@@ -7802,11 +7866,14 @@ app.get(
 
     async function prepareWithAi(
       item,
-      roundAudienceCode = ''
+      roundAudienceCode = '',
+      roundDestinationId = ''
     ) {
       if (!item) {
         return null;
       }
+
+      const directRoundDestination = Boolean(String(roundDestinationId || '').trim());
 
       try {
         if (item.kind === 'group-directory') {
@@ -7815,9 +7882,13 @@ app.get(
           if (normalizedRoundAudienceCode && !selectedCodes.includes(normalizedRoundAudienceCode)) {
             return { skippedForAudience: true };
           }
-          const deliveryAudienceCodes = normalizedRoundAudienceCode ? [normalizedRoundAudienceCode] : selectedCodes;
+          const deliveryAudienceCodes = normalizedRoundAudienceCode
+            ? [normalizedRoundAudienceCode]
+            : directRoundDestination
+              ? []
+              : selectedCodes;
           const message = String(item.message || '').trim().slice(0, 4000);
-          if (!deliveryAudienceCodes.length || !message) throw new Error('Divulgação sem mensagem ou grupo de destino.');
+          if ((!deliveryAudienceCodes.length && !directRoundDestination) || !message) throw new Error('Divulgação sem mensagem ou grupo de destino.');
           await updateStore((data) => {
             const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
             if (!saved) return;
@@ -7829,7 +7900,7 @@ app.get(
             delete saved.aiRetryAt;
             delete saved.aiError;
           });
-          return { ...item, message, messageSource: 'group-directory', aiStatus: 'not-applicable', targetAudienceCodes: deliveryAudienceCodes, roundAudienceCode: normalizedRoundAudienceCode || null };
+          return { ...item, message, messageSource: 'group-directory', aiStatus: 'not-applicable', targetAudienceCodes: deliveryAudienceCodes, roundAudienceCode: normalizedRoundAudienceCode || null, roundDestinationId: roundDestinationId || null };
         }
 
         if (item.kind === 'coupon') {
@@ -7848,9 +7919,11 @@ app.get(
 
           const deliveryAudienceCodes = normalizedRoundAudienceCode
             ? [normalizedRoundAudienceCode]
-            : selectedCodes;
+            : directRoundDestination
+              ? []
+              : selectedCodes;
 
-          if (!deliveryAudienceCodes.length || !coupon.title || !coupon.link) {
+          if ((!deliveryAudienceCodes.length && !directRoundDestination) || !coupon.title || !coupon.link) {
             throw new Error('Cupom sem título, link ou grupo selecionado.');
           }
 
@@ -7877,7 +7950,8 @@ app.get(
             messageSource: 'coupon',
             aiStatus: 'not-applicable',
             targetAudienceCodes: deliveryAudienceCodes,
-            roundAudienceCode: normalizedRoundAudienceCode || null
+            roundAudienceCode: normalizedRoundAudienceCode || null,
+            roundDestinationId: roundDestinationId || null
           };
         }
 
@@ -7970,7 +8044,8 @@ app.get(
 
         if (
           !targetAudienceCodes
-            .length
+            .length &&
+          !directRoundDestination
         ) {
           throw new Error(
             'Nenhum grupo adequado foi encontrado para este produto.'
@@ -8044,6 +8119,8 @@ app.get(
             ? [
                 normalizedRoundAudienceCode
               ]
+            : directRoundDestination
+              ? []
             : [
                 ...targetAudienceCodes
               ];
@@ -8207,6 +8284,10 @@ app.get(
                 normalizedRoundAudienceCode;
             }
 
+            if (directRoundDestination) {
+              saved.roundDestinationId = roundDestinationId;
+            }
+
             saved.message =
               message;
 
@@ -8299,6 +8380,10 @@ app.get(
 
           roundAudienceCode:
             normalizedRoundAudienceCode ||
+            null,
+
+          roundDestinationId:
+            roundDestinationId ||
             null,
 
           message,
@@ -8718,7 +8803,7 @@ app.get(
      * a começar uma nova.
      *
      * O intervalo já foi validado acima para a abertura desta nova rodada.
-     * Rodadas em andamento continuam até atender ou ignorar todos os grupos.
+     * Rodadas em andamento continuam até atender ou ignorar todos os destinos.
      */
     if (!round) {
       round =
@@ -8746,7 +8831,7 @@ app.get(
           queueItemIsDue(item, now.getTime())
       );
     /*
-     * Enquanto existirem públicos
+     * Enquanto existirem destinos
      * pendentes na rodada...
      */
     while (
@@ -8755,13 +8840,14 @@ app.get(
         .pendingAudienceCodes
         .length
     ) {
-      const audienceCode =
-        normalizeAudienceCode(
-          round
-            .pendingAudienceCodes[
-              0
-            ]
-        );
+      const roundSlotKey = normalizeRoundSlotKey(
+        round.pendingAudienceCodes[0]
+      );
+      const roundSlot = getRoundSlot(store, roundSlotKey);
+      const audienceCode = roundSlot?.audienceCode || '';
+      const roundDestinationId = roundSlot?.destinationId || '';
+      const roundDestinationName = roundSlot?.destinationName || '';
+      const roundTargetLabel = audienceCode || roundDestinationName || roundSlotKey;
 
       /*
        * ====================================================
@@ -8800,9 +8886,12 @@ app.get(
                 config
               );
 
-            return localCodes.includes(
-              audienceCode
-            );
+            // Grupos codificados recebem somente produtos classificados para
+            // aquele público. Destinos sem código (canal/comunidade) usam um
+            // produto ainda não consumido nesta rodada.
+            return audienceCode
+              ? localCodes.includes(audienceCode)
+              : true;
           }
         );
 
@@ -8822,13 +8911,13 @@ app.get(
         !candidates.length
       ) {
         await addLog(
-          `Rodada ${round.id}: nenhum produto disponível para ${audienceCode}${historySkipped ? `; ${historySkipped} oferta(s) já publicada(s) foram bloqueadas para não repetir.` : ''}${duplicatePendingSkipped ? `; ${duplicatePendingSkipped} duplicata(s) pendente(s) foram ignoradas.` : ''} Grupo ignorado nesta rodada.`,
+          `Rodada ${round.id}: nenhum produto disponível para ${roundTargetLabel}${historySkipped ? `; ${historySkipped} oferta(s) já publicada(s) foram bloqueadas para não repetir.` : ''}${duplicatePendingSkipped ? `; ${duplicatePendingSkipped} duplicata(s) pendente(s) foram ignoradas.` : ''} Grupo ignorado nesta rodada.`,
           'info'
         );
 
         await skipRoundAudience(
           round.id,
-          audienceCode
+          roundSlotKey
         );
 
         round =
@@ -8865,7 +8954,8 @@ app.get(
         const prepared =
           await prepareWithAi(
             item,
-            audienceCode
+            audienceCode,
+            roundDestinationId
           );
 
         if (
@@ -8917,16 +9007,23 @@ app.get(
                 round.id;
 
               saved.roundAudienceCode =
-                audienceCode;
+                audienceCode || null;
+
+              saved.roundSlotKey =
+                roundSlotKey;
+
+              saved.roundDestinationId =
+                roundDestinationId || null;
+
+              saved.roundDestinationName =
+                roundDestinationName || null;
 
               /*
                * Segurança extra:
                * somente este público.
                */
               saved.targetAudienceCodes =
-                [
-                  audienceCode
-                ];
+                audienceCode ? [audienceCode] : [];
 
               if (
                 saved.offerSnapshot
@@ -8935,7 +9032,7 @@ app.get(
                   .offerSnapshot
                   .targetAudienceCodes =
                   [
-                    audienceCode
+                    ...(audienceCode ? [audienceCode] : [])
                   ];
               }
 
@@ -8945,7 +9042,7 @@ app.get(
 
           if (productClaimed) {
             await addLog(
-              `Rodada ${round.id}: ${item.offerTitle} selecionado para ${audienceCode}. Próxima prioridade: ${WHATSAPP_STORE_PRIORITY[nextStorePriority]}.`,
+              `Rodada ${round.id}: ${item.offerTitle} selecionado para ${roundTargetLabel}. Próxima prioridade: ${WHATSAPP_STORE_PRIORITY[nextStorePriority]}.`,
               'success'
             );
 
@@ -8957,15 +9054,19 @@ app.get(
               status: 'publishing',
 
               targetAudienceCodes:
-                [
-                  audienceCode
-                ],
+                audienceCode ? [audienceCode] : [],
 
               roundId:
                 round.id,
 
               roundAudienceCode:
-                audienceCode
+                audienceCode || null,
+
+              roundSlotKey,
+
+              roundDestinationId: roundDestinationId || null,
+
+              roundDestinationName: roundDestinationName || null
             });
           }
         }
@@ -8979,13 +9080,13 @@ app.get(
         !productPrepared
       ) {
         await addLog(
-          `Rodada ${round.id}: nenhum produto válido pôde ser preparado para ${audienceCode}.`,
+          `Rodada ${round.id}: nenhum produto válido pôde ser preparado para ${roundTargetLabel}.`,
           'info'
         );
 
         await skipRoundAudience(
           round.id,
-          audienceCode
+          roundSlotKey
         );
 
         round =
@@ -9696,7 +9797,9 @@ app.post(
           data,
           item.roundAudienceCode
             ? `WhatsApp: ${item.offerTitle} enviado para ${item.roundAudienceCode}.`
-            : `WhatsApp: publicação enviada (${req.params.id}).`,
+            : item.roundDestinationName || item.roundDestinationId
+              ? `WhatsApp: ${item.offerTitle} enviado para ${item.roundDestinationName || item.roundDestinationId}.`
+              : `WhatsApp: publicação enviada (${req.params.id}).`,
           'success'
         );
 
@@ -9712,19 +9815,18 @@ app.post(
 
         let deferredUntilRoundCompletion = false;
 
+        const completedRoundSlotKey = normalizeRoundSlotKey(
+          item.roundSlotKey || (item.roundDestinationId ? `dest:${item.roundDestinationId}` : item.roundAudienceCode)
+        );
+
         if (
           round &&
           item.roundId &&
           round.id ===
             item.roundId &&
-          item.roundAudienceCode
+          completedRoundSlotKey
           ) {
           deferredUntilRoundCompletion = true;
-          const audienceCode =
-            normalizeAudienceCode(
-              item
-                .roundAudienceCode
-            );
 
           round.storePriorityCursor = normalizeWhatsappStorePriorityCursor(
             item.storePriorityNextCursor ?? round.storePriorityCursor
@@ -9735,16 +9837,14 @@ app.post(
            */
           round.pendingAudienceCodes =
             (
-              round
-                .pendingAudienceCodes ||
-              []
-            ).filter(
-              (code) =>
-                normalizeAudienceCode(
-                  code
-                ) !==
-                audienceCode
-            );
+            round
+              .pendingAudienceCodes ||
+            []
+          ).filter(
+            (code) =>
+                normalizeRoundSlotKey(code) !==
+                completedRoundSlotKey
+          );
 
           /*
            * Produto não poderá ser
@@ -9912,11 +10012,15 @@ app.post(
          * Assim a rodada não fica
          * presa para sempre.
          */
+        const failedRoundSlotKey = normalizeRoundSlotKey(
+          item.roundSlotKey || (item.roundDestinationId ? `dest:${item.roundDestinationId}` : item.roundAudienceCode)
+        );
+
         if (
           item.status ===
             'failed' &&
           item.roundId &&
-          item.roundAudienceCode
+          failedRoundSlotKey
         ) {
           const round =
             data.meta
@@ -9927,12 +10031,6 @@ app.post(
             round.id ===
               item.roundId
           ) {
-            const audienceCode =
-              normalizeAudienceCode(
-                item
-                  .roundAudienceCode
-              );
-
             round.pendingAudienceCodes =
               (
                 round
@@ -9940,10 +10038,8 @@ app.post(
                 []
               ).filter(
                 (code) =>
-                  normalizeAudienceCode(
-                    code
-                  ) !==
-                  audienceCode
+                  normalizeRoundSlotKey(code) !==
+                  failedRoundSlotKey
               );
 
             if (
