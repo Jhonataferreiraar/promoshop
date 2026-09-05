@@ -49,8 +49,8 @@ const activeRound = {
 const continuingRound = getWhatsappRoundIntervalState([
   { status: 'sent', sentAt: '2026-08-27T14:59:30.000Z', roundId: 'round_1' }
 ], 10, activeRound, now);
-assert.equal(continuingRound.elapsed, true);
-assert.equal(continuingRound.remainingMs, 0);
+assert.equal(continuingRound.elapsed, false);
+assert.equal(continuingRound.remainingMs, 9.5 * 60_000);
 assert.equal(continuingRound.continuingRound, true);
 
 const nextRound = getWhatsappRoundIntervalState([
@@ -59,4 +59,4 @@ const nextRound = getWhatsappRoundIntervalState([
 assert.equal(nextRound.elapsed, false);
 assert.equal(nextRound.continuingRound, false);
 
-console.log('WhatsApp: intervalo entre rodadas completas validado.');
+console.log('WhatsApp: intervalo entre cada publicação automática validado.');

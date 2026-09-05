@@ -46,17 +46,9 @@ export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRo
     activeRound.pendingAudienceCodes.length
   );
 
-  // O intervalo configurado separa rodadas completas. Enquanto uma rodada
-  // percorre G01, G02, G03 etc., o worker mantém a pausa curta de segurança
-  // entre os destinos; não deve aguardar novamente vários minutos.
-  if (roundInProgress) {
-    return {
-      ...interval,
-      remainingMs: 0,
-      elapsed: true,
-      continuingRound: true
-    };
-  }
-
-  return { ...interval, continuingRound: false };
+  // O intervalo configurado no painel vale para cada publicação automática,
+  // inclusive quando a rodada ainda está percorrendo G01, G02, G03 etc. A
+  // rodada continua sendo uma unidade lógica de distribuição, mas não pode
+  // liberar vários destinos em sequência e ignorar a espera escolhida.
+  return { ...interval, continuingRound: roundInProgress };
 }
