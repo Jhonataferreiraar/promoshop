@@ -682,6 +682,7 @@ async function processQueue() {
   if (monitoringProcessing) return;
   processing = true;
   let item = null;
+  let preparedMedia = null;
   try {
     if (!whatsappReady) {
       return;
@@ -708,6 +709,38 @@ async function processQueue() {
     let deliveredDestinations = 0;
     const destinationErrors = [];
     let safeRetryAvailable = false;
+    // Prepare a mídia uma única vez por item. Antes, a mesma imagem era
+    // baixada, decodificada e convertida novamente para cada grupo, o que
+    // multiplicava o pico de memória do Chromium/libvips.
+    let mediaPreparationError = null;
+    if (item.image) {
+      try {
+        console.log(`Baixando imagem da oferta: ${item.image}`);
+        const prepared = await downloadWhatsappImage(item.image);
+        // Mantemos somente a string base64 necessária para criar uma mídia
+        // nova por destino. O objeto MessageMedia pode ser alterado pelo
+        // WhatsApp Web durante o envio, por isso não compartilhamos a mesma
+        // instância entre grupos.
+        preparedMedia = {
+          mimetype: prepared.mimetype,
+          data: prepared.data.toString('base64'),
+          filename: prepared.filename,
+          filesize: prepared.filesize
+        };
+      } catch (error) {
+        mediaPreparationError = error;
+        console.error(
+          `Falha ao baixar a imagem de "${item.offerTitle}": ${error.message}`
+        );
+      }
+    }
+
+    const storeBeforeDestinations = await readStore();
+    const audienceDelaySeconds = Math.max(
+      5,
+      Number(storeBeforeDestinations.config?.whatsappAudienceDelaySeconds || 15)
+    );
+
     for (const destination of destinations) {
       const claimed = await claimDestination(item, destination);
       if (!claimed) {
@@ -727,17 +760,9 @@ async function processQueue() {
           await refreshActivePage();
 
           if (item.image) {
-            let prepared;
-            try {
-              console.log(`Baixando imagem da oferta: ${item.image}`);
-              prepared = await downloadWhatsappImage(item.image);
-            } catch (mediaError) {
-              console.error(
-                `Falha ao baixar a imagem de "${item.offerTitle}": ${mediaError.message}`
-              );
-
+            if (mediaPreparationError) {
               if (isWhatsAppChannel(destination.id)) {
-                throw new Error(`Não foi possível publicar a imagem no canal: ${mediaError.message}`);
+                throw new Error(`Não foi possível publicar a imagem no canal: ${mediaPreparationError.message}`);
               }
 
               console.log('Enviando somente o texto como alternativa no grupo.');
@@ -748,10 +773,8 @@ async function processQueue() {
                 waitUntilMsgSent: true
               });
               sent = true;
-            }
-
-            if (!sent) {
-              const media = new MessageMedia(prepared.mimetype, prepared.data.toString('base64'), prepared.filename, prepared.filesize);
+            } else {
+              const media = new MessageMedia(preparedMedia.mimetype, preparedMedia.data, preparedMedia.filename, preparedMedia.filesize);
               console.log(`Imagem carregada: ${media.mimetype || 'tipo desconhecido'}`);
               await startDestination(item, destination);
               deliveryStarted = true;
@@ -791,19 +814,6 @@ async function processQueue() {
       if (!sent) throw lastSendError || new Error(`O WhatsApp não confirmou o envio para ${destination.name || 'um dos grupos'}.`);
       await completeDestination(item, destination);
       deliveredDestinations += 1;
-      const store =
-        await readStore();
-
-      const audienceDelaySeconds =
-        Math.max(
-          5,
-          Number(
-            store.config
-              .whatsappAudienceDelaySeconds ||
-            15
-          )
-        );
-
       await new Promise(
         (resolve) =>
           setTimeout(
@@ -850,7 +860,12 @@ async function processQueue() {
   } catch (error) {
     console.error(error.message);
     if (item) await request(`/api/worker/queue/${item.id}/fail`, { method: 'POST', body: JSON.stringify({ error: error.message }) }).catch(() => { });
-  } finally { processing = false; }
+  } finally {
+    // Solta a referência à mídia codificada assim que o item termina. A
+    // próxima oferta poderá então ser coletada pelo GC sem acumular payloads.
+    preparedMedia = null;
+    processing = false;
+  }
 }
 
 async function processMonitoringQueue() {

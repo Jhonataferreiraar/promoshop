@@ -4,12 +4,19 @@ import sharp from 'sharp';
 import { downloadRemoteBuffer } from './safeRemote.js';
 
 const MAXIMUM_SOURCE_BYTES = 12 * 1024 * 1024;
+const MAXIMUM_INPUT_PIXELS = 25_000_000;
+
+// O publicador roda no mesmo serviço que a API. Limitar o cache e a
+// concorrência do libvips evita que uma conversão isolada reserve centenas de
+// megabytes enquanto o Chromium do WhatsApp já está ativo.
+sharp.concurrency(1);
+sharp.cache({ memory: 32, files: 16, items: 64 });
 
 export async function normalizeWhatsappImage(source) {
   const buffer = Buffer.isBuffer(source) ? source : Buffer.from(source || []);
   if (!buffer.length) throw new Error('A imagem recebida está vazia.');
   if (buffer.length > MAXIMUM_SOURCE_BYTES) throw new Error('A imagem excede o limite de 12 MB.');
-  return sharp(buffer)
+  return sharp(buffer, { limitInputPixels: MAXIMUM_INPUT_PIXELS })
     .rotate()
     .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
     .flatten({ background: '#ffffff' })
