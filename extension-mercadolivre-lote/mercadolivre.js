@@ -133,12 +133,47 @@
     };
   }
 
+  function productIdFromValue(value) {
+    const candidate = String(value || '').match(/\bMLB(?:U)?-?\d+\b/i)?.[0];
+    return candidate ? candidate.replace('-', '').toUpperCase() : '';
+  }
+
+  function productIdFromLink(url) {
+    for (const key of ['item_id', 'itemId', 'wid']) {
+      const id = productIdFromValue(url.searchParams.get(key));
+      if (id) return id;
+    }
+
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+    const filterValues = [
+      url.searchParams.get('pdp_filters'),
+      hashParams.get('pdp_filters')
+    ];
+    for (const value of filterValues) {
+      const explicit = String(value || '').match(/(?:^|[|;&])(?:item_id|itemId)[:=](MLB(?:U)?-?\d+)/i)?.[1];
+      if (explicit) return explicit.replace('-', '').toUpperCase();
+    }
+
+    for (const key of ['item_id', 'itemId', 'wid']) {
+      const id = productIdFromValue(hashParams.get(key));
+      if (id) return id;
+    }
+
+    return productIdFromValue(url.pathname);
+  }
+
   function normalizedProductUrl(value) {
     try {
       const url = new URL(String(value || ''), location.origin);
       if (!/(^|\.)mercadolivre\.com\.br$/i.test(url.hostname)) return '';
-      if (!/MLB(?:U)?-?\d+/i.test(`${url.pathname}${url.search}`)) return '';
       if (/\/(?:ofertas?|lista|categoria|search|navigation|home|cupons?)(?:\/|$)/i.test(url.pathname)) return '';
+
+      const productId = productIdFromLink(url);
+      if (!productId) return '';
+      const trackingLink = /(^|\.)click1\.mercadolivre\.com\.br$/i.test(url.hostname)
+        || /\/mclics\/clicks\/external\/MLB\/count/i.test(url.pathname);
+      if (trackingLink) return `https://www.mercadolivre.com.br/p/${productId}`;
+
       url.hash = '';
       [...url.searchParams.keys()].forEach((key) => {
         if (!['wid', 'item_id', 'itemId'].includes(key)) url.searchParams.delete(key);
