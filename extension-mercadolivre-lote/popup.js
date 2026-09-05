@@ -9,6 +9,7 @@ const selectedCount = document.querySelector('#selectedCount');
 const scanButton = document.querySelector('#scan');
 const startButton = document.querySelector('#start');
 const cancelButton = document.querySelector('#cancel');
+const retryButton = document.querySelector('#retry');
 const progressWrap = document.querySelector('.progress-wrap');
 const progress = document.querySelector('#progress');
 const progressText = document.querySelector('#progressText');
@@ -92,6 +93,7 @@ async function startBatch() {
   startButton.disabled = true;
   scanButton.disabled = true;
   cancelButton.hidden = false;
+  retryButton.disabled = true;
   report.hidden = false;
   report.textContent = 'Preparando as páginas individuais…';
   let response;
@@ -103,6 +105,7 @@ async function startBatch() {
   if (response?.error) {
     batchRunning = false;
     cancelButton.hidden = true;
+    retryButton.disabled = false;
     scanButton.disabled = false;
     updateSelectionCount();
     setStatus(response.error);
@@ -111,6 +114,33 @@ async function startBatch() {
   batchRunning = true;
   setStatus('Lote iniciado. Você pode continuar usando o navegador.');
   renderProgress(response.status || { total: selected.length, completed: 0, currentTitle: selected[0]?.title });
+}
+
+async function retryFailedBatch() {
+  if (batchRunning) return;
+  retryButton.disabled = true;
+  startButton.disabled = true;
+  scanButton.disabled = true;
+  cancelButton.hidden = false;
+  report.hidden = false;
+  report.textContent = 'Reprocessando somente os produtos que falharam…';
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({ type: 'RETRY_ML_BATCH' });
+  } catch {
+    response = { error: 'Não foi possível iniciar a nova tentativa. Recarregue a extensão e tente novamente.' };
+  }
+  if (response?.error) {
+    retryButton.disabled = false;
+    cancelButton.hidden = true;
+    scanButton.disabled = false;
+    updateSelectionCount();
+    setStatus(response.error);
+    return;
+  }
+  batchRunning = true;
+  setStatus('Nova tentativa iniciada somente para as falhas.');
+  renderProgress(response.status || { total: 0, completed: 0 });
 }
 
 async function cancelBatch() {
@@ -137,6 +167,10 @@ function renderProgress(state) {
   const failures = Array.isArray(state?.failures) && state.failures.length
     ? `\n\n${state.failures.map((failure) => `• ${failure.title}: ${failure.error}`).join('\n')}`
     : '';
+  const retryable = Array.isArray(state?.retryableCandidates) ? state.retryableCandidates.length : 0;
+  retryButton.hidden = state?.status === 'running' || retryable === 0;
+  retryButton.disabled = false;
+  retryButton.textContent = retryable ? `Tentar ${retryable} falha(s) novamente` : 'Tentar falhas novamente';
   report.hidden = false;
   report.textContent = `${summary}${state?.message ? `\n${state.message}` : ''}${failures}`;
 }
@@ -185,6 +219,7 @@ chrome.runtime.onMessage.addListener((message) => {
 document.querySelector('#save').addEventListener('click', save);
 scanButton.addEventListener('click', scanPage);
 startButton.addEventListener('click', startBatch);
+retryButton.addEventListener('click', retryFailedBatch);
 cancelButton.addEventListener('click', cancelBatch);
 limit.addEventListener('change', () => {
   const inputs = [...results.querySelectorAll('input[data-index]')];

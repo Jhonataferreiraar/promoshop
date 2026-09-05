@@ -60,6 +60,7 @@ function snapshot(state) {
     capturedCount: state.captured.length,
     failedCount: state.failed.length,
     failures: state.failed.slice(-20),
+    retryableCandidates: state.retryCandidates.slice(-100),
     uploadedCount: state.uploadedCount,
     duplicateCount: state.duplicateCount,
     delayMs: state.delayMs,
@@ -170,8 +171,10 @@ async function runBatch(state, settings) {
         capturedOffers.push(offer);
         state.message = 'Link oficial gerado. Aguardando o próximo produto…';
       } catch (error) {
-        state.failed.push({ title: candidate.title, error: error.message || 'Falha ao capturar.' });
-        state.message = `Falha ignorada: ${error.message || 'não foi possível capturar.'}`;
+        const message = error.message || 'Falha ao capturar.';
+        state.failed.push({ title: candidate.title, url: candidate.url, retryable: true, error: message });
+        state.retryCandidates.push({ url: candidate.url, title: candidate.title });
+        state.message = `Falha ignorada: ${message}`;
       }
       state.completed = index + 1;
       await notify(state);
@@ -181,7 +184,7 @@ async function runBatch(state, settings) {
         try {
           await uploadChunk(state, chunk, settings);
         } catch (error) {
-          state.failed.push(...chunk.map((offer) => ({ title: offer.title, error: `Falha ao enviar ao PromoShop: ${error.message}` })));
+          state.failed.push(...chunk.map((offer) => ({ title: offer.title, url: offer.productUrl, retryable: false, error: `Falha ao enviar ao PromoShop: ${error.message}` })));
           state.message = error.message || 'Falha ao enviar o lote ao PromoShop.';
           await notify(state);
         }
@@ -194,7 +197,7 @@ async function runBatch(state, settings) {
       try {
         await uploadChunk(state, finalChunk, settings);
       } catch (error) {
-        state.failed.push(...finalChunk.map((offer) => ({ title: offer.title, error: `Falha ao enviar ao PromoShop: ${error.message}` })));
+        state.failed.push(...finalChunk.map((offer) => ({ title: offer.title, url: offer.productUrl, retryable: false, error: `Falha ao enviar ao PromoShop: ${error.message}` })));
         state.message = error.message || 'Falha ao enviar o lote ao PromoShop.';
       }
     }
@@ -229,6 +232,7 @@ async function startBatch(message) {
     currentTitle: '',
     captured: [],
     failed: [],
+    retryCandidates: [],
     uploadErrors: [],
     uploadedCount: 0,
     duplicateCount: 0,
@@ -243,9 +247,63 @@ async function startBatch(message) {
   return snapshot(batchState);
 }
 
+async function retryFailedBatch() {
+  if (batchState?.status === 'running') throw new Error('Já existe um lote em andamento.');
+  const stored = await chrome.storage.local.get({ mlBatchStatus: null });
+  const previous = batchState ? snapshot(batchState) : stored.mlBatchStatus;
+  const candidates = normalizedCandidates(previous?.retryableCandidates);
+  if (!candidates.length) throw new Error('Não há falhas de captura para tentar novamente.');
+  const settings = await getSettings();
+  if (!settings.token) throw new Error('Informe o token da extensão no popup.');
+
+  const retryUrls = new Set(candidates.map((candidate) => candidate.url));
+  const previousFailures = Array.isArray(batchState?.failed)
+    ? batchState.failed
+    : (Array.isArray(previous?.failures) ? previous.failures : []);
+  const preservedFailures = previousFailures.filter((failure) => !failure.retryable && !retryUrls.has(failure.url));
+  const previousCapturedCount = Number(previous?.capturedCount || 0);
+
+  batchState = batchState || {
+    batchId: globalThis.crypto?.randomUUID?.() || `ml-batch-${Date.now()}`,
+    candidates: [],
+    completed: 0,
+    currentTitle: '',
+    captured: Array.from({ length: previousCapturedCount }, () => ({})),
+    failed: [],
+    retryCandidates: [],
+    uploadErrors: [],
+    uploadedCount: Number(previous?.uploadedCount || 0),
+    duplicateCount: Number(previous?.duplicateCount || 0),
+    cancelRequested: false,
+    activeTabId: null,
+    delayMs: Math.max(MIN_DELAY_MS, Math.min(Number(previous?.delayMs) || DEFAULT_DELAY_MS, MAX_DELAY_MS)),
+    startedAt: new Date().toISOString(),
+    message: ''
+  };
+  batchState.batchId = globalThis.crypto?.randomUUID?.() || `ml-batch-retry-${Date.now()}`;
+  batchState.status = 'running';
+  batchState.candidates = candidates;
+  batchState.completed = 0;
+  batchState.currentTitle = '';
+  batchState.failed = preservedFailures;
+  batchState.retryCandidates = [];
+  batchState.cancelRequested = false;
+  batchState.activeTabId = null;
+  batchState.startedAt = new Date().toISOString();
+  batchState.finishedAt = null;
+  batchState.message = `Reprocessando ${candidates.length} falha(s) de captura.`;
+  await notify(batchState);
+  runBatch(batchState, settings).catch(() => {});
+  return snapshot(batchState);
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'START_ML_BATCH') {
     startBatch(message).then((status) => sendResponse({ ok: true, status })).catch((error) => sendResponse({ error: error.message || 'Não foi possível iniciar o lote.' }));
+    return true;
+  }
+  if (message?.type === 'RETRY_ML_BATCH') {
+    retryFailedBatch().then((status) => sendResponse({ ok: true, status })).catch((error) => sendResponse({ error: error.message || 'Não foi possível tentar as falhas novamente.' }));
     return true;
   }
   if (message?.type === 'CANCEL_ML_BATCH') {
