@@ -38,7 +38,7 @@ export function getWhatsappPublicationIntervalState(queue, configuredMinutes, no
   };
 }
 
-export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRound, now = Date.now()) {
+export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRound, now = Date.now(), completedRound = null) {
   const interval = getWhatsappPublicationIntervalState(queue, configuredMinutes, now);
   const roundInProgress = Boolean(
     activeRound?.id &&
@@ -55,6 +55,30 @@ export function getWhatsappRoundIntervalState(queue, configuredMinutes, activeRo
       remainingMs: 0,
       elapsed: true,
       continuingRound: true
+    };
+  }
+
+  // A próxima rodada é ancorada no início da rodada anterior. Assim, se a
+  // primeira rodada começou às 07:00 e o intervalo é de 15 minutos, a próxima
+  // começa às 07:15, mesmo que os últimos destinos da rodada tenham terminado
+  // alguns minutos depois. Rodadas antigas sem nextRoundAt usam startedAt.
+  const finishedRound = completedRound?.completedAt ? completedRound : null;
+  const startedAt = Date.parse(finishedRound?.startedAt || '');
+  const explicitNextRoundAt = Date.parse(finishedRound?.nextRoundAt || '');
+  const nextRoundAt = Number.isFinite(explicitNextRoundAt)
+    ? explicitNextRoundAt
+    : Number.isFinite(startedAt)
+      ? startedAt + interval.intervalMinutes * 60_000
+      : 0;
+  if (nextRoundAt) {
+    const remainingMs = Math.max(0, nextRoundAt - Number(now));
+    return {
+      ...interval,
+      remainingMs,
+      elapsed: remainingMs === 0,
+      continuingRound: false,
+      anchoredToRound: true,
+      nextRoundAt: new Date(nextRoundAt).toISOString()
     };
   }
 

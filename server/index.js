@@ -104,7 +104,7 @@ import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
 import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
-import { getWhatsappRoundIntervalState } from './whatsappSchedule.js';
+import { getWhatsappRoundIntervalState, normalizeWhatsappIntervalMinutes } from './whatsappSchedule.js';
 import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
 import { safeRedirectDestination } from './urlSecurity.js';
 import {
@@ -2021,6 +2021,16 @@ function hasSentSourceInStore(data, candidate, sourceIndex = null) {
   return hasSentSource(data?.queue, candidate, sourceIndex) || hasSentSourceInLedger(data, candidate);
 }
 
+function ensurePublicationRoundSchedule(round, config = {}) {
+  if (!round || typeof round !== 'object') return round;
+  if (Number.isFinite(Date.parse(round.nextRoundAt || ''))) return round;
+  const startedAt = Date.parse(round.startedAt || '');
+  if (!Number.isFinite(startedAt)) return round;
+  const intervalMinutes = normalizeWhatsappIntervalMinutes(config.whatsappIntervalMinutes);
+  round.nextRoundAt = new Date(startedAt + intervalMinutes * 60_000).toISOString();
+  return round;
+}
+
 async function getPublicationRound(
   createIfMissing = true
 ) {
@@ -2100,6 +2110,8 @@ async function getPublicationRound(
           return;
         }
 
+        const roundStartedAt = new Date();
+        const intervalMinutes = normalizeWhatsappIntervalMinutes(data.config?.whatsappIntervalMinutes);
         round = {
           id:
             createId(
@@ -2107,7 +2119,10 @@ async function getPublicationRound(
             ),
 
           startedAt:
-            new Date()
+            roundStartedAt.toISOString(),
+
+          nextRoundAt:
+            new Date(roundStartedAt.getTime() + intervalMinutes * 60_000)
               .toISOString(),
 
           pendingAudienceCodes:
@@ -2143,6 +2158,7 @@ async function getPublicationRound(
             : [];
 
         round.storePriorityCursor = normalizeWhatsappStorePriorityCursor(round.storePriorityCursor);
+        ensurePublicationRoundSchedule(round, data.config);
 
         if (
           !round
@@ -2215,6 +2231,7 @@ async function skipRoundAudience(
           .pendingAudienceCodes
           .length
       ) {
+        ensurePublicationRoundSchedule(round, data.config);
         round.completedAt =
           new Date()
             .toISOString();
@@ -8767,9 +8784,10 @@ app.get(
      * INTERVALO CONFIGURADO NO PAINEL
      * ======================================================
      *
-     * O intervalo configurado separa rodadas completas. Dentro da mesma rodada,
-     * G01, G02, G03 e os demais destinos seguem em sequência com a pausa curta
-     * e segura aplicada pelo worker do WhatsApp.
+     * O intervalo configurado separa rodadas completas e é contado a partir do
+     * início da rodada anterior. Dentro da mesma rodada, G01, G02, G03 e os
+     * demais destinos seguem em sequência com a pausa curta e segura aplicada
+     * pelo worker do WhatsApp.
      *
      * Publicações marcadas como "Publicar agora" são tratadas antes deste
      * bloco e continuam imediatas.
@@ -8779,7 +8797,8 @@ app.get(
         queue,
         config.whatsappIntervalMinutes,
         round,
-        now.getTime()
+        now.getTime(),
+        store.meta?.lastPublicationRound
       );
 
     if (!publicationInterval.elapsed) {
@@ -8803,6 +8822,8 @@ app.get(
      * a começar uma nova.
      *
      * O intervalo já foi validado acima para a abertura desta nova rodada.
+     * Assim, uma rodada iniciada às 07:00 pode iniciar a próxima às 07:15,
+     * mesmo que os últimos destinos da primeira tenham terminado antes disso.
      * Rodadas em andamento continuam até atender ou ignorar todos os destinos.
      */
     if (!round) {
@@ -9874,6 +9895,7 @@ app.post(
               .pendingAudienceCodes
               .length
           ) {
+            ensurePublicationRoundSchedule(round, data.config);
             round.completedAt =
               new Date()
                 .toISOString();
@@ -10047,6 +10069,7 @@ app.post(
                 .pendingAudienceCodes
                 .length
             ) {
+              ensurePublicationRoundSchedule(round, data.config);
               round.completedAt =
                 new Date()
                   .toISOString();

@@ -111,7 +111,7 @@ O publicador usa `whatsapp-web.js` e Chromium. A sessão é persistida para que 
 ### Regras de publicação
 
 - Uma rodada escolhe uma oferta diferente para cada destino selecionado. Grupos com código Gxx recebem ofertas classificadas para seu público; canal, comunidade e outros destinos sem código recebem seus próprios itens, sem repetir a mesma oferta na rodada.
-- O intervalo configurado é aplicado entre rodadas completas; dentro da rodada, os destinos são atendidos em sequência com uma pausa curta de segurança.
+- O intervalo configurado é aplicado entre rodadas completas e contado a partir do início da rodada anterior; dentro da rodada, os destinos são atendidos em sequência com uma pausa curta de segurança. Exemplo: rodada às 07:00 e próxima às 07:15.
 - Horário inicial, horário final, máximo por hora e máximo diário são respeitados.
 - **Publicar agora** ignora o intervalo normal, mas mantém as proteções de segurança e duplicidade.
 - Produtos repetidos e destinos já atendidos são bloqueados.
@@ -468,7 +468,7 @@ Abra **Fila de publicação**, use a lupa, localize o produto e altere **Grupo d
 
 ### Intervalo parece não ser respeitado
 
-O intervalo configurado separa rodadas completas; dentro da mesma rodada os grupos são atendidos em sequência com a pausa curta de segurança. **Publicar agora** é prioritário e não aguarda esse intervalo. Confira também itens forçados ou uma rodada retomada após reinício.
+O intervalo configurado separa rodadas completas e é contado a partir do início da rodada anterior; dentro da mesma rodada os grupos são atendidos em sequência com a pausa curta de segurança. **Publicar agora** é prioritário e não aguarda esse intervalo. Confira também itens forçados ou uma rodada retomada após reinício.
 
 ### Instagram informa excesso de ações
 
