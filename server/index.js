@@ -8767,9 +8767,9 @@ app.get(
      * INTERVALO CONFIGURADO NO PAINEL
      * ======================================================
      *
-     * O intervalo configurado vale entre cada publicação automática. Dentro da
-     * mesma rodada, G01, G02, G03 e os demais destinos aguardam esse intervalo
-     * antes de cada novo envio.
+     * O intervalo configurado separa rodadas completas. Dentro da mesma rodada,
+     * G01, G02, G03 e os demais destinos seguem em sequência com a pausa curta
+     * e segura aplicada pelo worker do WhatsApp.
      *
      * Publicações marcadas como "Publicar agora" são tratadas antes deste
      * bloco e continuam imediatas.
@@ -8802,9 +8802,8 @@ app.get(
      * significa que estamos prestes
      * a começar uma nova.
      *
-     * O intervalo já foi validado acima para a publicação deste destino.
-     * Rodadas em andamento continuam até atender ou ignorar todos os destinos,
-     * respeitando a mesma espera entre eles.
+     * O intervalo já foi validado acima para a abertura desta nova rodada.
+     * Rodadas em andamento continuam até atender ou ignorar todos os destinos.
      */
     if (!round) {
       round =
