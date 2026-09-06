@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { hasBlockingPendingSource, hasOtherPendingSource, hasPendingSource, hasSentSource, queueItemSourceMatches, wasRecentlySentToAudience } from '../server/whatsappDedup.js';
+import { hasBlockingPendingSource, hasOtherPendingSource, hasPendingSource, hasSentSource, planPendingDuplicateCleanup, queueItemSourceMatches, wasRecentlySentToAudience } from '../server/whatsappDedup.js';
 
 const candidate = {
   kind: 'offer',
@@ -31,6 +31,29 @@ assert.equal(hasOtherPendingSource([{ ...candidate, status: 'pending' }], candid
 assert.equal(hasOtherPendingSource([{ ...candidate, id: 'queue_other', status: 'publishing' }], candidate), true);
 assert.equal(hasBlockingPendingSource([{ ...candidate, id: 'queue_other', createdAt: '2026-08-26T10:00:00.000Z', status: 'pending' }, { ...candidate, id: 'queue_current', createdAt: '2026-08-26T11:00:00.000Z', status: 'pending' }], { ...candidate, id: 'queue_current', createdAt: '2026-08-26T11:00:00.000Z' }), true);
 assert.equal(hasBlockingPendingSource([{ ...candidate, id: 'queue_other', createdAt: '2026-08-26T10:00:00.000Z', status: 'pending' }, { ...candidate, id: 'queue_current', createdAt: '2026-08-26T11:00:00.000Z', status: 'pending' }], { ...candidate, id: 'queue_other', createdAt: '2026-08-26T10:00:00.000Z' }), false);
+
+const duplicateCleanup = planPendingDuplicateCleanup([
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_old', createdAt: '2026-08-26T10:00:00.000Z', status: 'pending' },
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_new', createdAt: '2026-08-26T11:00:00.000Z', status: 'pending' },
+  { ...candidate, store: 'Shopee', id: 'queue_shopee', createdAt: '2026-08-26T12:00:00.000Z', status: 'pending' }
+], { store: 'Mercado Livre' });
+assert.equal(duplicateCleanup.pendingCount, 2);
+assert.equal(duplicateCleanup.duplicateCount, 1);
+assert.deepEqual(duplicateCleanup.duplicateIds, ['queue_ml_new']);
+assert.equal(duplicateCleanup.groupCount, 1);
+
+const sameTitleDifferentSources = planPendingDuplicateCleanup([
+  { kind: 'offer', id: 'queue_a', offerId: 'ml_a', offerTitle: 'Produto igual', store: 'Mercado Livre', affiliateUrl: 'https://meli.la/a', status: 'pending', createdAt: '2026-08-26T10:00:00.000Z' },
+  { kind: 'offer', id: 'queue_b', offerId: 'ml_b', offerTitle: 'Produto igual', store: 'Mercado Livre', affiliateUrl: 'https://meli.la/b', status: 'pending', createdAt: '2026-08-26T11:00:00.000Z' }
+], { store: 'Mercado Livre' });
+assert.equal(sameTitleDifferentSources.duplicateCount, 0);
+
+const publishingIsProtected = planPendingDuplicateCleanup([
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_pending', createdAt: '2026-08-26T09:00:00.000Z', status: 'pending' },
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_publishing', createdAt: '2026-08-26T10:00:00.000Z', status: 'publishing' }
+], { store: 'Mercado Livre' });
+assert.equal(publishingIsProtected.duplicateCount, 1);
+assert.deepEqual(publishingIsProtected.duplicateIds, ['queue_ml_pending']);
 
 const different = { ...candidate, offerId: 'ml_999', offerTitle: 'Outro produto' };
 assert.equal(queueItemSourceMatches(candidate, different), false);

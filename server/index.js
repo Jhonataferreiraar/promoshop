@@ -103,7 +103,7 @@ import {
 } from './instagram.js';
 import { sanitizeInstagramThemes } from './instagramThemes.js';
 import { sanitizeInstagramHighlights } from './instagramHighlights.js';
-import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
+import { createQueueSourceIndex, hasBlockingPendingSource, hasPendingSource, hasSentSource, hasSentSourceInLedger, planPendingDuplicateCleanup, queueItemSourceMatches, recordSentSourceInLedger } from './whatsappDedup.js';
 import { terminateChildProcess } from './whatsappProcess.js';
 import { getWhatsappRoundIntervalState, normalizeWhatsappIntervalMinutes } from './whatsappSchedule.js';
 import { nextWhatsappStorePriorityCursor, normalizeWhatsappStorePriorityCursor, prioritizeWhatsappCandidates, WHATSAPP_STORE_PRIORITY } from './whatsappStorePriority.js';
@@ -4141,6 +4141,21 @@ function summarizeQueue(queue = [], historicalSent = 0) {
   return summary;
 }
 
+function mercadoLivreQueueDuplicateSummary(queue = []) {
+  const plan = planPendingDuplicateCleanup(queue, { store: 'Mercado Livre' });
+  return {
+    scope: 'Mercado Livre',
+    pendingCount: plan.pendingCount,
+    publishingCount: plan.publishingCount,
+    duplicateCount: plan.duplicateCount,
+    duplicateGroupCount: plan.groupCount,
+    samples: plan.groups.slice(0, 5).map((group) => ({
+      title: group.title || 'Oferta sem título',
+      duplicateCount: group.duplicateCount
+    }))
+  };
+}
+
 app.get('/api/admin/queue', requireAdmin, async (req, res) => {
   const data = await readStoreSlice(['queue', 'meta']);
   const queue = Array.isArray(data.queue) ? data.queue : [];
@@ -4168,6 +4183,40 @@ app.get('/api/admin/queue', requireAdmin, async (req, res) => {
     hasMore: offset + limit < filteredQueue.length,
     summary: summarizeQueue(queue, data.meta?.whatsappSentHistoryCount)
   });
+});
+
+// Manutenção isolada da fila do Mercado Livre. A operação não altera ofertas
+// do catálogo nem qualquer regra de publicação do WhatsApp ou do Instagram.
+app.get('/api/admin/queue/duplicates', requireAdmin, async (_req, res) => {
+  const data = await readStoreSlice(['queue']);
+  res.json({ ok: true, ...mercadoLivreQueueDuplicateSummary(data.queue) });
+});
+
+app.post('/api/admin/queue/duplicates', requireAdmin, async (_req, res) => {
+  let result = { removed: 0, scope: 'Mercado Livre', duplicateGroupCount: 0 };
+  await updateStoreSlice(['queue', 'meta'], (data) => {
+    const plan = planPendingDuplicateCleanup(data.queue, { store: 'Mercado Livre' });
+    const duplicateIds = new Set(plan.duplicateIds);
+    const skippedAt = new Date().toISOString();
+    for (const item of data.queue || []) {
+      if (!duplicateIds.has(item?.id) || item?.status !== 'pending') continue;
+      item.status = 'skipped';
+      item.force = false;
+      item.publishingAt = null;
+      item.error = 'Duplicata pendente removida pela limpeza administrativa do Mercado Livre.';
+      item.skippedAt = skippedAt;
+      result.removed += 1;
+    }
+    result.duplicateGroupCount = plan.groupCount;
+  });
+
+  if (result.removed) {
+    await addLog(
+      `Limpeza da fila: ${result.removed} duplicata(s) pendente(s) do Mercado Livre foram marcadas como ignoradas; ${result.duplicateGroupCount} produto(s) permaneceram como cópia principal.`,
+      'info'
+    );
+  }
+  res.json({ ok: true, ...result });
 });
 
 app.get('/api/admin/instagram-state', requireAdmin, async (_req, res) => {

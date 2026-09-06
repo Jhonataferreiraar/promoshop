@@ -1787,6 +1787,8 @@ function AdminApp() {
   const [bulkQueueing, setBulkQueueing] = useState('');
   const [queueItems, setQueueItems] = useState([]);
   const [queuePage, setQueuePage] = useState({ total: 0, hasMore: false, summary: {} });
+  const [queueDuplicateInfo, setQueueDuplicateInfo] = useState({ duplicateCount: 0, duplicateGroupCount: 0, pendingCount: 0, publishingCount: 0, samples: [] });
+  const [queueDuplicateBusy, setQueueDuplicateBusy] = useState(false);
   const [queueSearchOpen, setQueueSearchOpen] = useState(false);
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [queueAudienceSaving, setQueueAudienceSaving] = useState('');
@@ -2032,6 +2034,20 @@ function AdminApp() {
       setMessage(`Não foi possível carregar a fila: ${error.message}`);
     }
   }
+  async function loadQueueDuplicateInfo() {
+    try {
+      const result = await authApi('/admin/queue/duplicates');
+      setQueueDuplicateInfo({
+        duplicateCount: Number(result.duplicateCount || 0),
+        duplicateGroupCount: Number(result.duplicateGroupCount || 0),
+        pendingCount: Number(result.pendingCount || 0),
+        publishingCount: Number(result.publishingCount || 0),
+        samples: Array.isArray(result.samples) ? result.samples : []
+      });
+    } catch (error) {
+      if (error.status === 401) setToken(null);
+    }
+  }
   async function loadWhatsappState() {
     if (document.hidden || whatsappStateLoadCountRef.current > 0) return;
     whatsappStateLoadCountRef.current += 1;
@@ -2056,6 +2072,11 @@ function AdminApp() {
     const timeout = window.setTimeout(() => loadQueuePage(true, queueSearchQuery), 250);
     return () => window.clearTimeout(timeout);
   }, [token, tab, queueSearchQuery]);
+  useEffect(() => {
+    if (!token || tab !== 'queue') return undefined;
+    loadQueueDuplicateInfo();
+    return undefined;
+  }, [token, tab]);
   useEffect(() => {
     if (queueSearchOpen) queueSearchInputRef.current?.focus();
   }, [queueSearchOpen]);
@@ -2600,6 +2621,30 @@ function AdminApp() {
           setMessage(`${result.removed || failedCount} publicação(ões) com falha removida(s).`);
         } catch (error) {
           setMessage(`Não foi possível excluir as falhas: ${error.message}`);
+        }
+      }
+    });
+  }
+  function clearMercadoLivreQueueDuplicates() {
+    const duplicateCount = Number(queueDuplicateInfo?.duplicateCount || 0);
+    if (!duplicateCount || queueDuplicateBusy) return;
+    setDialog({
+      type: 'confirm-action',
+      eyebrow: 'LIMPEZA SEGURA DA FILA',
+      title: 'Limpar duplicatas do Mercado Livre?',
+      body: `${duplicateCount} item(ns) pendente(s) serão marcados como repetidos. A cópia principal de cada produto será mantida. Ofertas ativas, links, itens enviados ou em publicação e filas do Instagram não serão alterados.`,
+      confirmLabel: 'Limpar duplicatas',
+      onConfirm: async () => {
+        setDialog(null);
+        setQueueDuplicateBusy(true);
+        try {
+          const result = await authApi('/admin/queue/duplicates', { method: 'POST', body: '{}' });
+          await Promise.all([load(), loadQueuePage(true), loadQueueDuplicateInfo()]);
+          setMessage(result.removed ? `${result.removed} duplicata(s) do Mercado Livre foram retiradas da fila.` : 'Nenhuma duplicata pendente encontrada.');
+        } catch (error) {
+          setMessage(`Não foi possível limpar as duplicatas: ${error.message}`);
+        } finally {
+          setQueueDuplicateBusy(false);
         }
       }
     });
@@ -3439,7 +3484,7 @@ function AdminApp() {
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).length} cadastrado(s). Cupons importados aguardando revisão ficam somente na Extensão de cupons.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).some((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)) && <div className="empty"><strong>Nenhum cupom aprovado</strong><p>Cupons importados pela extensão aparecem aqui depois que você aprová-los.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
-    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
+    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{canEdit('queue') && Number(queueDuplicateInfo?.duplicateCount || 0) > 0 && <button className="queue-clear-duplicates" type="button" disabled={queueDuplicateBusy} onClick={clearMercadoLivreQueueDuplicates}>{queueDuplicateBusy ? 'Limpando…' : `Limpar duplicatas ML (${Number(queueDuplicateInfo.duplicateCount).toLocaleString('pt-BR')})`}</button>}{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div>{Number(queueDuplicateInfo?.duplicateCount || 0) > 0 && <div className="queue-duplicate-note" role="status"><strong>{Number(queueDuplicateInfo.duplicateCount).toLocaleString('pt-BR')} duplicata(s) pendente(s) do Mercado Livre detectada(s)</strong><span>Uma cópia por produto será mantida. A limpeza não apaga ofertas ativas nem altera o WhatsApp ou o Instagram.</span></div>}<QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">

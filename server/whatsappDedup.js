@@ -138,6 +138,102 @@ export function queueItemSourceMatches(left, right) {
   return Boolean(a.title && b.title && a.title === b.title && (!a.store || !b.store || a.store === b.store));
 }
 
+/**
+ * Correspondência conservadora para operações administrativas de limpeza.
+ *
+ * A regra usada pelo publicador também aceita título + loja como fallback,
+ * porque isso ajuda a impedir repetições quando uma fonte não fornece um ID.
+ * Para uma limpeza irreversível de itens da fila, entretanto, não usamos esse
+ * fallback: só consideramos duplicata quando existe um identificador ou link
+ * de origem compartilhado. Assim, variações legítimas com o mesmo título não
+ * são removidas por engano.
+ */
+export function queueItemStrongSourceMatches(left, right) {
+  const a = sourceData(left);
+  const b = sourceData(right);
+  if (a.kind === DIRECTORY_KIND || b.kind === DIRECTORY_KIND || a.kind !== b.kind) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  if (
+    a.externalId && b.externalId && a.externalId === b.externalId &&
+    ((!a.store || !b.store || a.store === b.store) || (a.source && b.source && a.source === b.source))
+  ) return true;
+  return a.links.some((link) => b.links.includes(link));
+}
+
+function cleanupItemOrder(item) {
+  const createdAt = new Date(item?.createdAt || 0).getTime();
+  return Number.isFinite(createdAt) ? createdAt : Number.MAX_SAFE_INTEGER;
+}
+
+function cleanupItemComparator(left, right) {
+  const timeDifference = cleanupItemOrder(left) - cleanupItemOrder(right);
+  if (timeDifference !== 0) return timeDifference;
+  return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
+/**
+ * Planeja a remoção segura de cópias pendentes da fila.
+ *
+ * O plano não altera o armazenamento. Itens `publishing` são sempre
+ * preservados; entre itens `pending`, a cópia mais antiga é a canônica. O
+ * filtro de loja é opcional e serve para permitir uma manutenção isolada do
+ * Mercado Livre sem tocar nas demais fontes.
+ */
+export function planPendingDuplicateCleanup(queue, { store = '' } = {}) {
+  const expectedStore = normalizeTitle(store);
+  const scopedItems = (Array.isArray(queue) ? queue : []).filter((item) => {
+    if (kindOf(item) !== OFFER_KIND || !['pending', 'publishing'].includes(item?.status)) return false;
+    if (!expectedStore) return true;
+    return sourceData(item).store === expectedStore;
+  });
+  const pendingItems = scopedItems.filter((item) => item?.status === 'pending');
+  const publishingItems = scopedItems.filter((item) => item?.status === 'publishing');
+  const sourceIndex = createQueueSourceIndex(scopedItems, () => true);
+  const duplicateIds = new Set();
+  const groups = new Map();
+
+  for (const candidate of pendingItems) {
+    const matches = sourceIndex
+      .matchingItems(candidate)
+      .filter((item) => queueItemStrongSourceMatches(item, candidate));
+    if (matches.length < 2) continue;
+
+    const publishing = matches
+      .filter((item) => item?.status === 'publishing')
+      .sort(cleanupItemComparator)[0];
+    const canonical = publishing || matches
+      .filter((item) => item?.status === 'pending')
+      .sort(cleanupItemComparator)[0];
+    if (!canonical) continue;
+
+    if (candidate.id === canonical.id) continue;
+    const group = groups.get(canonical.id) || {
+      canonicalId: canonical.id,
+      title: String(canonical.offerTitle || canonical.offerSnapshot?.title || '').trim(),
+      duplicateIds: new Set()
+    };
+    group.duplicateIds.add(candidate.id);
+    groups.set(canonical.id, group);
+    duplicateIds.add(candidate.id);
+  }
+
+  return {
+    store: expectedStore,
+    pendingCount: pendingItems.length,
+    publishingCount: publishingItems.length,
+    duplicateIds: [...duplicateIds],
+    duplicateCount: duplicateIds.size,
+    groupCount: groups.size,
+    groups: [...groups.values()]
+      .map((group) => ({
+        canonicalId: group.canonicalId,
+        title: group.title,
+        duplicateCount: group.duplicateIds.size
+      }))
+      .sort((left, right) => left.title.localeCompare(right.title, 'pt-BR'))
+  };
+}
+
 function itemTargetsAudience(item, audienceCode) {
   const code = clean(audienceCode).toUpperCase();
   if (!code) return false;

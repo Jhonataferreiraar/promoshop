@@ -5307,7 +5307,13 @@ button {
 .analytics-ranking-list > small { color: #667085; }
 .queue-clear-failed { min-height: 36px; padding: 0 13px; border: 1px solid #fecdca; border-radius: 9px; color: #b42318; background: #fff5f4; font-size: 12px; font-weight: 800; cursor: pointer; }
 .queue-clear-failed:hover { border-color: #fda29b; background: #fee4e2; }
+.queue-clear-duplicates { min-height: 36px; padding: 0 13px; border: 1px solid #f3c78b; border-radius: 9px; color: #8a4b08; background: #fff8eb; font-size: 12px; font-weight: 800; cursor: pointer; }
+.queue-clear-duplicates:hover { border-color: #e9a84f; background: #fff0d4; }
+.queue-clear-duplicates:disabled { cursor: wait; opacity: .65; }
 .queue-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.queue-duplicate-note { display: grid; gap: 4px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid #f3c78b; border-radius: 10px; color: #694106; background: #fffaf1; font-size: 12px; }
+.queue-duplicate-note strong { font-size: 12px; }
+.queue-duplicate-note span { color: #8a5b21; line-height: 1.45; }
 .queue-search { display: flex; width: 38px; min-height: 38px; align-items: center; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 10px; background: #fff; transition: width .2s ease, border-color .2s ease, box-shadow .2s ease; }
 .queue-search.open { width: min(290px, 40vw); border-color: #84adff; box-shadow: 0 0 0 3px rgba(21, 112, 239, .1); }
 .queue-search-toggle { display: grid; flex: 0 0 38px; width: 38px; min-height: 36px; place-items: center; padding: 0; border: 0; color: #344054; background: transparent; cursor: pointer; }
@@ -6870,6 +6876,27 @@ html[data-theme="dark"] .admin-main .queue-clear-failed {
   border-color: #713b43;
   color: #ffaaa8;
   background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .queue-clear-duplicates {
+  border-color: #745827;
+  color: #ffd48a;
+  background: #362817;
+}
+
+html[data-theme="dark"] .admin-main .queue-clear-duplicates:hover {
+  border-color: #a67832;
+  background: #49351b;
+}
+
+html[data-theme="dark"] .admin-main .queue-duplicate-note {
+  border-color: #745827;
+  color: #ffe0a8;
+  background: #2a2115;
+}
+
+html[data-theme="dark"] .admin-main .queue-duplicate-note span {
+  color: #d9bc85;
 }
 
 html[data-theme="dark"] .admin-main .status {
