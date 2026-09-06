@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSecrets } from '../server/secrets.js';
-import { readStore } from '../server/store.js';
+import { readStoreSlice } from '../server/store.js';
 import { downloadWhatsappImage } from '../server/whatsappMedia.js';
 import {
   buildMentionAllPayload,
@@ -91,10 +91,11 @@ let groupId = '';
 let groupName = '';
 let selectedGroups = [];
 let maxPerHour = 10;
+let audienceDelaySeconds = 15;
 let communityEnabled = true;
 let communityName = 'PromoShop - Ofertas';
 let mentionAllEnabled = false;
-const initialStore = await readStore();
+const initialStore = await readStoreSlice(['config']);
 const chromiumArgs = [
   '--disable-dev-shm-usage',
   '--disable-gpu',
@@ -189,7 +190,17 @@ process.once('SIGTERM', () => { void shutdownWhatsappWorker('sinal de reiniciali
 process.once('SIGINT', () => { void shutdownWhatsappWorker('interrupção manual'); });
 
 async function request(path, options = {}) {
-  const timeoutMs = path.includes('/heartbeat') ? 8_000 : 20_000;
+  // Preparar a próxima oferta pode envolver a classificação e o texto da IA,
+  // além de uma gravação transacional no PostgreSQL. Vinte segundos faziam o
+  // worker desistir enquanto o servidor ainda trabalhava; o próximo polling
+  // então iniciava outra requisição para o mesmo item. O endpoint agora é
+  // serializado no servidor, e este prazo maior deixa a primeira tentativa
+  // terminar sem criar concorrência artificial.
+  const timeoutMs = path.includes('/heartbeat')
+    ? 8_000
+    : path === '/api/worker/queue/next'
+      ? 90_000
+      : 20_000;
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
   let response;
@@ -258,6 +269,7 @@ async function refreshConfig() {
   selectedGroups = Array.isArray(config.selectedGroups) ? config.selectedGroups.filter((group) => group.id) : [];
   if (!selectedGroups.length && groupId) selectedGroups = [{ id: groupId, name: groupName }];
   maxPerHour = Number(config.maxPerHour || 10);
+  audienceDelaySeconds = Math.max(5, Math.min(600, Number(config.audienceDelaySeconds || 15)));
   communityEnabled = config.communityEnabled !== false;
   communityName = String(config.communityName || 'PromoShop - Ofertas').trim();
   mentionAllEnabled = config.mentionAllEnabled === true;
@@ -764,12 +776,6 @@ async function processQueue() {
         );
       }
     }
-
-    const storeBeforeDestinations = await readStore();
-    const audienceDelaySeconds = Math.max(
-      5,
-      Number(storeBeforeDestinations.config?.whatsappAudienceDelaySeconds || 15)
-    );
 
     for (const destination of destinations) {
       const claimed = await claimDestination(item, destination);

@@ -38,6 +38,33 @@ function serialize(value) {
   return JSON.stringify(value ?? null);
 }
 
+// A atualização do PostgreSQL normalmente altera apenas uma seção pequena
+// (por exemplo, o status de uma publicação). Comparar as seções com
+// JSON.stringify em toda chamada criava strings enormes para ofertas e filas,
+// mesmo quando elas não haviam mudado. A comparação estrutural evita esse
+// pico temporário de memória e mantém a gravação restrita às seções alteradas.
+function deepEqual(left, right) {
+  if (Object.is(left, right)) return true;
+  if (typeof left !== typeof right || left === null || right === null) return false;
+  if (typeof left !== 'object') return false;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (!deepEqual(left[index], right[index])) return false;
+    }
+    return true;
+  }
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (!Object.hasOwn(right, key) || !deepEqual(left[key], right[key])) return false;
+  }
+  return true;
+}
+
 function rowToPersistedData(row) {
   return Object.fromEntries(
     STATE_KEYS.map((key) => [key, row[STATE_COLUMNS[key]]])
@@ -161,10 +188,13 @@ async function syncJsonEntityTable(executor, table, items, beforeItems = null) {
   const beforeRows = beforeItems === null ? null : entityRows(beforeItems);
   const previous = beforeRows === null
     ? null
-    : new Map(beforeRows.map((row) => [row.id, `${row.position}\0${serialize(row.data)}`]));
+    : new Map(beforeRows.map((row) => [row.id, row]));
   const rows = previous === null
     ? allRows
-    : allRows.filter((row) => previous.get(row.id) !== `${row.position}\0${serialize(row.data)}`);
+    : allRows.filter((row) => {
+      const before = previous.get(row.id);
+      return !before || before.position !== row.position || !deepEqual(before.data, row.data);
+    });
   const currentIds = new Set(allRows.map((row) => row.id));
   const removedIds = beforeRows === null ? [] : beforeRows.filter((row) => !currentIds.has(row.id)).map((row) => row.id);
   if (rows.length) {
@@ -300,11 +330,14 @@ async function syncOfferTable(executor, offers, beforeOffers = null) {
   const previous = beforeOffers === null ? null : new Map(
     (Array.isArray(beforeOffers) ? beforeOffers : [])
       .filter((offer) => offer && String(offer.id || '').trim())
-      .map((offer, position) => [String(offer.id).trim().slice(0, 200), `${position}\0${serialize(offer)}`])
+      .map((offer, position) => [String(offer.id).trim().slice(0, 200), { position, offer }])
   );
   const changedOffers = previous === null
     ? normalizedOffers
-    : normalizedOffers.filter((offer, position) => previous.get(offer.id) !== `${position}\0${serialize(offer.data)}`);
+    : normalizedOffers.filter((offer, position) => {
+      const before = previous.get(offer.id);
+      return !before || before.position !== position || !deepEqual(before.offer, offer.data);
+    });
   const offerPositions = new Map(normalizedOffers.map((offer, position) => [offer.id, position]));
 
   for (let offset = 0; offset < changedOffers.length; offset += 100) {
@@ -594,7 +627,7 @@ export function createPostgresStateBackend({
     return result;
   }
 
-  async function update(mutator) {
+  async function update(mutator, requestedKeys = null) {
     writeChain = writeChain.catch(() => {}).then(async () => {
       await ensureDatabase();
       const pool = await getPool();
@@ -608,22 +641,52 @@ export function createPostgresStateBackend({
 
         const row = result.rows[0];
         const useRelationalStore = relationalReady && Number(row.schema_version || 1) >= POSTGRES_SCHEMA_VERSION;
-        const persistedBefore = useRelationalStore
-          ? await readRelationalPersistedData(client)
-          : rowToPersistedData(row);
-        const restored = await restoreData(structuredClone(persistedBefore));
-        const before = normalizeData(restored.data);
+        const rowVersion = Number(row.version);
+        const partialKeys = useRelationalStore && Array.isArray(requestedKeys)
+          ? [...new Set(requestedKeys)]
+            .filter((key) => STATE_KEYS.includes(key) || Object.hasOwn(ENTITY_TABLES, key))
+          : [];
+        const keys = partialKeys.length ? partialKeys : null;
+
+        // O servidor e o publicador usam processos separados, mas somente o
+        // servidor grava o estado. Depois da primeira leitura, a versão em
+        // cache corresponde ao SELECT ... FOR UPDATE acima. Reutilizar esse
+        // snapshot evita agregar novamente todas as ofertas, filas e logs em
+        // cada claim/heartbeat do WhatsApp. Se outro processo tiver gravado,
+        // a versão muda e fazemos a leitura completa para manter a segurança.
+        let before;
+        let restored = { requiresReencrypt: false };
+        const hasFreshFullCache = Boolean(cachedData && cachedVersion === rowVersion);
+        if (keys?.length) {
+          // Operações curtas, como logs, heartbeat e confirmação de destino,
+          // não precisam materializar ofertas, visitantes e filas de outras
+          // integrações. Leia somente as tabelas que a mutação pode alterar.
+          const persistedBefore = await readRelationalKeys(client, keys);
+          restored = await restoreData(structuredClone(persistedBefore));
+          const normalized = normalizeData(restored.data);
+          before = Object.fromEntries(keys.map((key) => [key, normalized[key]]));
+        } else if (useRelationalStore && hasFreshFullCache) {
+          before = structuredClone(cachedData);
+        } else {
+          const persistedBefore = useRelationalStore
+            ? await readRelationalPersistedData(client)
+            : rowToPersistedData(row);
+          restored = await restoreData(structuredClone(persistedBefore));
+          before = normalizeData(restored.data);
+        }
         const data = structuredClone(before);
         const mutatorResult = await mutator(data);
         compactData(data);
 
-        const changedKeys = [...STATE_KEYS, ...Object.keys(ENTITY_TABLES)]
-          .filter((key) => serialize(before[key]) !== serialize(data[key]));
+        const changedKeys = (keys || [...STATE_KEYS, ...Object.keys(ENTITY_TABLES)])
+          .filter((key) => !deepEqual(before[key], data[key]));
         if (!useRelationalStore && changedKeys.some((key) => ['campaigns', 'priceMonitors'].includes(key))) {
           throw new Error('O armazenamento relacional do PostgreSQL ainda não está disponível para salvar campanhas e monitoramentos. Tente novamente em instantes.');
         }
+        const sensitiveKeys = ['inbox', 'privacyConsents', 'analytics']
+          .filter((key) => !keys || keys.includes(key));
         const persistedKeys = restored.requiresReencrypt
-          ? [...new Set([...changedKeys, 'inbox', 'privacyConsents', 'analytics'])]
+          ? [...new Set([...changedKeys, ...sensitiveKeys])]
           : changedKeys;
         if (persistedKeys.length) {
           const protectedAfter = await protectData(data);
@@ -655,7 +718,19 @@ export function createPostgresStateBackend({
 
         await client.query('COMMIT');
         if (restored.requiresReencrypt) await retireDataKey();
-        cachedData = data;
+        if (keys?.length) {
+          // Um snapshot completo só pode ser atualizado com segurança quando
+          // ele ainda correspondia à versão bloqueada pela transação. Caso
+          // contrário, invalide-o e deixe a próxima leitura recarregar a
+          // fonte relacional sem servir dados parciais antigos.
+          if (hasFreshFullCache && cachedData) {
+            for (const key of keys) cachedData[key] = data[key];
+          } else {
+            cachedData = null;
+          }
+        } else {
+          cachedData = data;
+        }
         sliceCache.clear();
         lastVersionCheckAt = Date.now();
         connected = true;
@@ -694,5 +769,9 @@ export function createPostgresStateBackend({
     }
   }
 
-  return { read, readKeys, update, status, check };
+  function updateKeys(keys, mutator) {
+    return update(mutator, keys);
+  }
+
+  return { read, readKeys, update, updateKeys, status, check };
 }

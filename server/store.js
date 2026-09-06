@@ -977,6 +977,16 @@ export async function updateStore(mutator) {
   return updateFileStore(mutator);
 }
 
+// Atualizações operacionais pequenas não devem copiar o catálogo inteiro.
+// No armazenamento em arquivo o caminho antigo continua sendo usado; no
+// PostgreSQL, o backend lê e grava somente as seções solicitadas.
+export async function updateStoreSlice(keys = [], mutator) {
+  if (configuredStoreBackend === 'postgres') {
+    return getPostgresBackend().updateKeys(keys, mutator);
+  }
+  return updateFileStore(mutator);
+}
+
 export async function checkStoreHealth() {
   try {
     if (configuredStoreBackend === 'postgres') return await getPostgresBackend().check();
@@ -992,7 +1002,7 @@ export function createId(prefix = 'item') {
 }
 
 export async function addLog(message, level = 'info') {
-  return updateStore((data) => {
+  return updateStoreSlice(['config', 'logs', 'meta'], (data) => {
     const createdAt = new Date().toISOString();
     const normalizedMessage = String(message || '').slice(0, 2000);
     data.logs.unshift({ id: createId('log'), message: normalizedMessage, level, createdAt });
@@ -1011,7 +1021,7 @@ export async function addLogs(entries = []) {
       createdAt: entry.createdAt || new Date().toISOString()
     }));
   if (!logs.length) return;
-  return updateStore((data) => {
+  return updateStoreSlice(['config', 'logs', 'meta'], (data) => {
     data.logs ||= [];
     data.logs.unshift(...[...logs].reverse());
     data.logs = data.logs.slice(0, 200);

@@ -23,7 +23,8 @@ import {
   readStore,
   readStoreSlice,
   restoreRecentOffersFromQueue,
-  updateStore
+  updateStore,
+  updateStoreSlice
 } from './store.js';
 
 import {
@@ -246,6 +247,11 @@ let whatsappReconnectPromise = null;
 let whatsappStartPromise = null;
 const intentionallyStoppedWhatsappChildren = new WeakSet();
 let collectionInProgress = false;
+// O worker pode abandonar uma requisição depois de 20 segundos, enquanto o
+// servidor ainda está preparando a oferta com IA. Sem este guarda, o próximo
+// polling iniciava outra preparação para o mesmo item e acumulava chamadas,
+// clones do estado e respostas simultâneas até a instância ficar sem memória.
+let workerQueueNextInProgress = false;
 let lastDeferredCollectionRoundId = '';
 const extensionRateLimit = new Map();
 const WHATSAPP_HEARTBEAT_PERSIST_MS = 2 * 60_000;
@@ -319,7 +325,7 @@ async function recordServerLifecycle() {
   const now = Date.now();
   const deployKey = currentDeploymentKey();
   const service = monitoringServiceName();
-  await updateStore((data) => {
+  await updateStoreSlice(['config', 'meta'], (data) => {
     data.meta ||= {};
     const monitoring = data.meta.monitoring ||= {};
     const previousHeartbeat = new Date(monitoring.serverHeartbeatAt || 0).getTime();
@@ -360,7 +366,7 @@ async function recordServerLifecycle() {
 
 async function recordServerHeartbeat() {
   const now = new Date().toISOString();
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     data.meta ||= {};
     const monitoring = data.meta.monitoring ||= {};
     monitoring.serverStatus = 'running';
@@ -371,7 +377,7 @@ async function recordServerHeartbeat() {
 }
 
 async function recordServerStopping(signal) {
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     data.meta ||= {};
     const monitoring = data.meta.monitoring ||= {};
     monitoring.serverStatus = 'stopping';
@@ -424,7 +430,7 @@ function isPublishingWindow(config = {}, now = new Date()) {
 }
 
 async function rememberCollectionRequest() {
-  await updateStore(
+  await updateStoreSlice(['meta'],
     (data) => {
       data.meta =
         data.meta || {};
@@ -465,7 +471,7 @@ async function runCollectionWhenIdle({
 
   try {
     const data =
-      await readStore();
+      await readStoreSlice(['config', 'meta']);
 
     const round =
       activePublicationRound(
@@ -515,7 +521,7 @@ async function runCollectionWhenIdle({
     const result =
       await runCollectionIsolated();
 
-    await updateStore(
+    await updateStoreSlice(['meta'],
       (freshData) => {
         freshData.meta =
           freshData.meta || {};
@@ -655,7 +661,7 @@ async function persistentLoginAttemptState(ip) {
 async function registerPersistentFailedLogin(ip) {
   const key = persistentLoginKey(ip);
   const now = Date.now();
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     data.meta ||= {};
     data.meta.security ||= {};
     const attempts = data.meta.security.loginAttempts ||= {};
@@ -678,7 +684,7 @@ async function registerPersistentFailedLogin(ip) {
 
 async function clearPersistentLoginAttempts(ip) {
   const key = persistentLoginKey(ip);
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     if (data.meta?.security?.loginAttempts) delete data.meta.security.loginAttempts[key];
   });
 }
@@ -1113,7 +1119,7 @@ async function runOfferRetention() {
   let restoredCount = 0;
   let removedCount = 0;
   let removedQueueItems = 0;
-  await updateStore((data) => {
+  await updateStoreSlice(['offers', 'queue', 'meta'], (data) => {
     const restored = restoreRecentOffersFromQueue(data, Date.now(), OFFER_RETENTION_DAYS);
     restoredCount = restored.restoredCount;
     const expired = pruneExpiredOffers(data, Date.now(), OFFER_RETENTION_DAYS);
@@ -1706,7 +1712,7 @@ async function inspectAffiliateLink(value) {
 }
 
 async function runOfferLinkChecks() {
-  const data = await readStore();
+  const data = await readStoreSlice(['config', 'offers']);
   const limit = boundedNumber(data.config?.linkCheckBatchSize, 20, 1, 50);
   const candidates = (data.offers || [])
     .filter((offer) => offer.status === 'active' && offer.affiliateUrl)
@@ -1719,7 +1725,7 @@ async function runOfferLinkChecks() {
     results.push({ id: offer.id, title: offer.title, ...result });
   }
 
-  await updateStore((store) => {
+  await updateStoreSlice(['config', 'offers'], (store) => {
     for (const result of results) {
       const offer = store.offers.find((entry) => entry.id === result.id);
       if (!offer) continue;
@@ -2046,7 +2052,7 @@ async function getPublicationRound(
   // O worker faz esta consulta com frequência. Sem criação de rodada, ela
   // deve ser somente leitura para não abrir transações ou copiar o estado.
   if (!createIfMissing) {
-    const data = await readStore();
+    const data = await readStoreSlice(['config', 'meta']);
     const round = data.meta?.publicationRound;
     if (!round || !Array.isArray(round.pendingAudienceCodes)) return null;
     const availableCodes = getRoundAvailableSlotKeys(data);
@@ -2064,7 +2070,7 @@ async function getPublicationRound(
 
   let result = null;
 
-  await updateStore(
+  await updateStoreSlice(['config', 'meta'],
     (data) => {
       if (collectionInProgress) {
         return;
@@ -2201,7 +2207,10 @@ async function skipRoundAudience(
   roundId,
   slotKey
 ) {
-  await updateStore(
+  // Encerrar um slot pode liberar as filas do Instagram e registrar uma
+  // atividade. O catálogo e a fila do WhatsApp são necessários para montar
+  // esse histórico; as demais seções do estado ficam fora da transação.
+  await updateStoreSlice(['config', 'offers', 'queue', 'meta', 'instagramQueue', 'instagramFeedQueue', 'logs'],
     (data) => {
       const round =
         data.meta
@@ -2427,10 +2436,24 @@ async function startWhatsappWorkerUnlocked({
   whatsappStopRequested =
     false;
 
+  // O limite de 768 MB usado pela API também era herdado pelo processo do
+  // WhatsApp. Como o publicador ainda mantém o Chromium fora do heap do Node,
+  // essa herança deixava os dois processos disputarem quase toda a memória da
+  // instância de 2 GB. Reserve um heap menor para o worker e deixe espaço para
+  // o navegador, imagens e o próprio servidor.
+  const inheritedNodeOptions = String(process.env.NODE_OPTIONS || '')
+    .replace(/--max-old-space-size(?:=|\s+)\d+/gi, '')
+    .trim();
+  const workerNodeOptions = [
+    inheritedNodeOptions,
+    '--max-old-space-size=384'
+  ].filter(Boolean).join(' ');
+
   const child =
     spawn(
       process.execPath,
       [
+        '--max-old-space-size=384',
         path.join(
           root,
           'worker',
@@ -2442,6 +2465,9 @@ async function startWhatsappWorkerUnlocked({
 
         env: {
           ...process.env,
+
+          NODE_OPTIONS:
+            workerNodeOptions,
 
           PAIRING_PHONE_NUMBER:
             mode === 'phone'
@@ -2496,7 +2522,7 @@ async function startWhatsappWorkerUnlocked({
         });
       }
 
-      await updateStore(
+      await updateStoreSlice(['config', 'meta', 'logs'],
         (store) => {
           if (
             store.meta
@@ -2528,7 +2554,7 @@ async function startWhatsappWorkerUnlocked({
       const {
         config
       } =
-        await readStore();
+        await readStoreSlice(['config']);
 
       if (
         whatsappStopRequested ||
@@ -2579,7 +2605,7 @@ async function startWhatsappWorkerUnlocked({
     }
   );
 
-  await updateStore(
+  await updateStoreSlice(['meta'],
     (store) => {
       store.meta.whatsapp = {
         ...store.meta
@@ -2669,7 +2695,7 @@ async function reconnectWhatsappWorker() {
 function reportWhatsappReconnectFailure(error) {
   const message = `Não foi possível reconectar o WhatsApp: ${safeErrorMessage(error, 'o publicador não encerrou corretamente')}`;
   updateWhatsappRuntime({ status: 'error', qrDataUrl: null, pairingCode: null, message });
-  void updateStore((data) => {
+  void updateStoreSlice(['config', 'meta', 'logs'], (data) => {
     data.meta.whatsapp = {
       ...data.meta.whatsapp,
       status: 'error',
@@ -2712,7 +2738,7 @@ app.get(
     const {
       config
     } =
-      await readStore();
+      await readStoreSlice(['config']);
 
     const {
       brandName,
@@ -4116,7 +4142,7 @@ function summarizeQueue(queue = [], historicalSent = 0) {
 }
 
 app.get('/api/admin/queue', requireAdmin, async (req, res) => {
-  const data = await readStore();
+  const data = await readStoreSlice(['queue', 'meta']);
   const queue = Array.isArray(data.queue) ? data.queue : [];
   const offset = Math.max(0, Math.trunc(Number(req.query.offset) || 0));
   const limit = Math.max(1, Math.min(100, Math.trunc(Number(req.query.limit) || 50)));
@@ -4174,7 +4200,7 @@ app.get(
     res
   ) => {
     const data =
-      await readStore();
+      await readStoreSlice(['config', 'offers', 'coupons', 'queue', 'logs', 'analytics', 'meta']);
 
     const secrets =
       await readSecrets();
@@ -4680,7 +4706,7 @@ async function runPriceMonitorChecks() {
 }
 
 app.get('/api/admin/campaigns-state', requireAdmin, async (_req, res) => {
-  const data = await readStore();
+  const data = await readStoreSlice(['config', 'offers', 'campaigns', 'priceMonitors', 'queue']);
   const campaigns = (data.campaigns || []).map((campaign) => adminCampaignPayload(campaign, data));
   const priceMonitors = (data.priceMonitors || []).map((monitor) => adminPriceMonitorPayload(monitor, data));
   const stores = [...new Set((data.offers || []).map((offer) => String(offer.store || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -5726,7 +5752,7 @@ app.get(
   '/api/admin/backup',
   requireAdmin,
   async (_req, res) => {
-    const data = await readStore();
+    const data = await readStoreSlice(['config', 'coupons', 'campaigns', 'priceMonitors']);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Disposition', `attachment; filename="promoshop-backup-${new Date().toISOString().slice(0, 10)}.json"`);
     res.json(safeOperationalBackupPayload(data));
@@ -5829,7 +5855,7 @@ async function listAutomaticBackups() {
 }
 
 async function writeAutomaticBackup() {
-  const data = await readStore();
+  const data = await readStoreSlice(['config', 'coupons', 'campaigns', 'priceMonitors']);
   const payload = safeOperationalBackupPayload(data);
   const serialized = JSON.stringify(payload);
   if (Buffer.byteLength(serialized, 'utf8') > 2_000_000) throw new Error('O backup automático excede o limite seguro de tamanho.');
@@ -5861,7 +5887,7 @@ async function writeAutomaticBackup() {
     await fs.unlink(path.join(operationalBackupDir, file.name)).catch(() => {});
   }
   const remaining = await listAutomaticBackups();
-  await updateStore((store) => {
+  await updateStoreSlice(['meta'], (store) => {
     store.meta.backup = {
       ...(store.meta?.backup || {}),
       lastAutomaticAt: new Date().toISOString(),
@@ -5874,7 +5900,7 @@ async function writeAutomaticBackup() {
 app.get('/api/admin/backup/history', requireAdmin, async (_req, res) => {
   try {
     const files = await listAutomaticBackups();
-    const data = await readStore();
+    const data = await readStoreSlice(['config', 'meta']);
     res.set('Cache-Control', 'no-store');
     res.json({
       enabled: data.config.automaticBackupEnabled !== false,
@@ -6633,7 +6659,7 @@ app.post('/api/extension/coupons', async (req, res) => {
   activeRequests.push(now);
   extensionRateLimit.set(rateKey, activeRequests);
 
-  const data = await readStore();
+  const data = await readStoreSlice(['config', 'coupons']);
   const config = data.config || {};
   if (config.extensionEnabled === false) return res.status(403).json({ error: 'A extensão está desativada no painel.' });
   const incoming = Array.isArray(body.coupons) ? body.coupons : [body];
@@ -6646,7 +6672,7 @@ app.post('/api/extension/coupons', async (req, res) => {
   const errors = [];
   const acceptedFingerprints = new Set();
 
-  await updateStore((storeData) => {
+  await updateStoreSlice(['config', 'coupons'], (storeData) => {
     storeData.coupons ||= [];
     for (const candidate of candidates) {
       const storeName = String(candidate.store || '').trim().slice(0, 60);
@@ -6721,7 +6747,7 @@ app.post('/api/extension/mercadolivre/offers', async (req, res) => {
   activeRequests.push(now);
   extensionRateLimit.set(rateKey, activeRequests);
 
-  const snapshot = await readStore();
+  const snapshot = await readStoreSlice(['config', 'offers']);
   if (snapshot.config?.extensionEnabled === false) return res.status(403).json({ error: 'A extensão está desativada no painel.' });
   const incoming = Array.isArray(body.offers) ? body.offers : [body.offer || body];
   const imported = [];
@@ -6729,7 +6755,7 @@ app.post('/api/extension/mercadolivre/offers', async (req, res) => {
   const errors = [];
   const acceptedFingerprints = new Set();
 
-  await updateStore((data) => {
+  await updateStoreSlice(['config', 'offers'], (data) => {
     data.offers ||= [];
     for (const raw of incoming.slice(0, 10)) {
       const title = String(raw?.title || '').trim().slice(0, 300);
@@ -7730,13 +7756,10 @@ app.post(
 // dashboard inteiro a cada poucos segundos apenas para acompanhar conexão,
 // QR Code e grupos, transferindo também ofertas, filas, cupons e logs.
 app.get('/api/admin/whatsapp/state', requireAdmin, async (_req, res) => {
-  const data = await readStore();
+  const data = await readStoreSlice(['meta']);
   res.set('Cache-Control', 'no-store');
   res.json({
-    whatsapp: effectiveWhatsappState(data),
-    pendingQueueCount: (Array.isArray(data.queue) ? data.queue : [])
-      .filter((item) => item?.status === 'pending')
-      .length
+    whatsapp: effectiveWhatsappState(data)
   });
 });
 
@@ -7753,13 +7776,16 @@ app.get(
     req,
     res
   ) => {
+    if (workerQueueNextInProgress) return res.status(204).end();
+    workerQueueNextInProgress = true;
+    try {
     if (collectionInProgress) {
       return res
         .status(204)
         .end();
     }
 
-    let store = await readStore();
+    let store = await readStoreSlice(['config', 'offers', 'queue', 'meta']);
     // A coleta pode ter iniciado enquanto esta requisição aguardava o banco.
     // Reconfira o bloqueio antes de recuperar ou reivindicar qualquer item.
     if (collectionInProgress) {
@@ -7777,7 +7803,7 @@ app.get(
       .map((item) => item.id);
     if (repeatedPendingIds.length) {
       const repeatedPendingIdSet = new Set(repeatedPendingIds);
-      await updateStore((data) => {
+      await updateStoreSlice(['queue', 'meta'], (data) => {
         for (const item of data.queue) {
           if (!repeatedPendingIdSet.has(item.id) || item.status !== 'pending') continue;
           item.status = 'skipped';
@@ -7787,7 +7813,7 @@ app.get(
           item.skippedAt = new Date().toISOString();
         }
       });
-      store = await readStore();
+      store = await readStoreSlice(['config', 'offers', 'queue', 'meta']);
       sentSourceIndex = createQueueSourceIndex(store.queue, (item) => item?.status === 'sent');
       await addLog(`${repeatedPendingIds.length} duplicata(s) pendente(s) bloqueada(s) para não repetir ofertas.`, 'info');
     }
@@ -7800,7 +7826,7 @@ app.get(
       new Date(item.publishingAt || item.createdAt || 0).getTime() < stalePublishingCutoff
     ));
     if (hasStalePublishing) {
-      await updateStore((data) => {
+      await updateStoreSlice(['queue', 'meta'], (data) => {
         for (const item of data.queue) {
           const publishedAt = new Date(item.publishingAt || item.createdAt || 0).getTime();
           if (item.status !== 'publishing' || !Number.isFinite(publishedAt) || publishedAt >= stalePublishingCutoff) continue;
@@ -7818,7 +7844,7 @@ app.get(
           recoveredPublishing += 1;
         }
       });
-      store = await readStore();
+      store = await readStoreSlice(['config', 'offers', 'queue', 'meta']);
       const recoveredMessage = uncertainPublishing
         ? `${uncertainPublishing} publicação(ões) interrompida(s) foram marcadas para revisão e não serão repetidas automaticamente${recoveredPublishing > uncertainPublishing ? `; ${recoveredPublishing - uncertainPublishing} outra(s) foi(ram) retomada(s).` : '.'}`
         : `${recoveredPublishing} publicação(ões) retomada(s) após uma interrupção do publicador.`;
@@ -7869,7 +7895,7 @@ app.get(
      */
     async function claimQueueItem(item, fields = {}) {
       let claimed = false;
-      await updateStore((data) => {
+      await updateStoreSlice(['queue', 'meta'], (data) => {
         const saved = data.queue.find((entry) => entry.id === item?.id && entry.status === 'pending');
         if (!saved) return;
         Object.assign(saved, fields);
@@ -7906,7 +7932,7 @@ app.get(
               : selectedCodes;
           const message = String(item.message || '').trim().slice(0, 4000);
           if ((!deliveryAudienceCodes.length && !directRoundDestination) || !message) throw new Error('Divulgação sem mensagem ou grupo de destino.');
-          await updateStore((data) => {
+          await updateStoreSlice(['queue', 'meta'], (data) => {
             const saved = data.queue.find((entry) => entry.id === item.id && entry.status === 'pending');
             if (!saved) return;
             saved.message = message;
@@ -7947,7 +7973,7 @@ app.get(
           const message = stripAffiliateDisclosure(
             item.message || formatCouponMessage(coupon)
           );
-          await updateStore((data) => {
+          await updateStoreSlice(['queue', 'meta'], (data) => {
             const saved = data.queue.find(
               (entry) => entry.id === item.id && entry.status === 'pending'
             );
@@ -8275,7 +8301,7 @@ app.get(
          * ==================================================
          */
 
-        await updateStore(
+        await updateStoreSlice(['queue', 'meta'],
           (data) => {
             const saved =
               data.queue.find(
@@ -8423,7 +8449,7 @@ app.get(
             'Os dados completos do produto não estão mais disponíveis'
           )
         ) {
-          await updateStore(
+          await updateStoreSlice(['queue', 'meta'],
             (data) => {
               const saved =
                 data.queue.find(
@@ -8485,7 +8511,7 @@ app.get(
             'Nenhum grupo adequado'
           )
         ) {
-          await updateStore(
+          await updateStoreSlice(['queue', 'meta'],
             (data) => {
               const saved =
                 data.queue.find(
@@ -8550,7 +8576,7 @@ app.get(
             60_000
           ).toISOString();
 
-        await updateStore(
+        await updateStoreSlice(['queue', 'meta'],
           (data) => {
             const saved =
               data.queue.find(
@@ -9004,7 +9030,7 @@ app.get(
            * este item pertence à rodada.
            */
           let productClaimed = false;
-          await updateStore(
+          await updateStoreSlice(['queue', 'meta'],
             (data) => {
               const saved =
                 data.queue.find(
@@ -9123,9 +9149,12 @@ app.get(
       }
     }
 
-    return res
-      .status(204)
-      .end();
+      return res
+        .status(204)
+        .end();
+    } finally {
+      workerQueueNextInProgress = false;
+    }
   }
 );
 
@@ -9145,7 +9174,7 @@ app.get(
     const {
       config
     } =
-      await readStore();
+      await readStoreSlice(['config']);
 
     const selectedGroups =
       Array.isArray(
@@ -9218,6 +9247,11 @@ app.get(
           100
         ),
 
+      audienceDelaySeconds: Math.max(
+        5,
+        Math.min(600, Number(config.whatsappAudienceDelaySeconds || 15))
+      ),
+
       communityEnabled:
         config.whatsappCommunityEnabled !== false,
 
@@ -9284,7 +9318,7 @@ app.post(
 
     updateWhatsappRuntime({ groups });
 
-    await updateStore(
+    await updateStoreSlice(['meta'],
       (data) => {
         data.meta =
           data.meta || {};
@@ -9356,7 +9390,7 @@ app.post(
       message: 'Leia o QR Code com o WhatsApp.'
     });
 
-    await updateStore(
+    await updateStoreSlice(['meta'],
       (data) => {
         data.meta =
           data.meta || {};
@@ -9435,7 +9469,7 @@ app.post(
       message: 'Digite este código no WhatsApp do celular.'
     });
 
-    await updateStore(
+    await updateStoreSlice(['meta'],
       (data) => {
         data.meta =
           data.meta || {};
@@ -9521,7 +9555,7 @@ app.post(
     }, now);
 
     if (shouldPersist) {
-      await updateStore(
+      await updateStoreSlice(['config', 'meta', 'logs'],
         (data) => {
           data.meta = data.meta || {};
           data.meta.whatsapp = {
@@ -9592,14 +9626,14 @@ app.delete('/api/admin/users/:id', requireAdmin, requireOwner, async (req, res) 
  */
 
 app.get('/api/worker/monitoring/next', requireWorker, async (_req, res) => {
-  const current = await readStore();
+  const current = await readStoreSlice(['config', 'meta']);
   const currentRecipient = monitoringRecipientForConfig(current.config);
   if (!monitoringEnabledForConfig(current.config) || !currentRecipient || !hasMonitoringAlertReady(current)) {
     return res.status(204).end();
   }
   let alert = null;
   let recipient = currentRecipient;
-  await updateStore((data) => {
+  await updateStoreSlice(['config', 'meta'], (data) => {
     recipient = monitoringRecipientForConfig(data.config);
     if (!monitoringEnabledForConfig(data.config)) return;
     const batch = claimMonitoringAlertBatch(data);
@@ -9636,7 +9670,7 @@ app.post('/api/worker/monitoring/:id/sent', requireWorker, async (req, res) => {
     req.params.id,
     ...(Array.isArray(req.body?.ids) ? req.body.ids : [])
   ].map((id) => String(id || '').trim()).filter(Boolean))];
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     for (const id of ids) {
       if (markMonitoringAlertSent(data, id)) updated += 1;
     }
@@ -9651,7 +9685,7 @@ app.post('/api/worker/monitoring/:id/failed', requireWorker, async (req, res) =>
     ...(Array.isArray(req.body?.ids) ? req.body.ids : [])
   ].map((id) => String(id || '').trim()).filter(Boolean))];
   const error = sanitizeMonitoringMessage(req.body?.error, 'Falha ao entregar o alerta.');
-  await updateStore((data) => {
+  await updateStoreSlice(['meta'], (data) => {
     for (const id of ids) {
       if (failMonitoringAlert(data, id, error)) updated += 1;
     }
@@ -9676,7 +9710,7 @@ app.post(
     let claimed = false;
     let alreadyClaimed = false;
     let itemStatus = '';
-    await updateStore((data) => {
+    await updateStoreSlice(['queue', 'meta'], (data) => {
       const item = data.queue.find((entry) => entry.id === req.params.id);
       if (!item) return;
 
@@ -9718,7 +9752,7 @@ app.post('/api/worker/queue/:id/destination/started', requireWorker, async (req,
   const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
   if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
   let found = false;
-  await updateStore((data) => {
+  await updateStoreSlice(['queue', 'meta'], (data) => {
     const item = data.queue.find((entry) => entry.id === req.params.id);
     if (!item) return;
     found = true;
@@ -9733,7 +9767,7 @@ app.post('/api/worker/queue/:id/destination/started', requireWorker, async (req,
 app.post('/api/worker/queue/:id/destination/release', requireWorker, async (req, res) => {
   const destinationId = String(req.body?.destinationId || '').trim().slice(0, 160);
   if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
-  await updateStore((data) => {
+  await updateStoreSlice(['queue', 'meta'], (data) => {
     const item = data.queue.find((entry) => entry.id === req.params.id);
     if (!item) return;
     const attempted = (item.deliveryAttemptedDestinationIds || []).map(String).includes(destinationId);
@@ -9754,7 +9788,7 @@ app.post(
     if (!destinationId) return res.status(400).json({ error: 'Destino ausente.' });
 
     let itemFound = false;
-    await updateStore((data) => {
+    await updateStoreSlice(['queue', 'meta'], (data) => {
       const item = data.queue.find((entry) => entry.id === req.params.id);
       if (!item) return;
       itemFound = true;
@@ -9781,7 +9815,7 @@ app.post(
     req,
     res
   ) => {
-    await updateStore(
+    await updateStoreSlice(['config', 'queue', 'meta', 'instagramQueue', 'instagramFeedQueue', 'logs'],
       (data) => {
         const item =
           data.queue.find(
@@ -9962,7 +9996,7 @@ app.post(
     let failedItem = null;
     let alreadySent = false;
 
-    await updateStore(
+    await updateStoreSlice(['queue', 'meta'],
       (data) => {
         const item =
           data.queue.find(
@@ -10715,7 +10749,7 @@ app.use(
 
 cron.schedule('15 3 * * *', async () => {
   try {
-    await updateStore((data) => pruneInboxEntries(data));
+    await updateStoreSlice(['config', 'inbox'], (data) => pruneInboxEntries(data));
     await runOfferRetention();
   } catch (error) {
     console.error('Falha ao aplicar as retenções automáticas:', error.message);
@@ -10726,7 +10760,7 @@ cron.schedule('15 3 * * *', async () => {
 // no painel. Ele não inclui credenciais, sessões ou dados pessoais.
 cron.schedule('10 2 * * *', async () => {
   try {
-    const { config } = await readStore();
+    const { config } = await readStoreSlice(['config']);
     if (config.automaticBackupEnabled !== false) await writeAutomaticBackup();
   } catch (error) {
     console.error('Falha ao criar backup automático:', error.message);
@@ -10736,7 +10770,7 @@ cron.schedule('10 2 * * *', async () => {
 
 cron.schedule('20 */6 * * *', async () => {
   try {
-    const { config } = await readStore();
+    const { config } = await readStoreSlice(['config']);
     if (config.linkCheckEnabled !== false) await runOfferLinkChecks();
   } catch (error) {
     console.error('Falha na verificação programada de links:', error.message);
@@ -10745,7 +10779,7 @@ cron.schedule('20 */6 * * *', async () => {
 
 cron.schedule('30 4 * * *', async () => {
   try {
-    const { config } = await readStore();
+    const { config } = await readStoreSlice(['config']);
     await cleanupInstagramAssets(config.instagramAssetRetentionHours);
     const secrets = await readSecrets();
     const expiresAt = Number(secrets.instagramTokenExpiresAt || 0);
@@ -10768,7 +10802,7 @@ cron.schedule(
     }
 
     const data =
-      await readStore();
+      await readStoreSlice(['config', 'meta']);
 
     const collectionRequested =
       Boolean(
@@ -10867,7 +10901,7 @@ const httpServer = app.listen(
           const {
             config
           } =
-            await readStore();
+            await readStoreSlice(['config']);
 
           if (
             whatsappAutoStartEnabled(

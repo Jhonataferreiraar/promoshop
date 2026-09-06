@@ -1,4 +1,4 @@
-import { addLogs, createId, updateStore } from './store.js';
+import { addLogs, createId, updateStoreSlice } from './store.js';
 import { readSecrets } from './secrets.js';
 import crypto from 'node:crypto';
 import { getMercadoLivreAccessToken } from './mercadolivre.js';
@@ -1001,7 +1001,11 @@ export async function collectAliexpress(config, secrets) {
 }
 
 export async function collectOfferCandidates() {
-  const snapshot = await (await import('./store.js')).readStore();
+  // A coleta precisa apenas das configurações e dos segredos. Evite carregar
+  // o catálogo, filas e históricos inteiros no worker temporário de coleta;
+  // esses dados permanecem no PostgreSQL e só são lidos quando a importação
+  // realmente precisa reconciliá-los.
+  const snapshot = await (await import('./store.js')).readStoreSlice(['config']);
   const config = snapshot.config;
   const secrets = await readSecrets();
   let candidates = [];
@@ -1054,7 +1058,7 @@ export async function applyCollectedOffers({ candidates = [], errors = [], activ
   let refreshedLinks = 0;
   let activated = 0;
   let activatedMercadoLivre = 0;
-  await updateStore((data) => {
+  await updateStoreSlice(['config', 'offers', 'queue', 'meta'], (data) => {
     const refreshedAt = new Date().toISOString();
     const existing = new Map(data.offers.map((offer) => [offer.id, offer]));
     for (const offer of candidates.sort((a, b) => b.score - a.score)) {

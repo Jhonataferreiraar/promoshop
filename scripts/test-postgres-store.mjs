@@ -186,6 +186,15 @@ assert.deepEqual(pool.row.queue, []);
 assert.equal(pool.entityRows.get('promoshop_queue').get('queue-1').data.status, 'pending');
 assert.equal(pool.row.version, 3);
 
+// Atualizações operacionais pequenas não devem carregar o catálogo inteiro.
+// O caminho parcial ainda precisa manter a transação e sincronizar somente a
+// tabela solicitada.
+await secondProcess.updateKeys(['queue'], (data) => {
+  data.queue[0].status = 'publishing';
+});
+assert.equal(pool.entityRows.get('promoshop_queue').get('queue-1').data.status, 'publishing');
+assert.equal(pool.row.version, 4);
+
 await secondProcess.update((data) => {
   data.campaigns.push({ id: 'campaign-1', name: 'Campanha teste', status: 'draft' });
   data.priceMonitors.push({ id: 'monitor-1', offerId: 'offer-1', targetPrice: 10, status: 'watching' });
