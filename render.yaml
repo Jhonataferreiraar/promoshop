@@ -41,6 +41,10 @@ services:
         value: "true"
       - key: WHATSAPP_AUTOSTART
         value: "false"
+      # Recicla somente o processo do WhatsApp após entregas suficientes para
+      # liberar memória do Chromium, sem reiniciar a API nem alterar a fila.
+      - key: WHATSAPP_RECYCLE_AFTER_MESSAGES
+        value: "100"
       # Opcional: destinatário dos alertas operacionais do servidor.
       - key: MONITORING_WHATSAPP_RECIPIENT
         sync: false

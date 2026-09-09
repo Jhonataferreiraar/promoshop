@@ -441,16 +441,30 @@ export function createPostgresStateBackend({
 
   async function getPool() {
     if (!poolPromise) {
-      poolPromise = import('pg').then(({ Pool }) => new Pool({
-        connectionString,
-        max: Math.max(2, Math.min(10, Number(process.env.PG_POOL_MAX) || 5)),
-        idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 10_000,
-        query_timeout: 15_000,
-        statement_timeout: 15_000,
-        keepAlive: true,
-        ssl: databaseSsl(connectionString)
-      }));
+      poolPromise = import('pg').then(({ Pool }) => {
+        const pool = new Pool({
+          connectionString,
+          max: Math.max(2, Math.min(10, Number(process.env.PG_POOL_MAX) || 5)),
+          idleTimeoutMillis: 30_000,
+          // Recicle conexões antigas antes que o provedor encerre uma sessão
+          // ociosa por conta própria. Isso evita que o evento `error` de um
+          // cliente stale derrube o processo inteiro.
+          maxLifetimeSeconds: Math.max(60, Number(process.env.PG_MAX_LIFETIME_SECONDS) || 300),
+          connectionTimeoutMillis: 10_000,
+          query_timeout: 15_000,
+          statement_timeout: 15_000,
+          keepAlive: true,
+          ssl: databaseSsl(connectionString)
+        });
+        // O pg emite `error` no pool quando uma conexão ociosa é encerrada.
+        // Sem um listener, o EventEmitter transforma esse evento em exceção
+        // não tratada e o Render reinicia o Web Service.
+        pool.on('error', (error) => {
+          connected = false;
+          console.error(`PostgreSQL: conexão do pool encerrada: ${String(error?.message || error).slice(0, 240)}`);
+        });
+        return pool;
+      });
     }
     return poolPromise;
   }

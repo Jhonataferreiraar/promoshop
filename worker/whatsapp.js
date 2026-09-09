@@ -153,6 +153,17 @@ let sentTimes = [];
 let processing = false;
 let connectedServicesStarted = false;
 let whatsappReady = false;
+// O Chromium do WhatsApp Web pode manter memória nativa depois de muitas
+// entregas, mesmo quando o heap do Node continua dentro do limite. Reciclar o
+// publicador entre itens concluídos libera essa memória sem alterar a fila ou
+// a ordem das publicações. O servidor reconhece o código 75 e inicia a sessão
+// novamente, inclusive quando WHATSAPP_AUTOSTART=false (início manual).
+const recycleAfterMessages = Math.max(
+  40,
+  Math.min(500, Number(process.env.WHATSAPP_RECYCLE_AFTER_MESSAGES) || 100)
+);
+let deliveredMessagesSinceStart = 0;
+let recycleScheduled = false;
 let authenticationReadyProbe = null;
 let authenticationReadyProbeRunning = false;
 let shuttingDown = false;
@@ -186,6 +197,18 @@ function shutdownWhatsappWorker(reason = 'encerramento solicitado', exitCode = 0
   return shutdownPromise;
 }
 
+function schedulePreventiveRecycle() {
+  if (recycleScheduled || shuttingDown) return;
+  recycleScheduled = true;
+  console.warn(
+    `Reciclagem preventiva do publicador após ${deliveredMessagesSinceStart} entrega(s) para liberar memória do Chromium.`
+  );
+  const timer = setTimeout(() => {
+    shutdownWhatsappWorker('reciclagem preventiva de memória', 75);
+  }, 1_500);
+  timer.unref?.();
+}
+
 process.once('SIGTERM', () => { void shutdownWhatsappWorker('sinal de reinicialização'); });
 process.once('SIGINT', () => { void shutdownWhatsappWorker('interrupção manual'); });
 
@@ -215,7 +238,19 @@ async function request(path, options = {}) {
     throw error;
   }
   if (response.status === 204) return null;
-  if (!response.ok) throw new Error(`API respondeu ${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const payload = await response.json();
+      detail = String(payload?.error || payload?.message || '').replace(/[\r\n]+/g, ' ').slice(0, 180);
+    } catch {
+      // Algumas respostas de proxy não possuem JSON; o status ainda é útil.
+    }
+    const error = new Error(`API respondeu ${response.status}${detail ? `: ${detail}` : ''}`);
+    error.status = response.status;
+    error.path = path;
+    throw error;
+  }
   return response.json();
 }
 
@@ -717,13 +752,14 @@ async function processQueue() {
   // Alertas operacionais têm prioridade sobre uma publicação normal. Uma
   // publicação que já começou não é interrompida, mas nenhum novo item da
   // fila comum é reservado enquanto houver um alerta pronto para entrega.
-  if (processing || monitoringProcessing) return;
+  if (processing || monitoringProcessing || recycleScheduled) return;
   const monitoringSent = await processMonitoringQueue();
   if (monitoringSent) return;
   if (monitoringProcessing) return;
   processing = true;
   let item = null;
   let preparedMedia = null;
+  let recycleAfterCurrentItem = false;
   try {
     if (!whatsappReady) {
       return;
@@ -850,6 +886,8 @@ async function processQueue() {
       if (!sent) throw lastSendError || new Error(`O WhatsApp não confirmou o envio para ${destination.name || 'um dos grupos'}.`);
       await completeDestination(item, destination);
       deliveredDestinations += 1;
+      deliveredMessagesSinceStart += 1;
+      if (deliveredMessagesSinceStart >= recycleAfterMessages) recycleAfterCurrentItem = true;
       await new Promise(
         (resolve) =>
           setTimeout(
@@ -882,6 +920,7 @@ async function processQueue() {
         method: 'POST',
         body: JSON.stringify({ error: detail, retrySafe: safeRetryAvailable })
       });
+      if (recycleAfterCurrentItem) schedulePreventiveRecycle();
       console.warn(
         `${deliveredDestinations} destino(s) concluído(s) e ${destinationErrors.length} com falha para "${item.offerTitle}".`
       );
@@ -893,6 +932,7 @@ async function processQueue() {
     sentTimes.push(Date.now());
     await completeQueueItem(item);
     console.log(`Enviado para ${destinations.length} grupo(s): ${item.offerTitle}`);
+    if (recycleAfterCurrentItem) schedulePreventiveRecycle();
   } catch (error) {
     console.error(error.message);
     if (item) await request(`/api/worker/queue/${item.id}/fail`, { method: 'POST', body: JSON.stringify({ error: error.message }) }).catch(() => { });
@@ -901,11 +941,12 @@ async function processQueue() {
     // próxima oferta poderá então ser coletada pelo GC sem acumular payloads.
     preparedMedia = null;
     processing = false;
+    if (recycleAfterCurrentItem) schedulePreventiveRecycle();
   }
 }
 
 async function processMonitoringQueue() {
-  if (!whatsappReady || processing || monitoringProcessing) return;
+  if (!whatsappReady || processing || monitoringProcessing || recycleScheduled) return;
   monitoringProcessing = true;
   let alert = null;
   let handled = false;

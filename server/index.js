@@ -242,11 +242,16 @@ let whatsappRestartTimer = null;
 let whatsappStopRequested = false;
 let whatsappRestartAttempts = 0;
 let whatsappReconnectPromise = null;
+// Código reservado para a reciclagem preventiva do processo do WhatsApp. Ela
+// libera o Chromium antes que o vazamento de memória acumulado provoque o
+// reinício forçado do serviço inteiro.
+const WHATSAPP_RECYCLE_EXIT_CODE = 75;
 // Evita que o início automático, a reconexão solicitada pelo painel e o
 // reinício após uma queda criem dois publicadores ao mesmo tempo.
 let whatsappStartPromise = null;
 const intentionallyStoppedWhatsappChildren = new WeakSet();
 let collectionInProgress = false;
+let collectionScheduleInProgress = false;
 // O worker pode abandonar uma requisição depois de 20 segundos, enquanto o
 // servidor ainda está preparando a oferta com IA. Sem este guarda, o próximo
 // polling iniciava outra preparação para o mesmo item e acumulava chamadas,
@@ -2507,6 +2512,7 @@ async function startWhatsappWorkerUnlocked({
   child.once(
     'exit',
     async (code) => {
+      const preventiveRecycle = code === WHATSAPP_RECYCLE_EXIT_CODE;
       if (
         whatsappProcess ===
         child
@@ -2518,7 +2524,9 @@ async function startWhatsappWorkerUnlocked({
       if (whatsappRuntimeState?.status !== 'error') {
         updateWhatsappRuntime({
           status: 'offline',
-          message: `Publicador encerrado (${code ?? 'sem código'}).`
+          message: preventiveRecycle
+            ? 'Publicador reciclado preventivamente para liberar memória.'
+            : `Publicador encerrado (${code ?? 'sem código'}).`
         });
       }
 
@@ -2545,9 +2553,17 @@ async function startWhatsappWorkerUnlocked({
                 .toISOString(),
 
             message:
-              `Publicador encerrado (${code ?? 'sem código'}).`
+              preventiveRecycle
+                ? 'Publicador reciclado preventivamente para liberar memória.'
+                : `Publicador encerrado (${code ?? 'sem código'}).`
           };
-          appendStoreLog(store, `WhatsApp: publicador encerrado (${code ?? 'sem código'}).`, 'warning');
+          appendStoreLog(
+            store,
+            preventiveRecycle
+              ? 'WhatsApp: publicador reciclado preventivamente para liberar memória.'
+              : `WhatsApp: publicador encerrado (${code ?? 'sem código'}).`,
+            preventiveRecycle ? 'info' : 'warning'
+          );
         }
       );
 
@@ -2559,7 +2575,7 @@ async function startWhatsappWorkerUnlocked({
       if (
         whatsappStopRequested ||
         intentionallyStoppedWhatsappChildren.has(child) ||
-        !whatsappAutoStartEnabled(config)
+        (!whatsappAutoStartEnabled(config) && !preventiveRecycle)
       ) {
         return;
       }
@@ -10844,66 +10860,39 @@ cron.schedule('30 4 * * *', async () => {
 cron.schedule(
   '* * * * *',
   async () => {
-    if (
-      collectionInProgress
-    ) {
-      return;
-    }
-
-    const data =
-      await readStoreSlice(['config', 'meta']);
-
-    const collectionRequested =
-      Boolean(
-        data.meta
-          ?.collectionRequestedAt
-      );
-
-    const interval =
-      Math.max(
-        5,
-        Number(
-          data.config
-            .collectionIntervalMinutes ||
-          15
-        )
-      );
-
-    const last =
-      data.meta
-        .lastCollectionAt
-        ? new Date(
-            data.meta
-              .lastCollectionAt
-          ).getTime()
-        : 0;
-
-    if (
-      !collectionRequested &&
-      Date.now() -
-      last <
-      interval *
-      60_000
-    ) {
-      return;
-    }
-
+    // O callback do cron pode ficar aguardando o PostgreSQL. Não deixe uma
+    // segunda execução fazer outra leitura enquanto a primeira ainda está em
+    // andamento; isso só aumenta a fila de transações quando o servidor está
+    // sob carga e não muda a frequência configurada da coleta.
+    if (collectionInProgress || collectionScheduleInProgress) return;
+    collectionScheduleInProgress = true;
     try {
+      const data = await readStoreSlice(['config', 'meta']);
+      const collectionRequested = Boolean(data.meta?.collectionRequestedAt);
+      const interval = Math.max(5, Number(data.config?.collectionIntervalMinutes || 15));
+      const last = data.meta?.lastCollectionAt
+        ? new Date(data.meta.lastCollectionAt).getTime()
+        : 0;
+      if (!collectionRequested && Date.now() - last < interval * 60_000) return;
       await runCollectionWhenIdle();
     } catch (error) {
-      await addLog(
-        `Erro no agendador: ${error.message}`,
-        'error'
-      );
+      await addLog(`Erro no agendador: ${error.message}`, 'error');
+    } finally {
+      collectionScheduleInProgress = false;
     }
   }
 );
 
 // Não devolva stack traces, caminhos locais ou mensagens de serviços externos
 // ao navegador. O detalhe fica apenas no log do servidor, já redigido.
-app.use((error, _req, res, _next) => {
+app.use((error, req, res, _next) => {
   const detail = safeErrorMessage(error);
-  console.error('Erro interno:', detail);
+  // A resposta continua genérica, mas o log do servidor precisa indicar a
+  // rota que falhou. Isso permite identificar rapidamente uma coleção inválida
+  // ou uma transação interrompida sem expor stack trace ao navegador.
+  const route = `${req.method} ${req.originalUrl || req.url || '/'}`;
+  console.error(`Erro interno [${route}]:`, detail);
+  if (error?.stack) console.error(error.stack);
   void addLog(`Erro interno: ${detail}`, error?.status === 413 ? 'warning' : 'error').catch(() => {});
   if (res.headersSent) return;
   res.status(error?.status === 413 ? 413 : 500).json({ error: error?.status === 413 ? 'A solicitação excede o limite permitido.' : 'Não foi possível concluir a solicitação.' });

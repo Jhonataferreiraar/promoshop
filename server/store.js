@@ -653,18 +653,23 @@ function normalizeStoreData(data) {
       files: Array.isArray(data.meta?.backup?.files) ? data.meta.backup.files.slice(-20) : []
     }
   };
-  data.offers ||= [];
-  data.coupons ||= [];
+  // O armazenamento relacional restaura cada coleção a partir de JSONB. Uma
+  // versão antiga ou uma gravação interrompida pode deixar uma coleção como
+  // `null` ou como um objeto. Usar apenas `||=` preserva esse valor inválido
+  // e a próxima operação `.find()`/`.filter()` derruba a requisição. A
+  // normalização precisa garantir o tipo, não somente a existência do campo.
+  data.offers = Array.isArray(data.offers) ? data.offers : [];
+  data.coupons = Array.isArray(data.coupons) ? data.coupons : [];
   data.campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
   data.priceMonitors = Array.isArray(data.priceMonitors) ? data.priceMonitors : [];
-  data.inbox ||= [];
+  data.inbox = Array.isArray(data.inbox) ? data.inbox : [];
   data.privacyConsents = data.privacyConsents && typeof data.privacyConsents === 'object'
     ? data.privacyConsents
     : {};
-  data.queue ||= [];
-  data.instagramQueue ||= [];
-  data.instagramFeedQueue ||= [];
-  data.logs ||= [];
+  data.queue = Array.isArray(data.queue) ? data.queue : [];
+  data.instagramQueue = Array.isArray(data.instagramQueue) ? data.instagramQueue : [];
+  data.instagramFeedQueue = Array.isArray(data.instagramFeedQueue) ? data.instagramFeedQueue : [];
+  data.logs = Array.isArray(data.logs) ? data.logs : [];
   data.analytics = {
     ...initialData.analytics,
     ...(data.analytics || {}),
