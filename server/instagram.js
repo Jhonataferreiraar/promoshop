@@ -837,7 +837,12 @@ export async function generateInstagramFeedAsset(story, config, requestedThemeId
 }
 
 function storySnapshot(data, queueItem) {
-  const offer = data.offers.find((entry) => entry.id === queueItem.offerId) || queueItem.offerSnapshot || {};
+  // O encerramento da fila pode usar uma atualização parcial do PostgreSQL,
+  // portanto o catálogo completo nem sempre está presente nesse snapshot.
+  // As filas novas já guardam `offerSnapshot`; use-o como fallback sem alterar
+  // a seleção da oferta quando o catálogo completo estiver disponível.
+  const offers = Array.isArray(data?.offers) ? data.offers : [];
+  const offer = offers.find((entry) => entry.id === queueItem.offerId) || queueItem.offerSnapshot || {};
   const coupon = queueItem.couponSnapshot || {};
   return queueItem.kind === 'coupon'
     ? { kind: 'coupon', sourceId: queueItem.couponId || queueItem.id, title: coupon.title || queueItem.offerTitle, store: coupon.store || queueItem.store, price: 0, originalPrice: 0, discount: coupon.discountType === 'percent' ? coupon.discountValue : 0, image: coupon.image || queueItem.image, link: coupon.shortUrl || coupon.link, audienceCodes: queueItem.targetAudienceCodes || [], sourcePublishedAt: queueItem.sentAt || queueItem.createdAt || new Date().toISOString() }
