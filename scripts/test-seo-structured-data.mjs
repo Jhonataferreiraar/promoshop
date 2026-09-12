@@ -28,6 +28,8 @@ assert.equal(latestSeoDate([], '2026-08-23-v5'), '2026-08-23');
 
 const serverSource = await fs.readFile(new URL('../server/index.js', import.meta.url), 'utf8');
 assert.match(serverSource, /seo\.isOfferRoute \? 'noindex, follow'/);
+assert.match(serverSource, /renderSeoPrerender/);
+assert.match(serverSource, /seo-prerender/);
 assert.doesNotMatch(serverSource, /buildProductStructuredData/);
 assert.doesNotMatch(serverSource, /entries\.set\(`\/oferta\//);
 

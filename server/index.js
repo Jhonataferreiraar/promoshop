@@ -10490,10 +10490,10 @@ function pageSeo(config, pathname, origin, offers = []) {
       : storeName ? [`Ofertas do ${storeName} — PromoShop`, `Veja ofertas e cupons selecionados do ${storeName}. Confirme as condições diretamente na loja.`]
         : pages[pathname];
   const fallbackTitle = exists
-    ? String(config.seoTitle || `${config.brandName || 'PromoShop'} — Ofertas e cupons`)
+    ? String(config.seoTitle || `${config.brandName || 'PromoShop'} - Ofertas Diárias`)
     : 'Página não encontrada — PromoShop';
   const fallbackDescription = exists
-    ? String(config.seoDescription || '')
+    ? String(config.seoDescription || 'Encontre ofertas diárias e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Confirme as condições diretamente na loja.')
     : 'Esta página não existe ou não está mais disponível.';
   return {
     title: page?.[0] || fallbackTitle,
@@ -10505,6 +10505,32 @@ function pageSeo(config, pathname, origin, offers = []) {
     isOfferRoute: Boolean(offerMatch),
     isCatalogRoute
   };
+}
+
+function renderSeoPrerender(config, seo, origin) {
+  const brandName = String(config.seoSiteName || config.brandName || 'PromoShop').trim() || 'PromoShop';
+  const title = String(seo.title || config.seoTitle || `${brandName} - Ofertas Diárias`).trim();
+  const description = String(seo.description || config.seoDescription || 'Encontre ofertas diárias e cupons selecionados do Mercado Livre, Shopee, AliExpress e Magalu. Confirme as condições diretamente na loja.').trim();
+  const heroTitle = String(config.heroTitle || 'Ofertas boas não esperam.').trim();
+  const heroText = String(config.heroText || 'Promoções selecionadas e organizadas para você economizar sem perder tempo.').trim();
+  const affiliatePrograms = String(config.legalAffiliatePrograms || 'Mercado Livre, Shopee, AliExpress e Magalu').trim();
+  const links = [
+    ['Ofertas', '/'],
+    ['Cupons de desconto', '/cupons'],
+    ['Sobre o PromoShop', '/sobre'],
+    ['Fale conosco', '/contato']
+  ];
+
+  return `<section id="seo-prerender" class="seo-prerender" aria-labelledby="seo-prerender-title">
+    <p class="seo-prerender-kicker">OFERTAS E CUPONS ATUALIZADOS TODOS OS DIAS</p>
+    <h1 id="seo-prerender-title">${escapeHtml(title)}</h1>
+    <p>${escapeHtml(heroTitle)} ${escapeHtml(heroText)}</p>
+    <p>${escapeHtml(description)}</p>
+    <nav aria-label="Navegação principal do PromoShop">
+      ${links.map(([label, path]) => `<a href="${escapeHtml(`${origin}${path === '/' ? '/' : path}`)}">${escapeHtml(label)}</a>`).join(' · ')}
+    </nav>
+    <p>Ofertas e cupons selecionados de ${escapeHtml(affiliatePrograms)}. A compra é concluída diretamente na loja parceira.</p>
+  </section>`;
 }
 
 function injectSeo(html, data, req) {
@@ -10538,7 +10564,10 @@ function injectSeo(html, data, req) {
     structuredData
   ].filter(Boolean).join('\n    ');
 
+  const prerender = pathname === '/' ? renderSeoPrerender(config, seo, origin) : '';
   return html
+    .replace(/<section\s+id="seo-prerender"[\s\S]*?<\/section>/i, '')
+    .replace(/<div\s+id="root"><\/div>/i, `${prerender}<div id="root"></div>`)
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(seo.title)}</title>`)
     .replace(/<meta\s+name="description"[^>]*>/i, '')
     .replace('</head>', `    ${tags}\n  </head>`);

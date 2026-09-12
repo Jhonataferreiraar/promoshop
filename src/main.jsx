@@ -19,6 +19,10 @@ import {
   permissionProfileLabel
 } from '../server/adminPermissions.js';
 
+// O HTML inicial contém apenas um bloco textual para buscadores. Remova-o
+// antes de montar o React para não duplicar conteúdo na interface normal.
+document.getElementById('seo-prerender')?.remove();
+
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
 const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
 
