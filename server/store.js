@@ -14,6 +14,7 @@ import { enqueueMonitoringAlert } from './monitoring.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
 const dataFile = path.join(dataDir, 'db.json');
+const activityLogFile = path.join(dataDir, 'activity-logs.jsonl');
 const dataKeyFile = path.join(dataDir, '.data-key');
 export const OFFER_RETENTION_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -451,6 +452,7 @@ let cachedData = null;
 let cachedSignature = '';
 let bufferedLogs = [];
 let bufferedLogTimer = null;
+let fileActivityLogIds = null;
 const configuredStoreBackend = String(process.env.STORE_BACKEND || 'file').trim().toLowerCase();
 let postgresBackend = null;
 
@@ -544,6 +546,57 @@ async function readFileStore() {
   cachedData = data;
   cachedSignature = signature;
   return data;
+}
+
+async function loadFileActivityLogIds() {
+  if (fileActivityLogIds) return fileActivityLogIds;
+  fileActivityLogIds = new Set();
+  try {
+    const content = await fs.readFile(activityLogFile, 'utf8');
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        const id = String(entry?.id || '').trim();
+        if (id) fileActivityLogIds.add(id);
+      } catch { /* uma linha corrompida não impede o restante do histórico */ }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  return fileActivityLogIds;
+}
+
+async function appendFileActivityLogs(entries = []) {
+  const ids = await loadFileActivityLogIds();
+  const fresh = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry?.id && !ids.has(String(entry.id)))
+    .map((entry) => ({
+      id: String(entry.id),
+      message: String(entry.message || '').slice(0, 2000),
+      level: String(entry.level || 'info'),
+      createdAt: entry.createdAt || new Date().toISOString()
+    }));
+  if (!fresh.length) return;
+  await fs.appendFile(activityLogFile, `${fresh.map((entry) => JSON.stringify(entry)).join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+  for (const entry of fresh) ids.add(entry.id);
+}
+
+async function readFileActivityLogs() {
+  await ensureStore();
+  await loadFileActivityLogIds();
+  try {
+    const content = await fs.readFile(activityLogFile, 'utf8');
+    return content.split('\n').flatMap((line) => {
+      if (!line.trim()) return [];
+      try { return [JSON.parse(line)]; } catch { return []; }
+    });
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const data = await readFileStore();
+    await appendFileActivityLogs(data.logs);
+    return Array.isArray(data.logs) ? data.logs : [];
+  }
 }
 
 function normalizeStoreData(data) {
@@ -906,6 +959,7 @@ async function updateFileStore(mutator) {
     const data = structuredClone(await readFileStore());
     const result = await mutator(data);
     compactStoreHistory(data);
+    await appendFileActivityLogs(data.logs);
     const temporaryFile = path.join(dataDir, `db-${process.pid}-${crypto.randomBytes(4).toString('hex')}.tmp`);
     await fs.writeFile(temporaryFile, JSON.stringify(await protectSensitiveData(data)), { encoding: 'utf8', mode: 0o600 });
     try {
@@ -975,6 +1029,38 @@ export async function readStoreSlice(keys = []) {
   if (configuredStoreBackend === 'postgres') return getPostgresBackend().readKeys(selected);
   const data = await readFileStore();
   return Object.fromEntries(selected.map((key) => [key, data[key]]));
+}
+
+// O PostgreSQL e o armazenamento local mantêm um arquivo append-only separado
+// do estado operacional. Assim o painel consulta o histórico completo sem
+// carregar uma coleção ilimitada na abertura do dashboard.
+export async function readActivityLogs(options = {}) {
+  if (configuredStoreBackend === 'postgres') return getPostgresBackend().readActivityLogs(options);
+  const archive = await readFileActivityLogs();
+  const normalizedQuery = String(options.query || '').trim().toLocaleLowerCase('pt-BR');
+  const level = String(options.level || 'all');
+  const from = options.from ? new Date(options.from).getTime() : 0;
+  const to = options.to ? new Date(options.to).getTime() : Number.POSITIVE_INFINITY;
+  const items = (Array.isArray(archive) ? archive : []).filter((entry) => {
+    if (['info', 'success', 'warning', 'error'].includes(level) && entry.level !== level) return false;
+    const createdAt = new Date(entry.createdAt || 0).getTime();
+    if (Number.isFinite(from) && createdAt < from) return false;
+    if (Number.isFinite(to) && createdAt > to) return false;
+    if (!normalizedQuery) return true;
+    return `${entry.message || ''} ${entry.level || ''}`.toLocaleLowerCase('pt-BR').includes(normalizedQuery);
+  }).sort((left, right) => {
+    const rightTime = new Date(right.createdAt || 0).getTime();
+    const leftTime = new Date(left.createdAt || 0).getTime();
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  });
+  const offset = Math.max(0, Math.trunc(Number(options.offset) || 0));
+  const limit = Math.min(50_000, Math.max(1, Math.trunc(Number(options.limit) || 100)));
+  const summary = items.reduce((result, entry) => {
+    const entryLevel = ['info', 'success', 'warning', 'error'].includes(entry?.level) ? entry.level : 'info';
+    result[entryLevel] += 1;
+    return result;
+  }, { total: items.length, info: 0, success: 0, warning: 0, error: 0 });
+  return { items: items.slice(offset, offset + limit), total: items.length, summary, offset, limit, hasMore: offset + limit < items.length };
 }
 
 export async function updateStore(mutator) {

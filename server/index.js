@@ -20,6 +20,7 @@ import {
   createId,
   OFFER_RETENTION_DAYS,
   pruneExpiredOffers,
+  readActivityLogs,
   readStore,
   readStoreSlice,
   restoreRecentOffersFromQueue,
@@ -149,6 +150,32 @@ const port = Number(
 // limite reduz o payload e o número de elementos que o navegador precisa
 // montar ao abrir o painel.
 const ADMIN_OFFER_DISPLAY_LIMIT = 500;
+
+function activityDateBoundary(value, endOfDay = false) {
+  const raw = String(value || '').trim();
+  const timestamp = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? Date.parse(`${raw}T${endOfDay ? '23:59:59.999' : '00:00:00'}-03:00`)
+    : Date.parse(raw);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function activityQueryOptions(req, exportAll = false) {
+  const from = activityDateBoundary(req.query?.from);
+  const to = activityDateBoundary(req.query?.to, true);
+  const level = ['all', 'info', 'success', 'warning', 'error'].includes(String(req.query?.level || 'all'))
+    ? String(req.query?.level || 'all')
+    : 'all';
+  const query = String(req.query?.q || '').trim().slice(0, 160);
+  const offset = Math.max(0, Math.trunc(Number(req.query?.offset) || 0));
+  const limit = exportAll
+    ? 50_000
+    : Math.min(500, Math.max(1, Math.trunc(Number(req.query?.limit) || 100)));
+  return { from, to, level, query, offset, limit };
+}
+
+function csvCell(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
 
 function redirectWithinOrigin(res, status, origin, requestPath) {
   return res.redirect(status, safeRedirectDestination(origin, requestPath) || '/');
@@ -4382,6 +4409,29 @@ app.get(
     });
   }
 );
+
+app.get('/api/admin/logs', requireAdmin, async (req, res) => {
+  const result = await readActivityLogs(activityQueryOptions(req));
+  res.json(result);
+});
+
+app.get('/api/admin/logs/export', requireAdmin, async (req, res) => {
+  const result = await readActivityLogs(activityQueryOptions(req, true));
+  const levelLabels = { info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' };
+  const rows = [
+    ['data', 'nivel', 'mensagem'],
+    ...result.items.map((log) => [
+      log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : '',
+      levelLabels[log.level] || log.level || 'Informação',
+      log.message || ''
+    ])
+  ];
+  const csv = rows.map((row) => row.map(csvCell).join(';')).join('\n');
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="promoshop-atividades-${stamp}.csv"`);
+  res.send(`\ufeff${csv}`);
+});
 
 app.put(
   '/api/admin/config',

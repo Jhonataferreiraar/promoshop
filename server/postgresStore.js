@@ -17,6 +17,7 @@ const CACHE_REVALIDATE_MS = 750;
 const OFFER_TABLE = 'promoshop_offers';
 const POSTGRES_SCHEMA_VERSION = 2;
 const SECTION_TABLE = 'promoshop_sections';
+const ACTIVITY_LOG_TABLE = 'promoshop_activity_logs';
 const SECTION_KEYS = Object.freeze([
   'config',
   'inbox',
@@ -127,13 +128,30 @@ async function ensureRelationalTables(pool) {
     await pool.query(`CREATE INDEX IF NOT EXISTS ${table}_status_idx ON ${table} ((data->>'status'))`);
   }
 
+  // O estado principal mantém somente uma prévia curta dos logs para que
+  // atualizações operacionais continuem leves. O arquivo histórico separado
+  // preserva todos os registros sem aumentar o payload do painel ou do
+  // publicador.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${ACTIVITY_LOG_TABLE} (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ,
+      level TEXT NOT NULL DEFAULT 'info',
+      message TEXT NOT NULL DEFAULT '',
+      data JSONB NOT NULL,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ${ACTIVITY_LOG_TABLE}_created_idx ON ${ACTIVITY_LOG_TABLE} (created_at DESC, id DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS ${ACTIVITY_LOG_TABLE}_level_idx ON ${ACTIVITY_LOG_TABLE} (level)`);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS promoshop_coupons_active_idx ON promoshop_coupons ((data->>'active'))`);
   await pool.query(`CREATE INDEX IF NOT EXISTS promoshop_queue_created_idx ON promoshop_queue ((data->>'createdAt'))`);
   await pool.query(`CREATE INDEX IF NOT EXISTS promoshop_logs_created_idx ON promoshop_logs ((data->>'createdAt'))`);
 }
 
 async function ensureRowSecurity(pool) {
-  const tables = ['promoshop_state', OFFER_TABLE, SECTION_TABLE, ...Object.values(ENTITY_TABLES)];
+  const tables = ['promoshop_state', OFFER_TABLE, SECTION_TABLE, ACTIVITY_LOG_TABLE, ...Object.values(ENTITY_TABLES)];
   for (const table of tables) {
     await pool.query(`REVOKE ALL ON TABLE ${table} FROM PUBLIC`);
     await pool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
@@ -154,6 +172,55 @@ async function ensureRowSecurity(pool) {
       $policy$
     `);
   }
+}
+
+function activityTimestamp(value) {
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function archiveActivityLogs(executor, logs) {
+  const entries = (Array.isArray(logs) ? logs : [])
+    .map((entry) => {
+      const id = String(entry?.id || '').trim().slice(0, 240);
+      if (!id) return null;
+      return {
+        id,
+        createdAt: activityTimestamp(entry.createdAt),
+        level: String(entry.level || 'info').slice(0, 24),
+        message: String(entry.message || '').slice(0, 2000),
+        data: { ...entry, id }
+      };
+    })
+    .filter(Boolean);
+  for (let offset = 0; offset < entries.length; offset += 100) {
+    const batch = entries.slice(offset, offset + 100);
+    const values = [];
+    const placeholders = batch.map((entry, index) => {
+      const base = index * 5;
+      values.push(entry.id, entry.createdAt, entry.level, entry.message, serialize(entry.data));
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb)`;
+    }).join(', ');
+    await executor.query(`
+      INSERT INTO ${ACTIVITY_LOG_TABLE} (id, created_at, level, message, data)
+      VALUES ${placeholders}
+      ON CONFLICT (id) DO NOTHING
+    `, values);
+  }
+}
+
+async function seedActivityLogArchive(executor) {
+  await executor.query(`
+    INSERT INTO ${ACTIVITY_LOG_TABLE} (id, created_at, level, message, data)
+    SELECT id,
+      NULLIF(data->>'createdAt', '')::timestamptz,
+      COALESCE(NULLIF(data->>'level', ''), 'info'),
+      COALESCE(data->>'message', ''),
+      data
+    FROM promoshop_logs
+    WHERE NULLIF(BTRIM(id), '') IS NOT NULL
+    ON CONFLICT (id) DO NOTHING
+  `);
 }
 
 function entityRows(items) {
@@ -534,6 +601,9 @@ export function createPostgresStateBackend({
             );
             if (restored.requiresReencrypt) await retireDataKey();
           }
+          // Garante que uma tabela recém-criada já contenha a prévia de logs
+          // existente antes da primeira gravação posterior.
+          await seedActivityLogArchive(pool);
           relationalReady = true;
           if (!suppliedPool) {
             await ensureRowSecurity(pool).catch((securityError) => {
@@ -705,6 +775,7 @@ export function createPostgresStateBackend({
         if (persistedKeys.length) {
           const protectedAfter = await protectData(data);
           if (useRelationalStore) {
+            if (changedKeys.includes('logs')) await archiveActivityLogs(client, data.logs);
             if (changedKeys.includes('offers')) await syncOfferTable(client, data.offers, before.offers);
             for (const [key, table] of Object.entries(ENTITY_TABLES)) {
               if (changedKeys.includes(key)) await syncJsonEntityTable(client, table, data[key], before[key]);
@@ -787,5 +858,46 @@ export function createPostgresStateBackend({
     return update(mutator, keys);
   }
 
-  return { read, readKeys, update, updateKeys, status, check };
+  async function readActivityLogs({ from = null, to = null, level = 'all', query = '', offset = 0, limit = 100 } = {}) {
+    await ensureDatabase();
+    const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
+    const safeLimit = Math.min(50_000, Math.max(1, Math.trunc(Number(limit) || 100)));
+    const values = [];
+    const conditions = [];
+    const addValue = (value) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+    if (from) conditions.push(`created_at >= ${addValue(from)}::timestamptz`);
+    if (to) conditions.push(`created_at <= ${addValue(to)}::timestamptz`);
+    if (['info', 'success', 'warning', 'error'].includes(level)) conditions.push(`level = ${addValue(level)}`);
+    const normalizedQuery = String(query || '').trim().slice(0, 160);
+    if (normalizedQuery) conditions.push(`message ILIKE ${addValue(`%${normalizedQuery}%`)}`);
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const pool = await getPool();
+    const count = await pool.query(`SELECT COUNT(*)::int AS total FROM ${ACTIVITY_LOG_TABLE} ${where}`, values);
+    const summaryRows = await pool.query(`SELECT level, COUNT(*)::int AS total FROM ${ACTIVITY_LOG_TABLE} ${where} GROUP BY level`, values);
+    const rows = await pool.query(`
+      SELECT id, created_at, level, message, data
+      FROM ${ACTIVITY_LOG_TABLE}
+      ${where}
+      ORDER BY created_at DESC NULLS LAST, id DESC
+      LIMIT ${safeLimit} OFFSET ${safeOffset}
+    `, values);
+    const items = rows.rows.map((row) => ({
+      ...(row.data && typeof row.data === 'object' ? row.data : {}),
+      id: row.id,
+      createdAt: row.data?.createdAt || (row.created_at ? new Date(row.created_at).toISOString() : null),
+      level: row.data?.level || row.level || 'info',
+      message: row.data?.message ?? row.message ?? ''
+    }));
+    const total = Number(count.rows[0]?.total || 0);
+    const summary = { total, info: 0, success: 0, warning: 0, error: 0 };
+    for (const row of summaryRows.rows) {
+      if (Object.hasOwn(summary, row.level)) summary[row.level] = Number(row.total || 0);
+    }
+    return { items, total, summary, offset: safeOffset, limit: safeLimit, hasMore: safeOffset + items.length < total };
+  }
+
+  return { read, readKeys, readActivityLogs, update, updateKeys, status, check };
 }

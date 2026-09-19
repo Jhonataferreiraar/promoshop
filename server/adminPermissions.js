@@ -116,6 +116,7 @@ export function adminPermissionForPath(pathname = '') {
   if (/^\/api\/admin\/search-console(?:\/|$)/.test(path)) return 'analytics';
   if (/^\/api\/admin\/(backup|maintenance)(?:\/|$)/.test(path)) return 'health';
   if (/^\/api\/admin\/(monitoring|price-monitors)(?:\/|$)/.test(path)) return 'monitoring';
+  if (/^\/api\/admin\/logs(?:\/|$)/.test(path)) return 'logs';
   if (path === '/api/admin/campaigns-state' || /^\/api\/admin\/campaigns(?:\/|$)/.test(path)) return 'offers';
   // Uma rota nova não deve virar uma brecha para contas secundárias.
   return '__owner__';

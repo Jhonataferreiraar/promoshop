@@ -1799,6 +1799,13 @@ function AdminApp() {
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [logLevelFilter, setLogLevelFilter] = useState('all');
   const [logPeriodFilter, setLogPeriodFilter] = useState('all');
+  const [logDateFrom, setLogDateFrom] = useState('');
+  const [logDateTo, setLogDateTo] = useState('');
+  const [activityLogRows, setActivityLogRows] = useState([]);
+  const [activityLogPage, setActivityLogPage] = useState({ total: 0, hasMore: false, offset: 0, limit: 100 });
+  const [activityLogSummary, setActivityLogSummary] = useState({ total: 0, info: 0, success: 0, warning: 0, error: 0 });
+  const [activityLogLoading, setActivityLogLoading] = useState(false);
+  const [activityLogsLoaded, setActivityLogsLoaded] = useState(false);
   const [dialog, setDialog] = useState(null);
   const [aiPreview, setAiPreview] = useState('');
   const [adminOfferQuery, setAdminOfferQuery] = useState('');
@@ -1823,6 +1830,7 @@ function AdminApp() {
   const backupInputRef = useRef(null);
   const queueSearchInputRef = useRef(null);
   const queueLoadRequestRef = useRef(0);
+  const activityLogRequestRef = useRef(0);
   const dashboardLoadCountRef = useRef(0);
   const whatsappStateLoadCountRef = useRef(0);
   useEffect(() => {
@@ -2020,6 +2028,52 @@ function AdminApp() {
       meta: result.meta ? { ...(current.meta || {}), ...result.meta } : current.meta
     }));
   }
+
+  function activityFilterParams() {
+    const params = new URLSearchParams();
+    if (logSearchQuery.trim()) params.set('q', logSearchQuery.trim());
+    if (logLevelFilter !== 'all') params.set('level', logLevelFilter);
+    if (logDateFrom) {
+      params.set('from', logDateFrom);
+    } else if (logPeriodFilter !== 'all') {
+      const periodMs = logPeriodFilter === '24h'
+        ? 24 * 60 * 60 * 1000
+        : logPeriodFilter === '7d'
+          ? 7 * 24 * 60 * 60 * 1000
+          : 30 * 24 * 60 * 60 * 1000;
+      params.set('from', new Date(Date.now() - periodMs).toISOString());
+    }
+    if (logDateTo) params.set('to', logDateTo);
+    return params;
+  }
+
+  async function loadActivityLogs(reset = true) {
+    if (!token || tab !== 'logs') return;
+    const requestId = ++activityLogRequestRef.current;
+    const offset = reset ? 0 : activityLogRows.length;
+    setActivityLogLoading(true);
+    if (reset) {
+      setActivityLogRows([]);
+      setActivityLogPage({ total: 0, hasMore: false, offset: 0, limit: 100 });
+      setActivityLogSummary({ total: 0, info: 0, success: 0, warning: 0, error: 0 });
+    }
+    try {
+      const params = activityFilterParams();
+      params.set('offset', String(offset));
+      params.set('limit', '100');
+      const result = await authApi(`/admin/logs?${params.toString()}`);
+      if (requestId !== activityLogRequestRef.current) return;
+      setActivityLogRows((current) => reset ? (result.items || []) : [...current, ...(result.items || [])]);
+      setActivityLogPage({ total: Number(result.total || 0), hasMore: Boolean(result.hasMore), offset: Number(result.offset || offset), limit: Number(result.limit || 100) });
+      setActivityLogSummary(result.summary || { total: Number(result.total || 0), info: 0, success: 0, warning: 0, error: 0 });
+      setActivityLogsLoaded(true);
+    } catch (error) {
+      if (requestId === activityLogRequestRef.current && error.status === 401) setToken(null);
+      if (requestId === activityLogRequestRef.current && error.status !== 401) setMessage(`Não foi possível carregar o histórico: ${error.message}`);
+    } finally {
+      if (requestId === activityLogRequestRef.current) setActivityLogLoading(false);
+    }
+  }
   async function loadQueuePage(reset = false, search = queueSearchQuery) {
     const offset = reset ? 0 : queueItems.length;
     const requestId = ++queueLoadRequestRef.current;
@@ -2076,6 +2130,11 @@ function AdminApp() {
     const timeout = window.setTimeout(() => loadQueuePage(true, queueSearchQuery), 250);
     return () => window.clearTimeout(timeout);
   }, [token, tab, queueSearchQuery]);
+  useEffect(() => {
+    if (!token || tab !== 'logs') return undefined;
+    const timeout = window.setTimeout(() => loadActivityLogs(true), 300);
+    return () => window.clearTimeout(timeout);
+  }, [token, tab, logSearchQuery, logLevelFilter, logPeriodFilter, logDateFrom, logDateTo]);
   useEffect(() => {
     if (!token || tab !== 'queue') return undefined;
     loadQueueDuplicateInfo();
@@ -2911,20 +2970,24 @@ function AdminApp() {
     catch (error) { setMessage(error.message); }
   }
 
-  function exportActivityLogs() {
-    const levelLabels = { info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' };
-    const rows = [['data', 'nivel', 'mensagem'], ...filteredActivityLogs.map((log) => [
-      log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : '',
-      levelLabels[log.level] || log.level || 'Informação',
-      log.message || ''
-    ])];
-    const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
-    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `promoshop-atividades-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function exportActivityLogs() {
+    try {
+      const params = activityFilterParams();
+      const response = await fetch(`/api/admin/logs/export?${params.toString()}`, { credentials: 'same-origin' });
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(details.error || 'Falha ao exportar o histórico.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `promoshop-atividades-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setMessage(`Não foi possível exportar o histórico: ${error.message}`);
+    }
   }
 
   async function connectSearchConsole() {
@@ -2957,34 +3020,18 @@ function AdminApp() {
   const adminFilteredOffers = data.offers.filter((offer) => `${offer.title} ${offer.store} ${offer.category}`.toLowerCase().includes(adminOfferQuery.toLowerCase()) && (adminOfferStore === 'Todas' || offer.store === adminOfferStore));
   const adminOfferTotal = Number.isFinite(Number(data.adminOfferTotal)) ? Number(data.adminOfferTotal) : data.offers.length;
   const adminOfferLimit = Math.max(0, Number(data.adminOfferLimit) || 500);
-  const activityLogs = Array.isArray(data.logs) ? data.logs : [];
-  // Estas derivações ficam fora de hooks porque o componente possui estados
-  // de autenticação que podem retornar antes da árvore administrativa ser
-  // renderizada. Assim a quantidade de hooks permanece igual em toda renderização.
-  const activityQuery = String(logSearchQuery || '').trim().toLocaleLowerCase('pt-BR');
-  const activityPeriodMs = logPeriodFilter === '24h'
-    ? 24 * 60 * 60 * 1000
-    : logPeriodFilter === '7d'
-      ? 7 * 24 * 60 * 60 * 1000
-      : logPeriodFilter === '30d'
-        ? 30 * 24 * 60 * 60 * 1000
-        : 0;
-  const activityCutoff = activityPeriodMs ? Date.now() - activityPeriodMs : 0;
-  const filteredActivityLogs = activityLogs.filter((log) => {
-    if (logLevelFilter !== 'all' && log.level !== logLevelFilter) return false;
-    if (activityCutoff) {
-      const createdAt = new Date(log.createdAt || 0).getTime();
-      if (!Number.isFinite(createdAt) || createdAt < activityCutoff) return false;
-    }
-    if (!activityQuery) return true;
-    return `${log.message || ''} ${log.level || ''}`.toLocaleLowerCase('pt-BR').includes(activityQuery);
-  });
-  const activitySummary = activityLogs.reduce((summary, log) => {
-    const level = ['info', 'success', 'warning', 'error'].includes(log?.level) ? log.level : 'info';
-    summary.total += 1;
-    summary[level] += 1;
-    return summary;
-  }, { total: 0, info: 0, success: 0, warning: 0, error: 0 });
+  const activityLogs = activityLogsLoaded ? activityLogRows : (Array.isArray(data.logs) ? data.logs : []);
+  // Os filtros são aplicados no servidor. A página continua limitada para
+  // manter o painel rápido, e o botão de carregamento consulta o próximo lote.
+  const filteredActivityLogs = activityLogs;
+  const activitySummary = activityLogsLoaded
+    ? activityLogSummary
+    : activityLogs.reduce((summary, log) => {
+      const level = ['info', 'success', 'warning', 'error'].includes(log?.level) ? log.level : 'info';
+      summary.total += 1;
+      summary[level] += 1;
+      return summary;
+    }, { total: 0, info: 0, success: 0, warning: 0, error: 0 });
   const reviewOffers = data.offers.filter((offer) => reviewFilter === 'all' || (reviewFilter === 'stale' ? offer.isStale : reviewFilter === 'low' ? Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) : reviewFilter === 'paused' ? offer.status !== 'active' : (offer.isStale || Number(offer.qualityScore || 0) < Number(data.config.qualityMinimumScore || 55) || (offer.qualityIssues || []).length)));
   const setConfigField = (key, value) => setData((current) => ({
     ...current,
@@ -4308,16 +4355,19 @@ function AdminApp() {
     {tab === 'security' && <div className="security-layout"><section className="panel settings-form narrow-panel"><h2>Acesso administrativo</h2><p className="panel-intro">Seu papel atual: <strong>{adminRole === 'owner' ? 'proprietário' : adminRole === 'editor' ? 'editor' : 'usuário adicional'}</strong>. Credenciais e permissões ficam criptografadas no servidor.</p>{adminRole === 'owner' ? <form onSubmit={saveSecurity}><div className="settings-grid"><label>Usuário proprietário<input required value={secretForm.adminUser || data.secrets?.adminUser || 'admin'} onChange={(event) => setSecretForm({ ...secretForm, adminUser: event.target.value })} autoComplete="off" /></label><label>Nova senha<input type="password" minLength="12" value={secretForm.adminPassword} onChange={(event) => setSecretForm({ ...secretForm, adminPassword: event.target.value })} placeholder="Deixe vazio para manter a atual" autoComplete="new-password" /></label></div><button className="button primary">Atualizar acesso</button></form> : <p className="panel-intro">O administrador principal define as áreas e ações disponíveis para esta conta.</p>}</section>{adminRole === 'owner' && <section className="panel admin-users-panel"><div className="panel-heading"><div><span className="section-step">PERMISSÕES POR ÁREA</span><h2>Usuários adicionais</h2><p>Escolha, para cada área, se a pessoa não terá acesso, poderá consultar ou também editar. O administrador principal nunca aparece para contas secundárias. Usuários, credenciais e esta área continuam exclusivos do proprietário.</p></div></div><form className="admin-user-form" onSubmit={addAdminUser}><label>Usuário<input required minLength="3" maxLength="100" value={newAdmin.username} onChange={(event) => setNewAdmin({ ...newAdmin, username: event.target.value })} autoComplete="off" /></label><label>Senha temporária<input required minLength="12" type="password" value={newAdmin.password} onChange={(event) => setNewAdmin({ ...newAdmin, password: event.target.value })} autoComplete="new-password" /></label><label>Papel-base<select value={newAdmin.role} onChange={(event) => setNewAdminRole(event.target.value)}><option value="viewer">Consulta</option><option value="editor">Editor</option></select></label><div className="admin-permission-editor"><strong>Áreas e nível de acesso</strong>{ADMIN_PERMISSION_DEFINITIONS.map((definition) => <label className="admin-permission-row" key={definition.key}><span>{definition.label}</span><select value={newAdmin.permissions?.[definition.key] || 'none'} disabled={definition.viewOnly} onChange={(event) => setNewAdminPermission(definition.key, event.target.value)}>{ADMIN_PERMISSION_LEVELS.map((level) => <option value={level} key={level} disabled={definition.viewOnly && level !== 'view'}>{permissionLevelLabel(level)}</option>)}</select></label>)}</div><button className="button primary" type="submit">Adicionar usuário</button></form>{data.secrets?.adminUsers?.length ? <div className="admin-users-list">{data.secrets.adminUsers.map((user) => <div className="admin-user-card" key={user.id}><div className="admin-user-summary"><span><strong>{user.username}</strong><small>{user.active === false ? 'Desativado' : permissionProfileLabel(user.permissions, user.role)}</small></span><select value={user.role} disabled={user.active === false} onChange={(event) => changeAdminRole(user, event.target.value)}><option value="viewer">Perfil base: consulta</option><option value="editor">Perfil base: editor</option></select><button className="text-button" type="button" onClick={() => changeAdminActive(user)}>{user.active === false ? 'Reativar' : 'Desativar'}</button><button className="text-button danger-text" type="button" onClick={() => removeAdminUser(user)}>Remover</button></div><details className="admin-permission-details"><summary><span className="admin-permission-summary-label"><i aria-hidden="true">⌄</i>Permissões por área</span><small>Ver ou ocultar</small></summary><div className="admin-permission-editor existing"><strong>Áreas e nível de acesso</strong>{ADMIN_PERMISSION_DEFINITIONS.map((definition) => <label className="admin-permission-row" key={definition.key}><span>{definition.label}</span><select value={user.permissions?.[definition.key] || 'none'} disabled={user.active === false || definition.viewOnly} onChange={(event) => changeAdminPermission(user, definition.key, event.target.value)}>{ADMIN_PERMISSION_LEVELS.map((level) => <option value={level} key={level} disabled={definition.viewOnly && level !== 'view'}>{permissionLevelLabel(level)}</option>)}</select></label>)}</div></details></div>)}</div> : <div className="empty"><strong>Nenhum usuário adicional</strong><p>O acesso proprietário continua sendo o único ativo.</p></div>}</section>}</div>}
     {tab === 'logs' && <section className="panel activity-panel">
       <div className="panel-heading activity-heading">
-        <div><span className="section-step">HISTÓRICO DO SISTEMA</span><h2>Registro de atividades</h2><p>{filteredActivityLogs.length} de {activitySummary.total} registro(s) exibido(s). Os filtros só alteram a visualização.</p></div>
+        <div><span className="section-step">HISTÓRICO DO SISTEMA</span><h2>Registro de atividades</h2><p>{filteredActivityLogs.length} de {activitySummary.total} registro(s) carregado(s). O histórico completo fica no servidor.</p></div>
         <div className="activity-summary" aria-label="Resumo dos registros"><span className="info"><b>{activitySummary.info}</b> informações</span><span className="success"><b>{activitySummary.success}</b> sucessos</span><span className="warning"><b>{activitySummary.warning}</b> atenções</span><span className="error"><b>{activitySummary.error}</b> erros</span></div>
       </div>
       <div className="activity-toolbar">
         <label className="activity-search"><span>Pesquisar no histórico</span><input type="search" value={logSearchQuery} onChange={(event) => setLogSearchQuery(event.target.value)} placeholder="Ex.: Mercado Livre, falha, deploy…" /></label>
         <label><span>Nível</span><select value={logLevelFilter} onChange={(event) => setLogLevelFilter(event.target.value)}><option value="all">Todos</option><option value="error">Erros</option><option value="warning">Atenções</option><option value="success">Sucessos</option><option value="info">Informações</option></select></label>
-        <label><span>Período</span><select value={logPeriodFilter} onChange={(event) => setLogPeriodFilter(event.target.value)}><option value="all">Todo o histórico</option><option value="24h">Últimas 24 horas</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select></label>
-        <button className="button subtle" type="button" onClick={exportActivityLogs} disabled={!filteredActivityLogs.length}>Exportar CSV</button>
+        <label><span>Período</span><select value={logPeriodFilter} onChange={(event) => { setLogPeriodFilter(event.target.value); if (event.target.value !== 'all') { setLogDateFrom(''); setLogDateTo(''); } }}><option value="all">Todo o histórico</option><option value="24h">Últimas 24 horas</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option></select></label>
+        <label><span>De</span><input type="date" value={logDateFrom} onChange={(event) => { setLogDateFrom(event.target.value); setLogPeriodFilter('all'); }} /></label>
+        <label><span>Até</span><input type="date" value={logDateTo} onChange={(event) => { setLogDateTo(event.target.value); setLogPeriodFilter('all'); }} /></label>
+        <button className="button subtle" type="button" onClick={exportActivityLogs} disabled={activityLogLoading || !activitySummary.total}>Exportar CSV</button>
       </div>
-      {filteredActivityLogs.length ? <div className="logs">{filteredActivityLogs.map((log) => <div key={log.id}><time>{log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : 'Data desconhecida'}</time><span className={`activity-entry ${log.level || 'info'}`}><b>{({ info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' })[log.level] || 'Registro'}</b><span>{log.message}</span></span></div>)}</div> : <div className="empty activity-empty"><strong>Nenhum registro encontrado</strong><p>Ajuste a pesquisa, o nível ou o período para consultar outras atividades.</p><button className="text-button" type="button" onClick={() => { setLogSearchQuery(''); setLogLevelFilter('all'); setLogPeriodFilter('all'); }}>Limpar filtros</button></div>}
+      {activityLogLoading && !filteredActivityLogs.length && <div className="empty activity-empty"><strong>Carregando histórico</strong><p>Buscando os registros no servidor.</p></div>}
+      {!activityLogLoading && filteredActivityLogs.length ? <><div className="logs">{filteredActivityLogs.map((log) => <div key={log.id}><time>{log.createdAt ? new Date(log.createdAt).toLocaleString('pt-BR') : 'Data desconhecida'}</time><span className={`activity-entry ${log.level || 'info'}`}><b>{({ info: 'Informação', success: 'Sucesso', warning: 'Atenção', error: 'Erro' })[log.level] || 'Registro'}</b><span>{log.message}</span></span></div>)}</div>{activityLogPage.hasMore && <div className="activity-load-more"><button className="button subtle" type="button" onClick={() => loadActivityLogs(false)} disabled={activityLogLoading}>Carregar mais registros</button><small>Mostrando {filteredActivityLogs.length} de {activityLogPage.total} registros</small></div>}</> : !activityLogLoading && <div className="empty activity-empty"><strong>Nenhum registro encontrado</strong><p>Ajuste a pesquisa, o nível ou o período para consultar outras atividades.</p><button className="text-button" type="button" onClick={() => { setLogSearchQuery(''); setLogLevelFilter('all'); setLogPeriodFilter('all'); setLogDateFrom(''); setLogDateTo(''); }}>Limpar filtros</button></div>}
     </section>}
   </main>{dialog && <div className="modal-backdrop" onMouseDown={() => setDialog(null)}><section className={`app-modal ${dialog.type === 'delete-offer' || dialog.type === 'confirm-action' ? 'danger-modal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}>{dialog.type === 'affiliate-link' ? <form onSubmit={confirmAffiliateLink}><div className="modal-icon link-icon">↗</div><div className="modal-heading"><span>{dialog.offer?.status === 'active' ? 'ATUALIZAR VÍNCULO' : 'VINCULAR OFERTA'}</span><h2 id="modal-title">{dialog.offer?.status === 'active' ? 'Alterar link de afiliado' : 'Adicionar link de afiliado'}</h2><p>{dialog.offer?.status === 'active' ? 'Substitua o link atual pelo novo endereço de afiliado gerado pela ferramenta oficial.' : 'Cole o link gerado pela ferramenta oficial para liberar esta oferta.'}</p></div><div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title}</strong><small>{dialog.offer?.store} · {money.format(Number(dialog.offer?.price || 0))}</small></span></div><label>Link de afiliado<input autoFocus required type="url" value={dialog.value || ''} onChange={(event) => setDialog({ ...dialog, value: event.target.value })} placeholder="https://..." /><small>{dialog.offer?.status === 'active' ? 'O link de afiliado atual está preenchido. Substitua-o e confirme para atualizar.' : 'O link comum está preenchido apenas como referência. Substitua pelo link de afiliado.'}</small></label><div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button primary" type="submit">{dialog.offer?.status === 'active' ? 'Atualizar link' : 'Confirmar link'}</button></div></form> : <div><div className="modal-icon delete-icon">×</div><div className="modal-heading"><span>{dialog.eyebrow || 'EXCLUIR OFERTA'}</span><h2 id="modal-title">{dialog.title || 'Tem certeza?'}</h2><p>{dialog.body || 'A oferta será removida do painel. Esta ação não poderá ser desfeita.'}</p></div>{dialog.offer && <div className="modal-product"><img src={dialog.offer?.image} alt="" /><span><strong>{dialog.offer?.title || 'Oferta selecionada'}</strong><small>{dialog.offer?.store}</small></span></div>}<div className="modal-actions"><button className="button subtle" type="button" onClick={() => setDialog(null)}>{dialog.cancelLabel || 'Cancelar'}</button><button className="button danger-button" type="button" onClick={confirmRemoveOffer}>{dialog.confirmLabel || 'Excluir oferta'}</button></div></div>}</section></div>}</div>;
 }
