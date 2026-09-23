@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import Icon from './Icon.jsx';
@@ -18,14 +18,6 @@ import {
   permissionLevelLabel,
   permissionProfileLabel
 } from '../server/adminPermissions.js';
-
-// Preserve o conteúdo inicial até a interface montar com sucesso.
-function AppReady({ children }) {
-  useLayoutEffect(() => {
-    document.getElementById('seo-prerender')?.remove();
-  }, []);
-  return children;
-}
 
 const InstagramHighlightsPanel = React.lazy(() => import('./InstagramHighlightsPanel.jsx'));
 const GroupDirectoryPanel = React.lazy(() => import('./GroupDirectoryPanel.jsx'));
@@ -4578,4 +4570,4 @@ const isNotFoundPage = !isAdmin
   && !isCatalogPage
   && !productSlug
   && normalizedPublicPath !== '/';
-createRoot(document.getElementById('root')).render(<React.StrictMode><AppReady><ThemeProvider>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : isNotFoundPage ? <NotFoundPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</ThemeProvider></AppReady></React.StrictMode>);
+createRoot(document.getElementById('root')).render(<React.StrictMode><ThemeProvider>{isAdmin ? <AdminApp /> : isInfoPage ? <InfoPage page={normalizedPublicPath} /> : isCouponsPage ? <CouponsPage /> : isNotFoundPage ? <NotFoundPage /> : productSlug ? <ProductDetail slug={productSlug} /> : <PublicSite />}</ThemeProvider></React.StrictMode>);

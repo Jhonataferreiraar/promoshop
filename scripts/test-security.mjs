@@ -292,9 +292,9 @@ try {
   assert.equal(homeHtmlResponse.status, 200);
   assert.equal(homeHtmlResponse.headers.get('cache-control'), 'no-cache');
   const homeHtml = await homeHtmlResponse.text();
-  assert.match(homeHtml, /id="startup-styles"/);
-  assert.match(homeHtml, /id="seo-prerender"/);
-  assert.match(homeHtml, /Carregando a vitrine de ofertas/);
+  assert.doesNotMatch(homeHtml, /id="startup-styles"/);
+  assert.doesNotMatch(homeHtml, /id="seo-prerender"/);
+  assert.doesNotMatch(homeHtml, /Carregando a vitrine de ofertas/);
   assert.match(homeHtml, /src="\/theme-init\.js"/);
   assert.match(homeHtml, /name="robots" content="index, follow/);
   const themeResponse = await fetch(`${origin}/theme-init.js`);

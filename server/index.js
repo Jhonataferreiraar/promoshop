@@ -10616,7 +10616,8 @@ function injectSeo(html, data, req) {
     structuredData
   ].filter(Boolean).join('\n    ');
 
-  const prerender = pathname === '/' ? renderSeoPrerender(config, seo, origin) : '';
+  // A vitrine abre diretamente no React; os metadados de SEO continuam no HTML.
+  const prerender = '';
   return html
     .replace(/<section\s+id="seo-prerender"[\s\S]*?<\/section>/i, '')
     .replace(/<div\s+id="root"><\/div>/i, `${prerender}<div id="root"></div>`)
