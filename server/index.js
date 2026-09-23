@@ -10577,9 +10577,11 @@ function renderSeoPrerender(config, seo, origin) {
     <p>${escapeHtml(heroTitle)} ${escapeHtml(heroText)}</p>
     <p>${escapeHtml(description)}</p>
     <nav aria-label="Navegação principal do PromoShop">
-      ${links.map(([label, path]) => `<a href="${escapeHtml(`${origin}${path === '/' ? '/' : path}`)}">${escapeHtml(label)}</a>`).join(' · ')}
+      ${links.map(([label, path]) => `<a href="${escapeHtml(`${origin}${path === '/' ? '/' : path}`)}">${escapeHtml(label)}</a>`).join(' ')}
     </nav>
     <p>Ofertas e cupons selecionados de ${escapeHtml(affiliatePrograms)}. A compra é concluída diretamente na loja parceira.</p>
+    <p class="seo-prerender-status" role="status">Carregando a vitrine de ofertas. Se ela não abrir, <a href="/">recarregue a página</a>.</p>
+    <noscript><p>Ative o JavaScript no navegador para consultar e filtrar as ofertas.</p></noscript>
   </section>`;
 }
 
@@ -10628,7 +10630,9 @@ app.get('/robots.txt', async (req, res) => {
   const origin = publicSiteOrigin(config, req);
   res.type('text/plain').send(config.seoIndexingEnabled === false
     ? 'User-agent: *\nDisallow: /\n'
-    : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api\nSitemap: ${origin}/sitemap.xml\n`);
+    // Libere apenas os dados públicos necessários à renderização. As demais
+    // APIs continuam fora do rastreamento; a autenticação não é alterada.
+    : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api\nAllow: /api/home$\nAllow: /api/config/public$\nAllow: /api/offers$\nAllow: /api/offers?\nAllow: /api/catalog/meta$\nAllow: /api/coupons$\nAllow: /api/audiences/public$\nAllow: /api/offer/\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 app.get('/llms.txt', async (req, res) => {
@@ -10833,11 +10837,18 @@ app.use(
       setHeaders(res, filePath) {
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith(`${path.sep}index.html`)) {
+          res.setHeader('Cache-Control', 'no-cache');
         }
       }
     }
   )
 );
+
+// Um bundle de um deploy anterior não pode receber HTML no lugar de JavaScript.
+app.use('/assets', (_req, res) => {
+  res.set('Cache-Control', 'no-store').status(404).type('text/plain').send('Arquivo não encontrado.');
+});
 
 app.use(
   async (
@@ -10877,7 +10888,8 @@ app.use(
       const routeIsDefinitelyMissing = seo.exists === false
         && (data.seoUnavailable !== true || seo.isCatalogRoute === false);
       if (routeIsDefinitelyMissing) res.status(404);
-      res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+      // Revalide o HTML para não reutilizar referências a bundles de outro deploy.
+      res.set('Cache-Control', 'no-cache');
       res.type('html').send(injectSeo(html, data, req));
     } catch (error) {
       next(error);

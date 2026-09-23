@@ -9,21 +9,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <script>
-      (() => {
-        try {
-          const allowed = ['system', 'light', 'dark'];
-          const preference = allowed.includes(localStorage.getItem('promoshop_theme'))
-            ? localStorage.getItem('promoshop_theme')
-            : 'light';
-          const dark = preference === 'dark'
-            || (preference === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-          document.documentElement.dataset.themePreference = preference;
-          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-        } catch { }
-      })();
-    </script>
+    <script src="/theme-init.js" defer></script>
+    <!-- Estilo crítico: o conteúdo inicial continua legível sem baixar o bundle. -->
+    <style id="startup-styles">
+      #seo-prerender { box-sizing: border-box; max-width: 1180px; margin: 0 auto; padding: clamp(24px, 6vw, 80px) 24px; color: var(--ink, #101828); background: var(--white, #fff); font-family: var(--font-body, "Segoe UI", Arial, sans-serif); line-height: 1.6; overflow-wrap: anywhere; }
+      #seo-prerender h1 { margin: 16px 0; font-family: var(--font-display, "Segoe UI", Arial, sans-serif); font-size: clamp(28px, 5vw, 56px); line-height: 1.15; letter-spacing: -.035em; }
+      #seo-prerender .seo-prerender-kicker { color: var(--primary-dark, #0754ce); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+      #seo-prerender nav { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 24px 0; }
+      #seo-prerender a { color: var(--primary-dark, #0754ce); font-weight: 600; text-underline-offset: 4px; }
+      #seo-prerender a:hover { text-decoration-thickness: 2px; }
+      #seo-prerender a:focus-visible { outline: 2px solid currentColor; outline-offset: 5px; }
+      #seo-prerender .seo-prerender-status { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line, #e4e7ec); }
+      html[data-theme="dark"] #seo-prerender { color: #edf3ff; background: #0b1120; }
+      html[data-theme="dark"] #seo-prerender a, html[data-theme="dark"] #seo-prerender .seo-prerender-kicker { color: #8bb8ff; }
+    </style>
     <title>PromoShop - Ofertas Diárias</title>
   </head>
   <body>

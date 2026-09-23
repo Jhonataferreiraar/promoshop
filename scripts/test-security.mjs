@@ -45,15 +45,21 @@ const child = spawn(process.execPath, ['server/index.js'], {
   windowsHide: true
 });
 
+let startupOutput = '';
+for (const stream of [child.stdout, child.stderr]) {
+  stream.on('data', (chunk) => { startupOutput = (startupOutput + chunk.toString()).slice(-4000); });
+}
+
 async function waitForServer() {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (child.exitCode !== null) break;
     try {
-      const response = await fetch(`${origin}/api/health`);
+      const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(2000) });
       if (response.ok) return;
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('Servidor de teste não iniciou.');
+  throw new Error(`Servidor de teste não iniciou.\n${startupOutput}`);
 }
 
 async function login(password, username = 'admin') {
@@ -270,6 +276,41 @@ try {
   const robots = await fetch(`${origin}/robots.txt`).then((response) => response.text());
   assert.match(robots, /Sitemap:/);
   assert.match(robots, /Disallow: \/admin/);
+  const robotRules = robots.split('\n').map((line) => line.match(/^(Allow|Disallow): (.+)$/)).filter(Boolean);
+  const crawlerAllowed = (urlPath) => {
+    const matching = robotRules.filter(([, , rule]) => new RegExp(`^${rule.replace(/\$$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${rule.endsWith('$') ? '$' : ''}`).test(urlPath));
+    matching.sort((a, b) => b[2].length - a[2].length);
+    return matching[0]?.[1] !== 'Disallow';
+  };
+  for (const publicPath of ['/api/home', '/api/config/public', '/api/offers', '/api/offers?paged=1&offset=0', '/api/coupons', '/api/catalog/meta', '/api/audiences/public', '/api/offer/example']) {
+    assert.equal(crawlerAllowed(publicPath), true, `Recurso público bloqueado: ${publicPath}`);
+  }
+  for (const privatePath of ['/admin', '/api/admin/offers', '/api/auth/session', '/api/worker/queue', '/api/home-private', '/api/offers/private']) {
+    assert.equal(crawlerAllowed(privatePath), false, `Rota indevidamente liberada: ${privatePath}`);
+  }
+  const homeHtmlResponse = await fetch(`${origin}/`);
+  assert.equal(homeHtmlResponse.status, 200);
+  assert.equal(homeHtmlResponse.headers.get('cache-control'), 'no-cache');
+  const homeHtml = await homeHtmlResponse.text();
+  assert.match(homeHtml, /id="startup-styles"/);
+  assert.match(homeHtml, /id="seo-prerender"/);
+  assert.match(homeHtml, /Carregando a vitrine de ofertas/);
+  assert.match(homeHtml, /src="\/theme-init\.js"/);
+  assert.match(homeHtml, /name="robots" content="index, follow/);
+  const themeResponse = await fetch(`${origin}/theme-init.js`);
+  assert.equal(themeResponse.status, 200);
+  assert.match(themeResponse.headers.get('content-type'), /javascript/);
+  for (const asset of homeHtml.matchAll(/(?:src|href)="(\/assets\/[^"?#]+\.(?:js|css))"/g)) {
+    const response = await fetch(`${origin}${asset[1]}`);
+    assert.equal(response.status, 200, asset[1]);
+    assert.match(response.headers.get('cache-control'), /immutable/);
+    assert.match(response.headers.get('content-type'), /javascript|css/);
+  }
+  const missingAsset = await fetch(`${origin}/assets/old-deploy-does-not-exist.js`);
+  assert.equal(missingAsset.status, 404);
+  assert.equal(missingAsset.headers.get('cache-control'), 'no-store');
+  assert.match(missingAsset.headers.get('content-type'), /text\/plain/);
+  assert.doesNotMatch(await missingAsset.text(), /<html|seo-prerender/);
   const llmsResponse = await fetch(`${origin}/llms.txt`);
   assert.equal(llmsResponse.status, 200);
   assert.match(llmsResponse.headers.get('content-type') || '', /text\/plain/);
