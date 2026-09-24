@@ -4194,14 +4194,34 @@ function summarizeQueue(queue = [], historicalSent = 0) {
   return summary;
 }
 
-function mercadoLivreQueueDuplicateSummary(queue = []) {
-  const plan = planPendingDuplicateCleanup(queue, { store: 'Mercado Livre' });
+function queueDuplicateSummary(queue = []) {
+  const plan = planPendingDuplicateCleanup(queue);
+  const storeNames = [...new Set(
+    (Array.isArray(queue) ? queue : [])
+      .filter((item) => item?.kind !== 'coupon' && item?.kind !== 'group-directory')
+      .map((item) => String(item?.store || item?.offerSnapshot?.store || '').trim())
+      .filter(Boolean)
+  )].sort((left, right) => left.localeCompare(right, 'pt-BR', { sensitivity: 'base' }));
+  const stores = storeNames
+    .map((store) => {
+      const storePlan = planPendingDuplicateCleanup(queue, { store });
+      return {
+        store,
+        pendingCount: storePlan.pendingCount,
+        publishingCount: storePlan.publishingCount,
+        duplicateCount: storePlan.duplicateCount,
+        duplicateGroupCount: storePlan.groupCount
+      };
+    })
+    .filter((entry) => entry.duplicateCount > 0);
+
   return {
-    scope: 'Mercado Livre',
+    scope: 'Todas as lojas',
     pendingCount: plan.pendingCount,
     publishingCount: plan.publishingCount,
     duplicateCount: plan.duplicateCount,
     duplicateGroupCount: plan.groupCount,
+    stores,
     samples: plan.groups.slice(0, 5).map((group) => ({
       title: group.title || 'Oferta sem título',
       duplicateCount: group.duplicateCount
@@ -4238,17 +4258,17 @@ app.get('/api/admin/queue', requireAdmin, async (req, res) => {
   });
 });
 
-// Manutenção isolada da fila do Mercado Livre. A operação não altera ofertas
-// do catálogo nem qualquer regra de publicação do WhatsApp ou do Instagram.
+// Manutenção isolada da fila de ofertas. A operação não altera ofertas do
+// catálogo nem qualquer regra de publicação do WhatsApp ou do Instagram.
 app.get('/api/admin/queue/duplicates', requireAdmin, async (_req, res) => {
   const data = await readStoreSlice(['queue']);
-  res.json({ ok: true, ...mercadoLivreQueueDuplicateSummary(data.queue) });
+  res.json({ ok: true, ...queueDuplicateSummary(data.queue) });
 });
 
 app.post('/api/admin/queue/duplicates', requireAdmin, async (_req, res) => {
-  let result = { removed: 0, scope: 'Mercado Livre', duplicateGroupCount: 0 };
+  let result = { removed: 0, scope: 'Todas as lojas', duplicateGroupCount: 0, stores: {} };
   await updateStoreSlice(['queue', 'meta'], (data) => {
-    const plan = planPendingDuplicateCleanup(data.queue, { store: 'Mercado Livre' });
+    const plan = planPendingDuplicateCleanup(data.queue);
     const duplicateIds = new Set(plan.duplicateIds);
     const skippedAt = new Date().toISOString();
     for (const item of data.queue || []) {
@@ -4256,16 +4276,18 @@ app.post('/api/admin/queue/duplicates', requireAdmin, async (_req, res) => {
       item.status = 'skipped';
       item.force = false;
       item.publishingAt = null;
-      item.error = 'Duplicata pendente removida pela limpeza administrativa do Mercado Livre.';
+      item.error = 'Duplicata pendente removida pela limpeza administrativa da fila de ofertas.';
       item.skippedAt = skippedAt;
       result.removed += 1;
+      const store = String(item?.store || item?.offerSnapshot?.store || 'Outra loja').trim() || 'Outra loja';
+      result.stores[store] = (result.stores[store] || 0) + 1;
     }
     result.duplicateGroupCount = plan.groupCount;
   });
 
   if (result.removed) {
     await addLog(
-      `Limpeza da fila: ${result.removed} duplicata(s) pendente(s) do Mercado Livre foram marcadas como ignoradas; ${result.duplicateGroupCount} produto(s) permaneceram como cópia principal.`,
+      `Limpeza da fila: ${result.removed} duplicata(s) pendente(s) de ofertas foram marcadas como ignoradas; ${result.duplicateGroupCount} produto(s) permaneceram como cópia principal.`,
       'info'
     );
   }

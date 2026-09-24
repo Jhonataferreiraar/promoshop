@@ -1,0 +1,10 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "canonicalMap": "UX-CONTRACT.md",
+  "ownership": {
+    "Scrollbar": "src/styles.css",
+    "Toast": "src/main.jsx",
+    "CRUD": "server/index.js"
+  }
+}

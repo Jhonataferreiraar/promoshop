@@ -42,6 +42,17 @@ assert.equal(duplicateCleanup.duplicateCount, 1);
 assert.deepEqual(duplicateCleanup.duplicateIds, ['queue_ml_new']);
 assert.equal(duplicateCleanup.groupCount, 1);
 
+const allStoresCleanup = planPendingDuplicateCleanup([
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_old', createdAt: '2026-08-26T10:00:00.000Z', status: 'pending' },
+  { ...candidate, store: 'Mercado Livre', id: 'queue_ml_new', createdAt: '2026-08-26T11:00:00.000Z', status: 'pending' },
+  { ...candidate, offerId: 'shopee_123', store: 'Shopee', id: 'queue_shopee_old', createdAt: '2026-08-26T12:00:00.000Z', status: 'pending' },
+  { ...candidate, offerId: 'shopee_123', store: 'Shopee', id: 'queue_shopee_new', createdAt: '2026-08-26T13:00:00.000Z', status: 'pending' }
+]);
+assert.equal(allStoresCleanup.pendingCount, 4);
+assert.equal(allStoresCleanup.duplicateCount, 2);
+assert.deepEqual(allStoresCleanup.duplicateIds, ['queue_ml_new', 'queue_shopee_new']);
+assert.equal(allStoresCleanup.groupCount, 2);
+
 const sameTitleDifferentSources = planPendingDuplicateCleanup([
   { kind: 'offer', id: 'queue_a', offerId: 'ml_a', offerTitle: 'Produto igual', store: 'Mercado Livre', affiliateUrl: 'https://meli.la/a', status: 'pending', createdAt: '2026-08-26T10:00:00.000Z' },
   { kind: 'offer', id: 'queue_b', offerId: 'ml_b', offerTitle: 'Produto igual', store: 'Mercado Livre', affiliateUrl: 'https://meli.la/b', status: 'pending', createdAt: '2026-08-26T11:00:00.000Z' }

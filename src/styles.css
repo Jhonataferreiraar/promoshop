@@ -5312,10 +5312,25 @@ button {
 .queue-clear-duplicates { min-height: 36px; padding: 0 13px; border: 1px solid #f3c78b; border-radius: 9px; color: #8a4b08; background: #fff8eb; font-size: 12px; font-weight: 800; cursor: pointer; }
 .queue-clear-duplicates:hover { border-color: #e9a84f; background: #fff0d4; }
 .queue-clear-duplicates:disabled { cursor: wait; opacity: .65; }
+.duplicate-overview-panel { display: grid; gap: 18px; }
+.duplicate-overview-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.duplicate-overview-grid { display: grid; grid-template-columns: minmax(220px, .78fr) minmax(0, 1.22fr); gap: 14px; }
+.duplicate-total,
+.duplicate-store-list { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+.duplicate-total { display: grid; align-content: center; gap: 7px; }
+.duplicate-total > span { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.duplicate-total > span .ui-icon { color: var(--primary); }
+.duplicate-total > strong { color: var(--ink); font: 800 36px/1 var(--font-display); letter-spacing: -.04em; }
+.duplicate-total > small,
+.duplicate-store-list small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.duplicate-store-list { display: grid; gap: 10px; }
+.duplicate-store-list > div:first-child { display: grid; gap: 3px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+.duplicate-store-list > div:first-child strong { color: var(--ink); font-size: 13px; }
+.duplicate-store-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; color: var(--ink); font-size: 13px; }
+.duplicate-store-row + .duplicate-store-row { border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding-top: 8px; }
+.duplicate-store-row strong { color: var(--primary); font-size: 14px; }
+.duplicate-empty { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 .queue-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.queue-duplicate-note { display: grid; gap: 4px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid #f3c78b; border-radius: 10px; color: #694106; background: #fffaf1; font-size: 12px; }
-.queue-duplicate-note strong { font-size: 12px; }
-.queue-duplicate-note span { color: #8a5b21; line-height: 1.45; }
 .queue-search { display: flex; width: 38px; min-height: 38px; align-items: center; overflow: hidden; border: 1px solid #d0d5dd; border-radius: 10px; background: #fff; transition: width .2s ease, border-color .2s ease, box-shadow .2s ease; }
 .queue-search.open { width: min(290px, 40vw); border-color: #84adff; box-shadow: 0 0 0 3px rgba(21, 112, 239, .1); }
 .queue-search-toggle { display: grid; flex: 0 0 38px; width: 38px; min-height: 36px; place-items: center; padding: 0; border: 0; color: #344054; background: transparent; cursor: pointer; }
@@ -5489,6 +5504,8 @@ button {
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
 
 @media (max-width: 900px) {
+  .duplicate-overview-grid { grid-template-columns: 1fr; }
+  .duplicate-overview-actions { width: 100%; justify-content: flex-start; }
   .analytics-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-funnel-step > i { display: none; }
@@ -6889,16 +6906,6 @@ html[data-theme="dark"] .admin-main .queue-clear-duplicates {
 html[data-theme="dark"] .admin-main .queue-clear-duplicates:hover {
   border-color: #a67832;
   background: #49351b;
-}
-
-html[data-theme="dark"] .admin-main .queue-duplicate-note {
-  border-color: #745827;
-  color: #ffe0a8;
-  background: #2a2115;
-}
-
-html[data-theme="dark"] .admin-main .queue-duplicate-note span {
-  color: #d9bc85;
 }
 
 html[data-theme="dark"] .admin-main .status {
