@@ -4,7 +4,7 @@ import { collectShopee } from '../server/collectors.js';
 const originalFetch = globalThis.fetch;
 const credentials = {
   shopeeAppId: 'test-app-id',
-  shopeeAppSecret: 'test-app-secret'
+  shopeeAppSecret: 'test_app_secret'
 };
 
 function response(payload) {
