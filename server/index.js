@@ -190,10 +190,11 @@ const root = path.resolve(
 
 let indexHtmlPromise = null;
 
-function collectOffersOutsideWebProcess() {
+function collectOffersOutsideWebProcess({ fullShopee = false } = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./collectionWorker.js', import.meta.url), {
-      resourceLimits: { maxOldGenerationSizeMb: 256 }
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+      workerData: { fullShopee: Boolean(fullShopee) }
     });
     const terminateWorker = () => {
       worker.terminate().catch(() => {});
@@ -227,8 +228,8 @@ function collectOffersOutsideWebProcess() {
   });
 }
 
-async function runCollectionIsolated() {
-  return applyCollectedOffers(await collectOffersOutsideWebProcess());
+async function runCollectionIsolated({ fullShopee = false } = {}) {
+  return applyCollectedOffers(await collectOffersOutsideWebProcess({ fullShopee }));
 }
 
 function readIndexHtml() {
@@ -461,7 +462,7 @@ function isPublishingWindow(config = {}, now = new Date()) {
     : hourMinute >= publishingStart || hourMinute < publishingEnd;
 }
 
-async function rememberCollectionRequest() {
+async function rememberCollectionRequest({ fullShopee = false } = {}) {
   await updateStoreSlice(['meta'],
     (data) => {
       data.meta =
@@ -473,6 +474,8 @@ async function rememberCollectionRequest() {
           .collectionRequestedAt ||
         new Date()
           .toISOString();
+      data.meta.collectionRequestedFullShopee =
+        Boolean(data.meta.collectionRequestedFullShopee || fullShopee);
     }
   );
 }
@@ -480,11 +483,12 @@ async function rememberCollectionRequest() {
 async function runCollectionWhenIdle({
   requestedByAdmin = false,
   allowOutsidePublishingWindow = false,
-  ignorePublicationRound = false
+  ignorePublicationRound = false,
+  fullShopee = false
 } = {}) {
   if (collectionInProgress) {
     if (requestedByAdmin) {
-      await rememberCollectionRequest();
+      await rememberCollectionRequest({ fullShopee });
     }
 
     return {
@@ -518,7 +522,7 @@ async function runCollectionWhenIdle({
 
     if (round && !bypassRoundWait) {
       if (requestedByAdmin) {
-        await rememberCollectionRequest();
+        await rememberCollectionRequest({ fullShopee });
       }
 
       if (
@@ -551,7 +555,11 @@ async function runCollectionWhenIdle({
     }
 
     const result =
-      await runCollectionIsolated();
+      await runCollectionIsolated({
+        // A coleta ampliada é reservada ao botão do painel. O agendador segue
+        // leve para não aumentar a carga contínua do Render.
+        fullShopee: Boolean(fullShopee || data.meta?.collectionRequestedFullShopee)
+      });
 
     await updateStoreSlice(['meta'],
       (freshData) => {
@@ -560,6 +568,8 @@ async function runCollectionWhenIdle({
 
         delete freshData.meta
           .collectionRequestedAt;
+        delete freshData.meta
+          .collectionRequestedFullShopee;
       }
     );
 
@@ -7250,7 +7260,8 @@ app.post(
       await runCollectionWhenIdle({
         requestedByAdmin: true,
         allowOutsidePublishingWindow: true,
-        ignorePublicationRound: pauseRound
+        ignorePublicationRound: pauseRound,
+        fullShopee: true
       })
     );
   }
@@ -10882,7 +10893,10 @@ app.use(
         // SEO é um aprimoramento, não um motivo para prender o navegador.
         // Se o banco estiver ocupado, entregue o site imediatamente e deixe
         // o React buscar os dados pela API depois.
-        resolveWithin(readStore(), 2_000, seoFallback)
+        // Keep the first HTML response short on slower mobile connections. The
+        // React app fetches the same public data after mounting, so a delayed
+        // database read must not leave the browser on a blank page.
+        resolveWithin(readStore(), 350, seoFallback)
       ]);
       const pathname = req.path.replace(/\/+$/, '') || '/';
       const seo = pageSeo(data.config || {}, pathname, publicSiteOrigin(data.config || {}, req), data.offers || []);
@@ -10966,7 +10980,9 @@ cron.schedule(
         ? new Date(data.meta.lastCollectionAt).getTime()
         : 0;
       if (!collectionRequested && Date.now() - last < interval * 60_000) return;
-      await runCollectionWhenIdle();
+      await runCollectionWhenIdle({
+        fullShopee: Boolean(data.meta?.collectionRequestedFullShopee)
+      });
     } catch (error) {
       await addLog(`Erro no agendador: ${error.message}`, 'error');
     } finally {

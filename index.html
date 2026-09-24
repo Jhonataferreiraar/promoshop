@@ -9,7 +9,37 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <script src="/theme-init.js" defer></script>
+    <style id="critical-shell">
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: #fff;
+      }
+
+      #root {
+        min-height: 100vh;
+        background: #fff;
+      }
+
+      #root:empty {
+        background: linear-gradient(160deg, #0d43aa 0%, #1269f3 62%, #075bdc 100%);
+      }
+
+      html[data-theme="dark"] body,
+      html[data-theme="dark"] #root {
+        background: #0b1120;
+      }
+
+      html[data-theme="dark"] #root:empty {
+        background: linear-gradient(160deg, #091427 0%, #0b1120 64%, #12294a 100%);
+      }
+    </style>
+    <!-- Apply the saved/system theme before the first paint so mobile does not flash a blank white shell. -->
+    <script src="/theme-init.js"></script>
     <title>PromoShop - Ofertas Diárias</title>
   </head>
   <body>

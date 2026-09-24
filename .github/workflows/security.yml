@@ -62,6 +62,7 @@ jobs:
       - run: npm run test:auth-cookies
       - run: npm run test:postgres
       - run: npm run test:search
+      - run: npm run test:shopee
       - run: npm run test:routing
       - run: npm run test:messages
       - run: npm run test:group-directory

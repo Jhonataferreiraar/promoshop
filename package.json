@@ -19,6 +19,7 @@
     "test:data-encryption": "node scripts/test-data-encryption.mjs",
     "test:secret-scan": "node scripts/test-secret-scan.mjs",
     "test:search": "node scripts/test-search-relevance.mjs",
+    "test:shopee": "node scripts/test-shopee-collector.mjs",
     "test:images": "node scripts/test-image-optimization.mjs",
     "test:seo": "node scripts/test-seo-structured-data.mjs",
     "test:routing": "node scripts/test-audience-routing.mjs",

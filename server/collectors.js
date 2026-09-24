@@ -642,6 +642,12 @@ export async function searchMercadoLivreProducts(query, limit = 10) {
   return combined;
 }
 
+const SHOPEE_DEFAULT_PAGE_SIZE = 20;
+const SHOPEE_FULL_REFRESH_PAGE_SIZE = 50;
+const SHOPEE_FULL_REFRESH_MAX_PAGES_PER_KEYWORD = 10;
+const SHOPEE_FULL_REFRESH_MAX_REQUESTS = 40;
+const SHOPEE_FULL_REFRESH_CONCURRENCY = 2;
+
 async function shopeeGraphQL(appId, appSecret, query) {
   const body = JSON.stringify({ query });
   const timestamp = Math.floor(Date.now() / 1000);
@@ -655,31 +661,197 @@ async function shopeeGraphQL(appId, appSecret, query) {
     },
     body
   });
-  if (!response.ok) throw new Error(`Open API respondeu com status ${response.status}`);
-  const payload = await response.json();
-  if (payload.errors?.length) {
-    const detail = payload.errors[0]?.extensions?.message || payload.errors[0]?.message || 'Erro desconhecido da Open API';
-    throw new Error(detail);
+  const raw = await readTextLimited(response);
+  let payload;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error('A Open API devolveu uma resposta inválida.');
   }
-  return payload.data?.productOfferV2?.nodes || [];
+  const graphError = payload.errors?.[0];
+  const detail = graphError?.extensions?.message || graphError?.message || '';
+  if (!response.ok) {
+    throw new Error(`Open API respondeu com status ${response.status}${detail ? `: ${detail}` : ''}`);
+  }
+  if (payload.errors?.length) {
+    throw new Error(detail || 'Erro desconhecido da Open API');
+  }
+  const productOffer = payload.data?.productOfferV2;
+  return {
+    nodes: Array.isArray(productOffer?.nodes) ? productOffer.nodes : [],
+    pageInfo: {
+      page: Number(productOffer?.pageInfo?.page || 0),
+      limit: Number(productOffer?.pageInfo?.limit || 0),
+      hasNextPage: productOffer?.pageInfo?.hasNextPage === true
+    }
+  };
 }
 
 function escapeGraphQL(value) {
   return JSON.stringify(String(value)).slice(1, -1);
 }
 
-export async function collectShopee(config, secrets) {
+function shopeeProductOfferQuery({ keyword, page, limit, listType, sortType }) {
+  const argumentsList = [
+    `keyword: "${escapeGraphQL(keyword)}"`,
+    ...(Number.isFinite(Number(listType)) ? [`listType: ${Number(listType)}`] : []),
+    ...(Number.isFinite(Number(sortType)) ? [`sortType: ${Number(sortType)}`] : []),
+    `page: ${Math.max(1, Number(page) || 1)}`,
+    `limit: ${Math.max(1, Number(limit) || SHOPEE_DEFAULT_PAGE_SIZE)}`
+  ];
+  return `{ productOfferV2(${argumentsList.join(', ')}) { nodes { itemId productName productLink offerLink imageUrl priceMin priceMax priceDiscountRate sales ratingStar commissionRate shopId shopName periodEndTime } pageInfo { page limit hasNextPage } } }`;
+}
+
+async function shopeeProductOfferPage(appId, appSecret, options) {
+  return shopeeGraphQL(
+    appId,
+    appSecret,
+    shopeeProductOfferQuery(options)
+  );
+}
+
+function shopeeLimitRejected(error) {
+  const message = String(error?.message || error || '');
+  return /\b11001\b|(?:invalid|maximum|must be|unsupported).{0,80}\blimit\b|\blimit\b.{0,80}(?:invalid|maximum|must be|unsupported)/i.test(message);
+}
+
+function shopeeItemKey(item) {
+  return String(item?.itemId || item?.offerLink || item?.productLink || '').trim();
+}
+
+export async function collectShopee(config, secrets, {
+  fullScan = false,
+  activitySink = null
+} = {}) {
   if (!config.enableShopee) return [];
   const appId = secrets.shopeeAppId || process.env.SHOPEE_APP_ID;
   const appSecret = secrets.shopeeAppSecret || process.env.SHOPEE_APP_SECRET;
   if (!appId || !appSecret) throw new Error('Configure o App ID e o App Secret da Open API no painel.');
   const keywords = String(config.shopeeQueries || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 8);
+  if (!keywords.length) return [];
+
+  /*
+   * A atualização manual percorre o catálogo paginado da Shopee. O teto é
+   * técnico, não editorial: impede que uma resposta com paginação infinita,
+   * uma conta com volume anormal ou uma indisponibilidade da API mantenham o
+   * worker isolado ocupado até o Render reiniciá-lo. Com 40 páginas de até 50
+   * itens, a atualização já examina até 2.000 produtos brutos — muito acima
+   * dos 160 que a versão anterior conseguiria consultar.
+   */
+  const pageLimit = fullScan
+    ? SHOPEE_FULL_REFRESH_PAGE_SIZE
+    : SHOPEE_DEFAULT_PAGE_SIZE;
+  const maxPagesPerKeyword = fullScan
+    ? SHOPEE_FULL_REFRESH_MAX_PAGES_PER_KEYWORD
+    : 1;
+  const maxRequests = fullScan
+    ? SHOPEE_FULL_REFRESH_MAX_REQUESTS
+    : keywords.length;
+  const concurrency = fullScan
+    ? SHOPEE_FULL_REFRESH_CONCURRENCY
+    : 1;
+  const options = fullScan
+    ? { listType: 0, sortType: 2 }
+    : {};
   const items = [];
-  for (const keyword of keywords) {
-    const query = `{ productOfferV2(keyword: "${escapeGraphQL(keyword)}", page: 1, limit: 20) { nodes { itemId productName productLink offerLink imageUrl priceMin priceMax priceDiscountRate sales ratingStar commissionRate shopId shopName periodEndTime } pageInfo { page limit hasNextPage } } }`;
-    const results = await shopeeGraphQL(appId, appSecret, query);
-    items.push(...results.map((item) => ({ ...item, collectionCategory: keyword })));
+  const seenItems = new Set();
+  const pageFailures = [];
+  const stoppedByPageLimit = new Set();
+  let requests = 0;
+  let successfulPages = 0;
+  let receivedItems = 0;
+  let effectivePageLimit = pageLimit;
+  let usedPageLimitFallback = false;
+  let pendingPages = keywords.map((keyword) => ({ keyword, page: 1 }));
+
+  const fetchPage = async (job) => {
+    const load = (limit) => shopeeProductOfferPage(appId, appSecret, {
+      keyword: job.keyword,
+      page: job.page,
+      limit,
+      ...options
+    });
+    try {
+      return await load(effectivePageLimit);
+    } catch (error) {
+      // A documentação pública informa o padrão de 20; algumas contas aceitam
+      // 50. Caso a conta rejeite o lote maior, continuamos sem perder a coleta.
+      if (fullScan && effectivePageLimit > SHOPEE_DEFAULT_PAGE_SIZE && shopeeLimitRejected(error)) {
+        effectivePageLimit = SHOPEE_DEFAULT_PAGE_SIZE;
+        usedPageLimitFallback = true;
+        return load(effectivePageLimit);
+      }
+      throw error;
+    }
+  };
+
+  while (pendingPages.length && requests < maxRequests) {
+    const batchSize = Math.min(
+      concurrency,
+      pendingPages.length,
+      maxRequests - requests
+    );
+    const batch = pendingPages.splice(0, batchSize);
+    requests += batch.length;
+    const results = await Promise.all(batch.map(async (job) => {
+      try {
+        return { job, result: await fetchPage(job) };
+      } catch (error) {
+        return { job, error };
+      }
+    }));
+
+    for (const { job, result, error } of results) {
+      if (error) {
+        pageFailures.push({
+          keyword: job.keyword,
+          page: job.page,
+          error: String(error?.message || error || 'Erro desconhecido')
+        });
+        continue;
+      }
+
+      successfulPages += 1;
+      const nodes = Array.isArray(result?.nodes) ? result.nodes : [];
+      receivedItems += nodes.length;
+      for (const item of nodes) {
+        const key = shopeeItemKey(item);
+        if (key && seenItems.has(key)) continue;
+        if (key) seenItems.add(key);
+        items.push({ ...item, collectionCategory: job.keyword });
+      }
+
+      const hasNextPage = result?.pageInfo?.hasNextPage === true;
+      if (!hasNextPage || !nodes.length) continue;
+      if (job.page >= maxPagesPerKeyword) {
+        stoppedByPageLimit.add(job.keyword);
+        continue;
+      }
+      pendingPages.push({ keyword: job.keyword, page: job.page + 1 });
+    }
   }
+
+  const stoppedByRequestLimit = pendingPages.length > 0;
+  if (!successfulPages && pageFailures.length) {
+    throw new Error(pageFailures[0].error);
+  }
+
+  if (Array.isArray(activitySink)) {
+    for (const failure of pageFailures) {
+      activitySink.push({
+        message: `Shopee: não foi possível consultar "${failure.keyword}" na página ${failure.page}: ${failure.error}`,
+        level: 'warning'
+      });
+    }
+    if (fullScan) {
+      const safetyLimitReached = stoppedByPageLimit.size || stoppedByRequestLimit;
+      activitySink.push({
+        message: `Shopee: atualização ampliada consultou ${successfulPages} página(s), recebeu ${receivedItems} resultado(s) e manteve ${items.length} produto(s) único(s)${usedPageLimitFallback ? ' (lote compatível de 20 usado)' : ''}${safetyLimitReached ? '. O limite técnico de segurança foi alcançado; resultados além desse limite não foram consultados nesta execução.' : '.'}`,
+        level: pageFailures.length ? 'warning' : 'success'
+      });
+    }
+  }
+
   return items.map((item) => ({
     id: item.itemId ? `shopee_${item.itemId}` : createId('shopee'),
     externalId: item.itemId || null,
@@ -752,22 +924,13 @@ export async function searchShopeeProducts(query, secrets, limit = 10) {
   }
 
   const responses = await Promise.allSettled(searches.map(({ variant, page, sortType }, searchIndex) => {
-    const graphqlQuery =
-      `{ productOfferV2(` +
-      `keyword: "${escapeGraphQL(variant)}", ` +
-      `listType: 0, ` +
-      `sortType: ${sortType}, ` +
-      `page: ${page}, ` +
-      `limit: 20` +
-      `) { ` +
-      `nodes { ` +
-      `itemId productName productLink offerLink imageUrl ` +
-      `priceMin priceMax priceDiscountRate sales ratingStar ` +
-      `commissionRate shopId shopName periodEndTime ` +
-      `} ` +
-      `pageInfo { page limit hasNextPage } ` +
-      `} }`;
-    return shopeeGraphQL(appId, appSecret, graphqlQuery).then((nodes) => nodes.map((item, itemIndex) => ({
+    return shopeeProductOfferPage(appId, appSecret, {
+      keyword: variant,
+      listType: 0,
+      sortType,
+      page,
+      limit: SHOPEE_DEFAULT_PAGE_SIZE
+    }).then(({ nodes }) => nodes.map((item, itemIndex) => ({
       ...item,
       sourceRank: searchIndex * 20 + itemIndex + 1,
       searchOrder: sortType === 2 ? 'popular' : 'relevance'
@@ -1000,7 +1163,7 @@ export async function collectAliexpress(config, secrets) {
   });
 }
 
-export async function collectOfferCandidates() {
+export async function collectOfferCandidates({ fullShopee = false } = {}) {
   // A coleta precisa apenas das configurações e dos segredos. Evite carregar
   // o catálogo, filas e históricos inteiros no worker temporário de coleta;
   // esses dados permanecem no PostgreSQL e só são lidos quando a importação
@@ -1013,7 +1176,12 @@ export async function collectOfferCandidates() {
   const activityLogs = [];
   try { candidates.push(...await collectMercadoLivre(config, secrets, activityLogs)); }
   catch (error) { errors.push(`Mercado Livre: ${error.message}`); }
-  try { candidates.push(...await collectShopee(config, secrets)); }
+  try {
+    candidates.push(...await collectShopee(config, secrets, {
+      fullScan: fullShopee,
+      activitySink: activityLogs
+    }));
+  }
   catch (error) { errors.push(`Shopee: ${error.message}`); }
   try { candidates.push(...await collectAliexpress(config, secrets)); }
   catch (error) { errors.push(`AliExpress: ${error.message}`); }
