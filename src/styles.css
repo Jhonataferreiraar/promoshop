@@ -5309,6 +5309,9 @@ button {
 .analytics-ranking-list > small { color: #667085; }
 .queue-clear-failed { min-height: 36px; padding: 0 13px; border: 1px solid #fecdca; border-radius: 9px; color: #b42318; background: #fff5f4; font-size: 12px; font-weight: 800; cursor: pointer; }
 .queue-clear-failed:hover { border-color: #fda29b; background: #fee4e2; }
+.queue-retry-failed { min-height: 36px; padding: 0 13px; border: 1px solid #a9c7ff; border-radius: 9px; color: #175cd3; background: #eff4ff; font-size: 12px; font-weight: 800; cursor: pointer; }
+.queue-retry-failed:hover { border-color: #84adff; background: #e0ebff; }
+.queue-retry-failed:disabled { cursor: wait; opacity: .65; }
 .queue-clear-duplicates { min-height: 36px; padding: 0 13px; border: 1px solid #f3c78b; border-radius: 9px; color: #8a4b08; background: #fff8eb; font-size: 12px; font-weight: 800; cursor: pointer; }
 .queue-clear-duplicates:hover { border-color: #e9a84f; background: #fff0d4; }
 .queue-clear-duplicates:disabled { cursor: wait; opacity: .65; }
@@ -6895,6 +6898,17 @@ html[data-theme="dark"] .admin-main .queue-clear-failed {
   border-color: #713b43;
   color: #ffaaa8;
   background: #321d25;
+}
+
+html[data-theme="dark"] .admin-main .queue-retry-failed {
+  border-color: #315ea9;
+  color: #b9d3ff;
+  background: #172f57;
+}
+
+html[data-theme="dark"] .admin-main .queue-retry-failed:hover {
+  border-color: #4f82d9;
+  background: #1c3b6f;
 }
 
 html[data-theme="dark"] .admin-main .queue-clear-duplicates {

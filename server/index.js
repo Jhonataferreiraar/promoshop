@@ -7482,6 +7482,56 @@ app.delete(
   }
 );
 
+app.post(
+  '/api/admin/queue/retry-failed',
+  requireAdmin,
+  async (_req, res) => {
+    let retried = 0;
+    let skipped = 0;
+
+    await updateStore((data) => {
+      const failedItems = (data.queue || []).filter((item) => item?.status === 'failed');
+      const sentSourceIndex = createQueueSourceIndex(data.queue, (item) => item?.status === 'sent');
+      for (const item of failedItems) {
+        const sourceAlreadySent = hasSentSourceInStore(data, item, sentSourceIndex);
+        if (sourceAlreadySent) {
+          item.status = 'skipped';
+          item.force = false;
+          item.publishingAt = null;
+          item.error = 'Oferta repetida bloqueada: esta fonte já foi publicada anteriormente.';
+          item.skippedAt = new Date().toISOString();
+          skipped += 1;
+          continue;
+        }
+
+        // Mantém exatamente o mesmo reinício da tentativa individual: libera
+        // os claims anteriores, mas preserva destinos efetivamente tentados
+        // ou concluídos para que a retomada não duplique publicações.
+        item.status = 'pending';
+        item.force = true;
+        item.error = null;
+        item.failedAt = null;
+        item.deliveryClaimedDestinationIds = [];
+        delete item.aiStatus;
+        delete item.aiError;
+        delete item.aiRetryAt;
+        retried += 1;
+      }
+    });
+
+    if (retried || skipped) {
+      await addLog(
+        `${retried} publicação(ões) com falha retornaram para a fila${skipped ? `; ${skipped} repetida(s) foram bloqueada(s)` : ''}.`,
+        retried ? 'success' : 'info'
+      );
+    } else {
+      await addLog('Nenhuma publicação com falha para tentar novamente.', 'info');
+    }
+
+    res.json({ ok: true, retried, skipped });
+  }
+);
+
 app.patch(
   '/api/admin/queue/:id/audience',
   requireAdmin,

@@ -1790,6 +1790,7 @@ function AdminApp() {
   const [queueDuplicateInfo, setQueueDuplicateInfo] = useState({ duplicateCount: 0, duplicateGroupCount: 0, pendingCount: 0, publishingCount: 0, stores: [], samples: [] });
   const [queueDuplicateInfoLoaded, setQueueDuplicateInfoLoaded] = useState(false);
   const [queueDuplicateBusy, setQueueDuplicateBusy] = useState(false);
+  const [queueRetryBusy, setQueueRetryBusy] = useState(false);
   const [queueSearchOpen, setQueueSearchOpen] = useState(false);
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [queueAudienceSaving, setQueueAudienceSaving] = useState('');
@@ -2668,6 +2669,36 @@ function AdminApp() {
       setMessage(`Não foi possível tentar os alertas novamente: ${error.message}`);
     }
   }
+  function retryFailedQueue() {
+    const failedCount = Number(queuePage.summary?.failed || data.queueSummary?.failed || 0);
+    if (!failedCount || queueRetryBusy) return;
+    setDialog({
+      type: 'confirm-action',
+      eyebrow: 'RETOMAR PUBLICAÇÕES',
+      title: 'Tentar novamente todas as falhas?',
+      body: `${failedCount} publicação(ões) com falha voltarão para a fila com prioridade. O sistema manterá a proteção contra duplicidades e não alterará as regras do WhatsApp ou do Instagram.`,
+      confirmLabel: 'Tentar novamente',
+      onConfirm: async () => {
+        setDialog(null);
+        setQueueRetryBusy(true);
+        try {
+          const result = await authApi('/admin/queue/retry-failed', { method: 'POST', body: '{}' });
+          await Promise.all([load(), loadQueuePage(true)]);
+          const retried = Number(result.retried || 0);
+          const skipped = Number(result.skipped || 0);
+          setMessage(retried
+            ? `${retried} publicação(ões) retornaram para a fila${skipped ? ` · ${skipped} repetida(s) bloqueada(s)` : ''}.`
+            : skipped
+              ? `${skipped} publicação(ões) repetida(s) foram bloqueada(s); nenhuma voltou para a fila.`
+              : 'Nenhuma publicação com falha para tentar novamente.');
+        } catch (error) {
+          setMessage(`Não foi possível tentar as falhas novamente: ${error.message}`);
+        } finally {
+          setQueueRetryBusy(false);
+        }
+      }
+    });
+  }
   function clearFailedQueue() {
     const failedCount = Number(queuePage.summary?.failed || data.queueSummary?.failed || 0);
     if (!failedCount) return;
@@ -3537,7 +3568,7 @@ function AdminApp() {
       <section className="panel table-panel coupon-manager"><div className="panel-heading"><div><span className="section-step">CUPONS CADASTRADOS</span><h2>Gerenciar cupons</h2><p>{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).length} cadastrado(s). Cupons importados aguardando revisão ficam somente na Extensão de cupons.</p></div></div><div className="coupon-admin-list">{(data.coupons || []).filter((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)).map((coupon) => <article className="coupon-admin-row" key={coupon.id}><div><strong>{coupon.title}</strong><small>{coupon.store} · {coupon.code || 'sem código'} · {(coupon.targetAudienceCodes || []).join(', ') || 'sem grupo'}</small>{coupon.shortUrl && <small className="coupon-short-link">Link curto: {coupon.shortUrl}</small>}{coupon.expiresAt && <small>Validade: {new Date(coupon.expiresAt).toLocaleString('pt-BR')}</small>}</div><div className="coupon-row-actions"><button className="edit" type="button" onClick={() => editCoupon(coupon)}>Editar</button><button type="button" onClick={() => copyShortCouponUrl(coupon)}>Copiar link</button><button className="force" type="button" onClick={() => queueCoupon(coupon.id, true)}>Disparar agora</button><button type="button" onClick={() => queueCoupon(coupon.id, false)}>Agendar</button><button className="danger" type="button" onClick={() => removeCoupon(coupon.id)}>Excluir</button></div></article>)}{!(data.coupons || []).some((coupon) => coupon.source !== 'extension' || coupon.approvalStatus === 'approved' || (!coupon.approvalStatus && coupon.active !== false)) && <div className="empty"><strong>Nenhum cupom aprovado</strong><p>Cupons importados pela extensão aparecem aqui depois que você aprová-los.</p></div>}</div></section>
     </div>}
     {tab === 'inbox' && <InboxPanel messages={data.inbox || []} inboxConfig={data.config} onMarkRead={markInboxMessage} onReply={replyInboxMessage} onDelete={removeInboxMessage} onSetup={setupInboxInbound} />}
-    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{Number(queuePage.summary?.failed || 0) > 0 && <button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
+    {tab === 'queue' && <section className="panel table-panel"><div className="panel-heading"><div><h2>Fila de publicação</h2><p>{Number(queuePage.summary?.pending || 0)} aguardando · {Number(queuePage.summary?.failed || 0)} com falha{queueSearchQuery.trim() ? ` · ${queuePage.total} resultado(s)` : ''}</p></div><div className="queue-heading-actions"><div className={`queue-search ${queueSearchOpen ? 'open' : ''}`}><button className="queue-search-toggle" type="button" aria-label={queueSearchOpen ? 'Fechar pesquisa na fila' : 'Pesquisar produtos na fila'} aria-expanded={queueSearchOpen} onClick={() => { if (queueSearchOpen) { setQueueSearchQuery(''); setQueueSearchOpen(false); } else setQueueSearchOpen(true); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg></button>{queueSearchOpen && <input ref={queueSearchInputRef} type="search" value={queueSearchQuery} onChange={(event) => setQueueSearchQuery(event.target.value)} placeholder="Pesquisar produto…" aria-label="Pesquisar produtos na fila" />}</div>{canEdit('queue') && Number(queuePage.summary?.failed || 0) > 0 && <><button className="queue-retry-failed" type="button" onClick={retryFailedQueue} disabled={queueRetryBusy}>{queueRetryBusy ? 'Tentando…' : 'Tentar falhas novamente'}</button><button className="queue-clear-failed" type="button" onClick={clearFailedQueue}>Excluir falhas</button></>}</div></div><QueueTable queue={queueItems} onRemove={removeQueueItem} onForce={forceQueueItem} onRetry={retryQueueItem} onAudienceChange={updateQueueAudience} audiences={configuredAudiences.filter((audience) => audience.enabled !== false)} audienceSavingId={queueAudienceSaving} emptyTitle={queueSearchQuery.trim() ? 'Nenhum produto encontrado' : undefined} emptyText={queueSearchQuery.trim() ? 'Tente pesquisar usando outro nome, loja ou grupo.' : undefined} />{queuePage.hasMore && <div className="load-more"><button className="button subtle" type="button" onClick={() => loadQueuePage(false)}>Mostrar mais publicações</button><small>Exibindo {queueItems.length} de {queuePage.total}</small></div>}</section>}
     {tab === 'analytics' && <AnalyticsDashboard analytics={data.analytics} config={data.config} secrets={data.secrets} secretForm={secretForm} setSecretForm={setSecretForm} searchConsole={searchConsoleData} onConnect={connectSearchConsole} onRefreshSearchConsole={loadSearchConsole} setConfigField={setConfigField} />}
     {tab === 'sources' && <form className="settings-form source-layout" onSubmit={saveSources}>
       <section className="panel compact-panel">
