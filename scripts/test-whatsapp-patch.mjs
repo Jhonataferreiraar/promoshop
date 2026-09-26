@@ -7,6 +7,7 @@ import { patchWhatsappWeb } from './patch-whatsapp-web.mjs';
 const directory = await mkdtemp(path.join(os.tmpdir(), 'promoshop-whatsapp-patch-'));
 const target = path.join(directory, 'Utils.js');
 const lidTarget = path.join(directory, 'Utils-lid.js');
+const mediaTarget = path.join(directory, 'Utils-media.js');
 
 try {
   await writeFile(
@@ -47,6 +48,28 @@ try {
   assert.match(lidPatched, /Msg\.get\(window\.WWebJS\.getMsgKeyId\(msg\.id\)\)/);
   const lidSecond = await patchWhatsappWeb(lidTarget);
   assert.equal(lidSecond.changed, false);
+
+  await writeFile(
+    mediaTarget,
+    [
+      'window.WWebJS = {};',
+      'window.WWebJS.sendMessage = async () => {',
+      '    const message = {',
+      '        ...extraOptions,',
+      '        };',
+      '',
+      "        // Bot's won't reply if canonicalUrl is set (linking)",
+      '};'
+    ].join('\n'),
+    'utf8'
+  );
+
+  const mediaFirst = await patchWhatsappWeb(mediaTarget);
+  assert.equal(mediaFirst.changed, true);
+  const mediaPatched = await readFile(mediaTarget, 'utf8');
+  assert.match(mediaPatched, /delete message\.\_\_x_id;/);
+  const mediaSecond = await patchWhatsappWeb(mediaTarget);
+  assert.equal(mediaSecond.changed, false);
   console.log('Correção automática do canal do WhatsApp validada.');
 } finally {
   await rm(directory, { recursive: true, force: true });

@@ -16,6 +16,9 @@ const defaultTarget = path.join(
 const brokenCall = 'mediaMetadata: msg.avParams(),';
 const fixedCall = "mediaMetadata: window.require('WAWebMediaMetadata').mediaMetadata(msg),";
 const msgKeyHelperMarker = 'window.WWebJS.getMsgKeyId = (key) =>';
+const mediaInternalIdPatchMarker = 'delete message.__x_id;';
+const mediaInternalIdPatchAnchor = `        };\n\n        // Bot's won't reply if canonicalUrl is set (linking)`;
+const mediaInternalIdPatch = `        };\n\n        // MediaData exposes an internal identifier that collides with the\n        // outgoing message model identifier in newer WhatsApp Web builds.\n        // Remove it before Msg.modelClass initializes the outgoing message.\n        delete message.__x_id;\n\n        // Bot's won't reply if canonicalUrl is set (linking)`;
 const msgKeyHelper = `    /**
      * WhatsApp Web renamed the serialized message-key field from
      * _serialized to $1 in newer builds. Keep both names available so a
@@ -49,6 +52,29 @@ function applyLidCompatibilityPatch(source) {
   return { source: patched, changed: patched !== source };
 }
 
+function applyMediaInternalIdCompatibilityPatch(source) {
+  if (source.includes(mediaInternalIdPatchMarker)) {
+    return { source, changed: false };
+  }
+
+  // This patch targets the real outgoing-message model. Keep small test
+  // fixtures and future unrelated files untouched when they do not expose it.
+  if (!source.includes('window.WWebJS.sendMessage = async') || !source.includes('const message = {')) {
+    return { source, changed: false };
+  }
+
+  if (!source.includes(mediaInternalIdPatchAnchor)) {
+    throw new Error(
+      'A estrutura do whatsapp-web.js mudou. A correção do identificador interno de mídia precisa ser revisada.'
+    );
+  }
+
+  return {
+    source: source.replace(mediaInternalIdPatchAnchor, mediaInternalIdPatch),
+    changed: true
+  };
+}
+
 export async function patchWhatsappWeb(target = defaultTarget) {
   const source = await readFile(target, 'utf8');
   let patched = source;
@@ -70,6 +96,13 @@ export async function patchWhatsappWeb(target = defaultTarget) {
     patched = lidPatch.source;
     changed = true;
     patches.push('compatibilidade com IDs LID');
+  }
+
+  const mediaInternalIdPatchResult = applyMediaInternalIdCompatibilityPatch(patched);
+  if (mediaInternalIdPatchResult.changed) {
+    patched = mediaInternalIdPatchResult.source;
+    changed = true;
+    patches.push('compatibilidade com identificador interno de mídia');
   }
 
   if (changed) await writeFile(target, patched, 'utf8');
