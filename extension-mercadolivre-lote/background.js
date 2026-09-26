@@ -3,6 +3,7 @@ const UPLOAD_CHUNK_SIZE = 10;
 const DEFAULT_DELAY_MS = 10000;
 const MIN_DELAY_MS = 8000;
 const MAX_DELAY_MS = 15000;
+const PAGE_READY_DELAY_MS = 5000;
 
 let batchState = null;
 
@@ -113,7 +114,9 @@ async function captureCandidateInTab(state, candidate, active) {
   try {
     const ready = await waitForTabReady(tab.id, 30000);
     if (!ready) throw new Error('A página do Mercado Livre não terminou de carregar.');
-    await wait(1200);
+    // A página do Mercado Livre e a Barra de Afiliados são carregadas
+    // progressivamente. Aguarde a renderização antes de ler preço e desconto.
+    await wait(PAGE_READY_DELAY_MS);
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_ML_OFFER' });
     if (response?.error) throw new Error(response.error);
     if (!response?.offer) throw new Error('A extensão não encontrou uma oferta válida nesta página.');

@@ -1,7 +1,10 @@
 (function () {
   'use strict';
+  const AFFILIATE_UI_TIMEOUT_MS = 8000;
+  const AFFILIATE_POLL_MS = 250;
   const clean = (value, max = 500) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
   const visible = (element) => Boolean(element && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   function numberFromBrazilian(value) {
     const text = clean(value, 80);
@@ -64,20 +67,32 @@
     return [...document.querySelectorAll('button, [role="button"], a')]
       .find((entry) => visible(entry)
         && /\bCompartilhar(?:\s+link)?\b/i.test(clean(entry.innerText || entry.getAttribute('aria-label'), 80))
-        && /\bAfiliados\b/i.test(clean(entry.closest('nav, [role="navigation"], header, aside')?.innerText || '', 1000))) || null;
+      && /\bAfiliados\b/i.test(clean(entry.closest('nav, [role="navigation"], header, aside')?.innerText || '', 1000))) || null;
+  }
+
+  async function waitForAffiliateUi() {
+    const deadline = Date.now() + AFFILIATE_UI_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const link = affiliateLink();
+      if (link) return { link };
+      const button = affiliateShareButton();
+      if (button) return { button };
+      await pause(AFFILIATE_POLL_MS);
+    }
+    return null;
   }
 
   async function ensureAffiliateLink() {
-    const existing = affiliateLink();
-    if (existing) return existing;
-    const button = affiliateShareButton();
+    const affiliateUi = await waitForAffiliateUi();
+    if (affiliateUi?.link) return affiliateUi.link;
+    const button = affiliateUi?.button;
     if (!button) throw new Error('Ative a Barra de Afiliados do Mercado Livre e abra uma página individual de produto.');
     button.click();
     const deadline = Date.now() + 12000;
     while (Date.now() < deadline) {
       const generated = affiliateLink();
       if (generated) return generated;
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await pause(AFFILIATE_POLL_MS);
     }
     throw new Error('O Mercado Livre não concluiu a geração do link. Feche a janela de compartilhamento e tente novamente.');
   }
